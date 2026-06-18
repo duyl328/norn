@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -6,7 +6,10 @@ import {
   CircleDot,
   Code2,
   Columns3,
-  Command,
+  Menu,
+  Minus,
+  Square,
+  X,
   GitBranch,
   GitCommitHorizontal,
   GitPullRequest,
@@ -31,15 +34,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import {
-  Menubar,
-  MenubarContent,
-  MenubarItem,
-  MenubarMenu,
-  MenubarSeparator,
-  MenubarShortcut,
-  MenubarTrigger,
-} from "@/components/ui/menubar";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -51,14 +46,19 @@ import { changes, editorLines, treeNodes } from "./mock-data";
 export function WorkbenchPage() {
   const [dark, setDark] = useState(false);
   const [gitOpen, setGitOpen] = useState(true);
+  const isWindows = useMemo(() => navigator.userAgent.includes("Windows"), []);
 
   return (
     <TooltipProvider delayDuration={250}>
       <div className={cn("h-full bg-background text-[12px] text-foreground", dark && "dark")}>
         <div className="flex h-full min-w-0 flex-col">
-          <TitleBar dark={dark} onToggleTheme={() => setDark((value) => !value)} />
-          <MainMenu />
-          <Toolbar onToggleGit={() => setGitOpen((value) => !value)} gitOpen={gitOpen} />
+          {isWindows ? <WindowsTitleBar /> : null}
+          <Toolbar
+            dark={dark}
+            onToggleGit={() => setGitOpen((value) => !value)}
+            gitOpen={gitOpen}
+            onToggleTheme={() => setDark((value) => !value)}
+          />
           <main
             className={cn(
               "grid min-h-0 flex-1 grid-cols-[260px_1px_minmax(0,1fr)_24px_360px] bg-background transition-[grid-template-columns]",
@@ -78,92 +78,190 @@ export function WorkbenchPage() {
   );
 }
 
-function TitleBar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => void }) {
+function WindowsTitleBar() {
+  const appWindow = getCurrentWindow();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [menuExpanded, setMenuExpanded] = useState(false);
+  const [activeMenu, setActiveMenu] = useState<"file" | "edit" | "view" | "window" | null>(null);
+
+  const collapseMenu = () => {
+    setMenuExpanded(false);
+    setActiveMenu(null);
+  };
+
+  useEffect(() => {
+    if (!menuExpanded) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (menuRef.current?.contains(event.target as Node)) {
+        return;
+      }
+
+      collapseMenu();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+    };
+  }, [menuExpanded]);
+
+  const handleTitlebarDoubleClick = (event: MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+
+    if (target.closest("button, input, textarea, select, a, [role='dialog'], [contenteditable='true']")) {
+      return;
+    }
+
+    if (!target.closest("[data-tauri-drag-region]")) {
+      return;
+    }
+
+    appWindow.toggleMaximize();
+  };
+
   return (
-    <header className="flex h-8 shrink-0 items-center justify-between border-b border-border bg-muted/70 px-2">
-      <div className="flex min-w-0 items-center gap-2">
-        <Code2 className="h-4 w-4 text-primary" />
-        <strong className="text-[12px]">Norn</strong>
-        <span className="truncate text-[12px] text-muted-foreground">norn · main · 工作区有 4 个变更</span>
+    <header className="windows-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
+      <div className="windows-titlebar-left" ref={menuRef}>
+        <button
+          className={cn("windows-titlebar-menu-button", menuExpanded && "windows-titlebar-menu-button-active")}
+          type="button"
+          aria-label="Toggle application menu"
+          aria-expanded={menuExpanded}
+          onClick={() => {
+            setMenuExpanded((value) => !value);
+            setActiveMenu(null);
+          }}
+        >
+          <Menu className="h-4 w-4" />
+        </button>
+        {menuExpanded ? (
+          <nav className="windows-titlebar-inline-menu" aria-label="Application menu">
+            {[
+              { id: "file", label: "File", children: ["New File", "Open Folder", "Save All"] },
+              { id: "edit", label: "Edit", children: ["Undo", "Redo", "Find"] },
+              { id: "view", label: "View", children: ["Explorer", "Git Panel", "Terminal"] },
+              { id: "window", label: "Window", children: ["Minimize", "Maximize / Restore", "Close"] },
+            ].map((item) => (
+              <div className="windows-titlebar-parent-menu" key={item.id}>
+                <button
+                  className={cn("windows-titlebar-parent-menu-button", activeMenu === item.id && "windows-titlebar-parent-menu-button-active")}
+                  type="button"
+                  onClick={() => setActiveMenu(activeMenu === item.id ? null : (item.id as typeof activeMenu))}
+                >
+                  {item.label}
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+                {activeMenu === item.id ? (
+                  <div className="windows-titlebar-submenu">
+                    {item.children.map((child) => (
+                      <button
+                        className={cn("windows-titlebar-submenu-item", child === "Close" && "windows-titlebar-submenu-item-danger")}
+                        key={child}
+                        type="button"
+                        onClick={() => {
+                          if (child === "Minimize") appWindow.minimize();
+                          if (child === "Maximize / Restore") appWindow.toggleMaximize();
+                          if (child === "Close") appWindow.close();
+                          collapseMenu();
+                        }}
+                      >
+                        {child}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </nav>
+        ) : (
+          <div className="windows-titlebar-project">
+            <button className="windows-titlebar-folder" type="button">
+              norn
+            </button>
+            <button className="windows-titlebar-git" type="button">
+              main - 4 modified
+            </button>
+          </div>
+        )}
       </div>
-      <div className="flex items-center gap-2">
-        <Badge tone="success">Git CLI 已连接</Badge>
-        <Button variant="ghost" size="sm" onClick={onToggleTheme}>
-          {dark ? "浅色" : "深色"}
-        </Button>
+      <div className="windows-titlebar-drag-fill" data-tauri-drag-region />
+      <div className="windows-titlebar-search-entry">
+        <button className="windows-titlebar-search-button" type="button" onClick={() => setSearchOpen(true)}>
+          Search files, commands, symbols
+        </button>
+        {searchOpen ? (
+          <div className="windows-quick-search" role="dialog" aria-label="Quick search" onClick={() => setSearchOpen(false)}>
+            <div className="windows-quick-search-panel" onClick={(event) => event.stopPropagation()}>
+              <input
+                className="windows-quick-search-input"
+                autoFocus
+                placeholder="Search files, commands, symbols"
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setSearchOpen(false);
+                  }
+                }}
+              />
+              <div className="windows-quick-search-results">
+                <button className="windows-quick-search-result" type="button">
+                  src/features/workbench/workbench-page.tsx
+                </button>
+                <button className="windows-quick-search-result" type="button">
+                  src-tauri/src/lib.rs
+                </button>
+                <button className="windows-quick-search-result" type="button">
+                  src/styles.css
+                </button>
+              </div>
+              <button className="windows-quick-search-close" type="button" onClick={() => setSearchOpen(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <div className="windows-titlebar-drag-fill windows-titlebar-drag-fill-right" data-tauri-drag-region />
+      <div className="windows-titlebar-controls" onDoubleClick={(event) => event.stopPropagation()}>
+        <button className="windows-window-button" type="button" aria-label="Minimize" onClick={() => appWindow.minimize()}>
+          <Minus className="h-3.5 w-3.5" />
+        </button>
+        <button
+          className="windows-window-button"
+          type="button"
+          aria-label="Maximize or restore"
+          onClick={() => appWindow.toggleMaximize()}
+        >
+          <Square className="h-3 w-3" />
+        </button>
+        <button className="windows-window-button windows-window-button-close" type="button" aria-label="Close" onClick={() => appWindow.close()}>
+          <X className="h-4 w-4" />
+        </button>
       </div>
     </header>
   );
 }
 
-function MainMenu() {
-  return (
-    <Menubar>
-      <MenubarMenu>
-        <MenubarTrigger>文件</MenubarTrigger>
-        <MenubarContent>
-          <MenubarItem>
-            打开文件夹
-            <MenubarShortcut>Ctrl+Shift+O</MenubarShortcut>
-          </MenubarItem>
-          <MenubarItem>
-            保存
-            <MenubarShortcut>Ctrl+S</MenubarShortcut>
-          </MenubarItem>
-          <MenubarItem>
-            保存全部
-            <MenubarShortcut>Ctrl+Alt+S</MenubarShortcut>
-          </MenubarItem>
-          <MenubarSeparator />
-          <MenubarItem>最近项目</MenubarItem>
-        </MenubarContent>
-      </MenubarMenu>
-      <MenubarMenu>
-        <MenubarTrigger>编辑</MenubarTrigger>
-        <MenubarContent>
-          <MenubarItem>
-            查找
-            <MenubarShortcut>Ctrl+F</MenubarShortcut>
-          </MenubarItem>
-          <MenubarItem>
-            替换
-            <MenubarShortcut>Ctrl+R</MenubarShortcut>
-          </MenubarItem>
-          <MenubarItem>
-            搜索所有位置
-            <MenubarShortcut>Double Shift</MenubarShortcut>
-          </MenubarItem>
-        </MenubarContent>
-      </MenubarMenu>
-      <MenubarMenu>
-        <MenubarTrigger>Git</MenubarTrigger>
-        <MenubarContent>
-          <MenubarItem>
-            Commit
-            <MenubarShortcut>Ctrl+K</MenubarShortcut>
-          </MenubarItem>
-          <MenubarItem>Pull</MenubarItem>
-          <MenubarItem>Push</MenubarItem>
-          <MenubarSeparator />
-          <MenubarItem>Show Diff</MenubarItem>
-        </MenubarContent>
-      </MenubarMenu>
-      <MenubarMenu>
-        <MenubarTrigger>视图</MenubarTrigger>
-        <MenubarContent>
-          <MenubarItem>文件树</MenubarItem>
-          <MenubarItem>Git 工作区</MenubarItem>
-          <MenubarItem>终端</MenubarItem>
-        </MenubarContent>
-      </MenubarMenu>
-    </Menubar>
-  );
-}
-
-function Toolbar({ gitOpen, onToggleGit }: { gitOpen: boolean; onToggleGit: () => void }) {
+function Toolbar({
+  dark,
+  gitOpen,
+  onToggleGit,
+  onToggleTheme,
+}: {
+  dark: boolean;
+  gitOpen: boolean;
+  onToggleGit: () => void;
+  onToggleTheme: () => void;
+}) {
   return (
     <div className="tool-row justify-between gap-2">
       <div className="flex min-w-0 items-center gap-1.5">
+        <Code2 className="h-4 w-4 text-primary" />
+        <strong className="mr-1 text-[12px]">Norn</strong>
         <Button size="toolbar" variant="default">
           <GitBranch className="h-3.5 w-3.5" />
           main
@@ -177,6 +275,10 @@ function Toolbar({ gitOpen, onToggleGit }: { gitOpen: boolean; onToggleGit: () =
         <Badge tone="muted">Double Shift</Badge>
       </div>
       <div className="flex items-center gap-1.5">
+        <Badge tone="success">Git CLI 已连接</Badge>
+        <Button variant="ghost" size="sm" onClick={onToggleTheme}>
+          {dark ? "浅色" : "深色"}
+        </Button>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button size="icon" variant="ghost">
@@ -263,10 +365,6 @@ function EditorMock() {
           <Button size="toolbar" variant="ghost">
             <History className="h-3.5 w-3.5" />
             最近文件
-          </Button>
-          <Button size="toolbar" variant="ghost">
-            <Command className="h-3.5 w-3.5" />
-            Action
           </Button>
         </div>
       </div>

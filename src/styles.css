@@ -80,6 +80,158 @@
 }
 
 @layer components {
+  .windows-titlebar {
+    @apply grid h-9 shrink-0 grid-cols-[minmax(360px,auto)_minmax(80px,1fr)_minmax(260px,430px)_minmax(80px,1fr)_auto] items-center border-b border-border bg-card/95 text-foreground;
+    user-select: none;
+  }
+
+  .windows-titlebar-left {
+    @apply flex h-full min-w-0 items-center gap-2 px-2;
+  }
+
+  .windows-titlebar-menu-button {
+    @apply grid h-7 w-7 shrink-0 place-items-center rounded-sm border-0 bg-transparent p-0 text-muted-foreground transition-colors;
+  }
+
+  .windows-titlebar-menu-button:hover {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .windows-titlebar-menu-button-active {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .windows-titlebar-project {
+    @apply flex min-w-[300px] items-center gap-2;
+  }
+
+  .windows-titlebar-folder {
+    @apply h-7 min-w-[132px] max-w-[220px] truncate rounded-sm border-0 bg-transparent px-2 text-left text-[12px] font-semibold transition-colors;
+  }
+
+  .windows-titlebar-folder:hover {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .windows-titlebar-git {
+    @apply h-7 min-w-[150px] whitespace-nowrap rounded-sm border-0 bg-transparent px-2 text-left text-[11px] text-muted-foreground transition-colors;
+  }
+
+  .windows-titlebar-git:hover {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .windows-titlebar-git::before {
+    content: "";
+    @apply mr-2 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 align-middle;
+  }
+
+  .windows-titlebar-inline-menu {
+    @apply flex h-full min-w-[300px] items-center gap-1;
+  }
+
+  .windows-titlebar-parent-menu {
+    @apply relative h-full;
+  }
+
+  .windows-titlebar-parent-menu-button {
+    @apply flex h-full items-center gap-1 rounded-sm border-0 bg-transparent px-2.5 text-[12px] text-muted-foreground transition-colors;
+  }
+
+  .windows-titlebar-parent-menu-button:hover,
+  .windows-titlebar-parent-menu-button-active {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .windows-titlebar-submenu {
+    @apply absolute left-0 top-full z-50 mt-px grid min-w-[168px] gap-0.5 rounded-sm border border-border bg-popover p-1 text-popover-foreground shadow-lg;
+  }
+
+  .windows-titlebar-submenu-item {
+    @apply h-7 rounded-sm border-0 bg-transparent px-2 text-left text-[12px] text-muted-foreground;
+  }
+
+  .windows-titlebar-submenu-item:hover {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .windows-titlebar-submenu-item-danger {
+    @apply text-destructive;
+  }
+
+  .windows-titlebar-drag-fill {
+    @apply h-full min-w-0;
+  }
+
+  .windows-titlebar-drag-fill-right {
+    min-width: 56px;
+  }
+
+  .windows-titlebar-search-entry {
+    @apply relative min-w-0 justify-self-center px-2;
+  }
+
+  .windows-titlebar-search-button {
+    @apply h-7 w-full rounded-sm border border-border bg-background/75 px-3 text-right text-[12px] text-muted-foreground outline-none transition-colors;
+  }
+
+  .windows-titlebar-search-button:hover {
+    @apply border-ring bg-background text-foreground;
+  }
+
+  .windows-quick-search {
+    @apply fixed inset-0 z-40 flex items-start justify-center bg-background/20 pt-[12vh];
+  }
+
+  .windows-quick-search-panel {
+    @apply w-[min(720px,calc(100vw-80px))] rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-2xl;
+  }
+
+  .windows-quick-search-input {
+    @apply h-10 w-full rounded-sm border border-input bg-background px-3 text-[13px] outline-none;
+  }
+
+  .windows-quick-search-input:focus {
+    @apply border-ring;
+  }
+
+  .windows-quick-search-results {
+    @apply mt-2 grid gap-1;
+  }
+
+  .windows-quick-search-result {
+    @apply h-8 rounded-sm border-0 bg-transparent px-2 text-left font-mono text-[12px] text-muted-foreground;
+  }
+
+  .windows-quick-search-result:hover {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .windows-quick-search-close {
+    @apply mt-2 h-7 rounded-sm border border-border bg-background px-3 text-[12px] text-muted-foreground;
+  }
+
+  .windows-quick-search-close:hover {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .windows-titlebar-controls {
+    @apply flex h-full justify-end;
+  }
+
+  .windows-window-button {
+    @apply grid h-full w-12 place-items-center border-0 bg-transparent p-0 text-muted-foreground transition-colors;
+  }
+
+  .windows-window-button:hover {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .windows-window-button-close:hover {
+    background: #c42b1c;
+    color: #fff;
+  }
+
   .tool-row {
     @apply flex h-8 shrink-0 items-center border-b border-border bg-background/80 px-2;
   }

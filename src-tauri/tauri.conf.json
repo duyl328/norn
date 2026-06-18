@@ -12,13 +12,17 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Norn",
         "width": 1440,
         "height": 900,
         "minWidth": 1024,
         "minHeight": 700,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "decorations": true,
+        "titleBarStyle": "Visible",
+        "hiddenTitle": false
       }
     ],
     "security": {
