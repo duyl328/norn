@@ -128,7 +128,7 @@
   }
 
   .windows-titlebar-inline-menu {
-    @apply flex h-full min-w-[300px] items-center gap-1 text-foreground;
+    @apply relative flex h-full min-w-[300px] items-center gap-0 text-foreground;
   }
 
   .windows-titlebar-parent-menu {
@@ -145,11 +145,13 @@
   }
 
   .windows-titlebar-submenu {
-    @apply absolute left-0 top-full z-50 mt-1 grid min-w-[168px] gap-0.5 rounded-[0.4125rem] border border-border bg-popover p-1 text-popover-foreground shadow-lg;
+    @apply absolute left-0 top-full z-50 mt-1 grid min-w-[168px] gap-0 rounded-[0.4125rem] border border-border bg-popover p-1 text-popover-foreground shadow-lg;
+    transition: transform 105ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
   }
 
   .windows-titlebar-submenu-item {
-    @apply h-7 rounded-sm border-0 bg-transparent px-2 text-left text-[12px] text-muted-foreground;
+    @apply h-7 rounded-[0.35rem] border-0 bg-transparent px-2 text-left text-[12px] text-muted-foreground;
   }
 
   .windows-titlebar-submenu-item:hover {
@@ -178,6 +180,16 @@
 
   .windows-titlebar-search-button:hover {
     @apply border-ring bg-background text-foreground;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .windows-titlebar-submenu {
+      transition-duration: 0.01ms;
+    }
+
+    .windows-titlebar-parent-menu-button {
+      transition-duration: 0.01ms;
+    }
   }
 
   .windows-quick-search {

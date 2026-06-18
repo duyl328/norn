@@ -48,6 +48,22 @@ const windowsTitlebarMenus = [
   { id: "edit", label: "Edit", children: ["Undo", "Redo", "Find"] },
   { id: "view", label: "View", children: ["Explorer", "Git Panel", "Terminal"] },
   { id: "window", label: "Window", children: ["Minimize", "Maximize / Restore", "Close"] },
+  {
+    id: "help",
+    label: "Help",
+    children: [
+      "Welcome",
+      "Documentation",
+      "Keyboard Shortcuts",
+      "Release Notes",
+      "Report Issue",
+      "View Logs",
+      "Check for Updates",
+      "Community",
+      "Privacy Statement",
+      "About Norn",
+    ],
+  },
 ] as const;
 
 type WindowsTitlebarMenuId = (typeof windowsTitlebarMenus)[number]["id"];
@@ -93,10 +109,20 @@ function WindowsTitleBar() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuExpanded, setMenuExpanded] = useState(false);
   const [activeMenu, setActiveMenu] = useState<WindowsTitlebarMenuId | null>(null);
+  const [submenuLeft, setSubmenuLeft] = useState(0);
+
+  const openMenu = () => {
+    setMenuExpanded(true);
+  };
 
   const collapseMenu = () => {
     setMenuExpanded(false);
     setActiveMenu(null);
+  };
+
+  const activateMenu = (menuId: WindowsTitlebarMenuId, menuElement: HTMLElement) => {
+    setSubmenuLeft(menuElement.offsetLeft);
+    setActiveMenu(menuId);
   };
 
   useEffect(() => {
@@ -151,6 +177,8 @@ function WindowsTitleBar() {
     appWindow.toggleMaximize();
   };
 
+  const activeMenuConfig = activeMenu ? windowsTitlebarMenus.find((item) => item.id === activeMenu) : null;
+
   return (
     <header className="windows-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
       <div className="windows-titlebar-left" ref={menuRef}>
@@ -160,46 +188,54 @@ function WindowsTitleBar() {
             type="button"
             aria-label="Toggle application menu"
             aria-expanded={menuExpanded}
-            onClick={() => {
-              setMenuExpanded(true);
-            }}
+            onClick={openMenu}
           >
             <Menu className="h-4 w-4" />
           </button>
         ) : (
           <nav className="windows-titlebar-inline-menu" aria-label="Application menu">
             {windowsTitlebarMenus.map((item) => (
-              <div className="windows-titlebar-parent-menu" key={item.id} onPointerEnter={() => setActiveMenu(item.id)}>
+              <div className="windows-titlebar-parent-menu" key={item.id} onPointerEnter={(event) => activateMenu(item.id, event.currentTarget)}>
                 <button
                   className={cn("windows-titlebar-parent-menu-button", activeMenu === item.id && "windows-titlebar-parent-menu-button-active")}
                   type="button"
                   aria-expanded={activeMenu === item.id}
-                  onClick={() => setActiveMenu(item.id)}
-                  onFocus={() => setActiveMenu(item.id)}
+                  onClick={(event) => {
+                    const menuElement = event.currentTarget.parentElement;
+                    if (menuElement) {
+                      activateMenu(item.id, menuElement);
+                    }
+                  }}
+                  onFocus={(event) => {
+                    const menuElement = event.currentTarget.parentElement;
+                    if (menuElement) {
+                      activateMenu(item.id, menuElement);
+                    }
+                  }}
                 >
                   {item.label}
                 </button>
-                {activeMenu === item.id ? (
-                  <div className="windows-titlebar-submenu">
-                    {item.children.map((child) => (
-                      <button
-                        className={cn("windows-titlebar-submenu-item", child === "Close" && "windows-titlebar-submenu-item-danger")}
-                        key={child}
-                        type="button"
-                        onClick={() => {
-                          if (child === "Minimize") appWindow.minimize();
-                          if (child === "Maximize / Restore") appWindow.toggleMaximize();
-                          if (child === "Close") appWindow.close();
-                          collapseMenu();
-                        }}
-                      >
-                        {child}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
               </div>
             ))}
+            {activeMenuConfig ? (
+              <div className="windows-titlebar-submenu" style={{ transform: `translateX(${submenuLeft}px)` }}>
+                {activeMenuConfig.children.map((child) => (
+                  <button
+                    className={cn("windows-titlebar-submenu-item", child === "Close" && "windows-titlebar-submenu-item-danger")}
+                    key={child}
+                    type="button"
+                    onClick={() => {
+                      if (child === "Minimize") appWindow.minimize();
+                      if (child === "Maximize / Restore") appWindow.toggleMaximize();
+                      if (child === "Close") appWindow.close();
+                      collapseMenu();
+                    }}
+                  >
+                    {child}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </nav>
         )}
         {!menuExpanded ? (
