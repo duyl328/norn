@@ -1,0 +1,10 @@
+node_modules
+.npm-cache
+dist
+dist-ssr
+src-tauri/target
+.DS_Store
+*.local
+*.log
+dev-server.err
+dev-server.log

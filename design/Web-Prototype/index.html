@@ -1,0 +1,2620 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LightCode 跨平台轻量代码与 Git 工作台</title>
+  <style>
+    :root {
+      --bg: oklch(97.8% 0.006 245);
+      --surface: oklch(100% 0 0);
+      --fg: oklch(21% 0.018 248);
+      --muted: oklch(50% 0.018 248);
+      --border: oklch(89% 0.009 248);
+      --accent: oklch(57% 0.17 255);
+      --success: oklch(57% 0.15 150);
+      --info: oklch(58% 0.13 230);
+      --warn: oklch(72% 0.14 80);
+      --danger: oklch(47% 0.13 24);
+      --editor-bg: oklch(99% 0.003 248);
+      --panel: oklch(96% 0.006 248);
+      --line: oklch(93% 0.006 248);
+      --shadow: 0 18px 60px oklch(20% 0.02 250 / 0.12);
+      --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+      --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", ui-monospace, Menlo, monospace;
+      --radius: 8px;
+      --radius-sm: 5px;
+    }
+
+    body.dark {
+      --bg: oklch(18% 0.012 248);
+      --surface: oklch(22% 0.014 248);
+      --fg: oklch(93% 0.006 248);
+      --muted: oklch(68% 0.014 248);
+      --border: oklch(32% 0.014 248);
+      --editor-bg: oklch(17% 0.012 248);
+      --panel: oklch(20% 0.014 248);
+      --line: oklch(28% 0.014 248);
+      --shadow: 0 18px 60px oklch(0% 0 0 / 0.28);
+    }
+
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: 14px;
+      line-height: 1.45;
+      letter-spacing: 0;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, textarea, select { font: inherit; letter-spacing: 0; }
+    button { cursor: pointer; }
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.52;
+    }
+    :where(button, [role="button"], input, textarea, select):focus-visible {
+      outline: 2px solid var(--info);
+      outline-offset: 2px;
+    }
+    h1, h2, h3, h4, p { margin: 0; }
+    h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: 0; }
+    svg { width: 16px; height: 16px; display: block; }
+
+    .app {
+      width: min(1440px, calc(100vw - 32px));
+      height: min(920px, calc(100vh - 32px));
+      min-height: 720px;
+      margin: 16px auto;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: 42px 1fr 28px;
+    }
+
+    .titlebar {
+      display: grid;
+      grid-template-columns: 160px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 0 12px;
+      background: color-mix(in oklch, var(--panel) 78%, var(--surface));
+      border-bottom: 1px solid var(--border);
+      user-select: none;
+    }
+    .window-dots { display: flex; gap: 8px; align-items: center; }
+    .dot { width: 12px; height: 12px; border-radius: 999px; border: 1px solid color-mix(in oklch, var(--fg) 12%, transparent); }
+    .dot.close { background: var(--danger); }
+    .dot.min { background: var(--warn); }
+    .dot.max { background: var(--accent); }
+    .title-center {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      min-width: 0;
+    }
+    .title-center strong { color: var(--fg); font-weight: 650; }
+    .title-actions { display: flex; gap: 8px; align-items: center; }
+
+    .app-body {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 64px 1fr;
+      background: var(--editor-bg);
+    }
+
+    .rail {
+      background: color-mix(in oklch, var(--panel) 92%, var(--surface));
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px 8px;
+      gap: 8px;
+    }
+    .rail-spacer { flex: 1; }
+    .rail-btn {
+      width: 44px;
+      height: 44px;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      background: transparent;
+      color: var(--muted);
+      display: grid;
+      place-items: center;
+      position: relative;
+    }
+    .rail-btn:hover { color: var(--fg); background: var(--surface); border-color: var(--border); }
+    .rail-btn.active { color: var(--accent); background: color-mix(in oklch, var(--accent) 10%, transparent); border-color: color-mix(in oklch, var(--accent) 30%, var(--border)); }
+    .rail-btn .tip {
+      position: absolute;
+      left: 54px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: var(--fg);
+      color: var(--surface);
+      border-radius: var(--radius-sm);
+      padding: 5px 8px;
+      font-size: 12px;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 120ms ease;
+      z-index: 20;
+    }
+    .rail-btn:hover .tip { opacity: 1; }
+
+    .workspace {
+      min-width: 0;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+    }
+    .screen {
+      display: none;
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .screen.active {
+      display: grid;
+      animation: screen-in 180ms cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    .btn {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--fg);
+      padding: 8px 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      min-height: 34px;
+      font-weight: 560;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: color-mix(in oklch, var(--fg) 22%, var(--border)); background: color-mix(in oklch, var(--panel) 80%, var(--surface)); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+    .btn.primary:hover { background: color-mix(in oklch, var(--accent) 86%, var(--fg)); }
+    .btn.primary:disabled {
+      background: color-mix(in oklch, var(--accent) 42%, var(--surface));
+      border-color: color-mix(in oklch, var(--accent) 36%, var(--border));
+      color: color-mix(in oklch, var(--fg) 62%, var(--surface));
+    }
+    .btn.loading::before {
+      content: "";
+      width: 11px;
+      height: 11px;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 999px;
+      animation: spin 680ms linear infinite;
+    }
+    .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+    .btn.ghost:hover { color: var(--fg); background: var(--panel); }
+    .btn.danger { color: var(--danger); border-color: color-mix(in oklch, var(--danger) 28%, var(--border)); }
+    .btn.small { min-height: 28px; padding: 5px 9px; font-size: 12px; border-radius: var(--radius-sm); }
+    .icon-btn {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border-radius: var(--radius-sm);
+    }
+    .kbd {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-bottom-color: color-mix(in oklch, var(--fg) 18%, var(--border));
+      border-radius: 4px;
+      padding: 2px 5px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--muted);
+      background: var(--panel);
+      border: 1px solid var(--border);
+    }
+    .pill.ok { color: var(--success); background: color-mix(in oklch, var(--success) 10%, transparent); border-color: color-mix(in oklch, var(--success) 28%, var(--border)); }
+    .pill.info { color: var(--info); background: color-mix(in oklch, var(--info) 10%, transparent); border-color: color-mix(in oklch, var(--info) 28%, var(--border)); }
+    .pill.warn { color: color-mix(in oklch, var(--warn) 80%, var(--fg)); background: color-mix(in oklch, var(--warn) 14%, transparent); border-color: color-mix(in oklch, var(--warn) 34%, var(--border)); }
+
+    .section-title { display: flex; align-items: end; justify-content: space-between; gap: 16px; }
+    .section-title h2 { font-size: 22px; }
+    .section-title p { color: var(--muted); margin-top: 4px; }
+
+    .workbench-screen {
+      grid-template-rows: 44px 1fr;
+      background: var(--editor-bg);
+    }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in oklch, var(--surface) 78%, var(--panel));
+    }
+    .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .repo-switcher { position: relative; min-width: 0; }
+    .branch {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--fg);
+      padding: 5px 8px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+    }
+    .repo-button {
+      max-width: 280px;
+      min-height: 32px;
+      cursor: pointer;
+    }
+    .repo-button .repo-path {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    .repo-caret { color: var(--muted); margin-left: 2px; }
+    .repo-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      z-index: 25;
+      width: 360px;
+      max-width: min(360px, calc(100vw - 120px));
+      display: none;
+      padding: 6px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .repo-menu.open { display: grid; gap: 4px; }
+    .repo-option {
+      width: 100%;
+      border: 0;
+      background: transparent;
+      color: var(--fg);
+      border-radius: var(--radius-sm);
+      padding: 8px;
+      text-align: left;
+      display: grid;
+      gap: 3px;
+    }
+    .repo-option:hover { background: var(--panel); }
+    .repo-option strong { font-size: 13px; }
+    .repo-option span { color: var(--muted); font-family: var(--font-mono); font-size: 11px; overflow-wrap: anywhere; }
+    .quick-open {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      min-width: 0;
+    }
+    .quick-open-panel {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 24;
+      width: min(420px, calc(100vw - 120px));
+      display: none;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      padding: 8px;
+      gap: 8px;
+    }
+    .quick-open-panel.open { display: grid; }
+    .search {
+      min-width: 260px;
+      height: 32px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      color: var(--fg);
+      padding: 0 10px;
+      outline: 2px solid transparent;
+      outline-offset: 2px;
+    }
+    .quick-open .search { width: 100%; min-width: 0; }
+    .quick-open-hint {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      font-family: var(--font-mono);
+      padding: 0 2px 2px;
+    }
+    .search:focus, textarea:focus, input:focus, select:focus {
+      border-color: var(--info);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--info) 14%, transparent);
+    }
+    .workbench-grid {
+      --left-col: 248px;
+      --right-col: 380px;
+      --splitter-col: 8px;
+      --git-rail-col: 22px;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: var(--left-col) var(--splitter-col) minmax(500px, 1fr) var(--git-rail-col) var(--right-col);
+      background:
+        linear-gradient(90deg,
+          color-mix(in oklch, var(--panel) 72%, var(--surface)) 0,
+          color-mix(in oklch, var(--panel) 72%, var(--surface)) var(--left-col),
+          color-mix(in oklch, var(--surface) 82%, var(--panel)) var(--left-col),
+          color-mix(in oklch, var(--surface) 82%, var(--panel)) calc(var(--left-col) + var(--splitter-col)),
+          var(--editor-bg) calc(var(--left-col) + var(--splitter-col)),
+          var(--editor-bg) calc(100% - var(--right-col) - var(--git-rail-col)),
+          color-mix(in oklch, var(--line) 76%, var(--surface)) calc(100% - var(--right-col) - var(--git-rail-col)),
+          color-mix(in oklch, var(--line) 76%, var(--surface)) calc(100% - var(--right-col)),
+          color-mix(in oklch, var(--panel) 62%, var(--surface)) calc(100% - var(--right-col)),
+          color-mix(in oklch, var(--panel) 62%, var(--surface)) 100%);
+    }
+    .workbench-grid.git-collapsed {
+      --right-col: 0px;
+    }
+    .splitter {
+      min-width: 0;
+      cursor: col-resize;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      position: relative;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+    }
+    .splitter::before {
+      content: "";
+      width: 1px;
+      height: 100%;
+      background: var(--border);
+      transition: background 140ms ease, width 140ms ease;
+    }
+    .splitter::after {
+      content: "";
+      position: absolute;
+      width: 3px;
+      height: 28px;
+      border-radius: 999px;
+      background: color-mix(in oklch, var(--muted) 40%, transparent);
+      opacity: 0;
+      transition: opacity 140ms ease, background 140ms ease;
+    }
+    .splitter:hover::before,
+    .splitter:focus-visible::before,
+    .workbench-grid.resizing .splitter::before {
+      width: 2px;
+      background: var(--info);
+    }
+    .splitter:hover::after,
+    .splitter:focus-visible::after,
+    .workbench-grid.resizing .splitter::after {
+      opacity: 1;
+      background: var(--info);
+    }
+    .git-rail {
+      min-width: 0;
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      background: color-mix(in oklch, var(--line) 78%, var(--surface));
+      display: grid;
+      grid-template-rows: 1fr auto 1fr;
+      justify-items: center;
+      align-items: center;
+      padding: 10px 0;
+      gap: 10px;
+      box-shadow: inset 1px 0 0 color-mix(in oklch, var(--surface) 70%, transparent);
+    }
+    .git-status-track {
+      display: grid;
+      gap: 5px;
+      align-content: center;
+    }
+    .git-status-dot {
+      width: 4px;
+      height: 20px;
+      border-radius: 999px;
+      background: var(--border);
+      border: 1px solid color-mix(in oklch, var(--fg) 8%, transparent);
+    }
+    .git-status-dot.change { background: color-mix(in oklch, var(--info) 72%, var(--surface)); }
+    .git-status-dot.stage { background: color-mix(in oklch, var(--success) 76%, var(--surface)); }
+    .git-status-dot.push { background: color-mix(in oklch, var(--warn) 78%, var(--surface)); }
+    .git-rail-toggle {
+      width: 18px;
+      height: 34px;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      display: inline-grid;
+      place-items: center;
+      padding: 0;
+    }
+    .git-rail-toggle:hover,
+    .git-rail-toggle[aria-expanded="false"] {
+      color: var(--info);
+      border-color: color-mix(in oklch, var(--info) 28%, var(--border));
+      background: color-mix(in oklch, var(--info) 8%, var(--surface));
+    }
+    .git-rail-toggle svg {
+      width: 14px;
+      height: 14px;
+      transform: rotate(90deg);
+      transition: transform 160ms ease;
+    }
+    .workbench-grid.git-collapsed .git-rail-toggle svg {
+      transform: rotate(-90deg);
+    }
+    .git-rail-count {
+      min-width: 16px;
+      height: 16px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: color-mix(in oklch, var(--fg) 8%, var(--surface));
+      color: var(--muted);
+      border: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .panel {
+      min-width: 0;
+      min-height: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .panel.left {
+      background: color-mix(in oklch, var(--panel) 64%, var(--surface));
+    }
+    .panel.right {
+      border-right: 0;
+      border-left: 0;
+      background: color-mix(in oklch, var(--panel) 52%, var(--surface));
+      box-shadow: inset 12px 0 28px oklch(20% 0.02 250 / 0.035);
+      transition: opacity 160ms ease, transform 160ms ease;
+    }
+    .workbench-grid.git-collapsed .panel.right {
+      opacity: 0;
+      transform: translateX(12px);
+      pointer-events: none;
+      visibility: hidden;
+    }
+    .panel-head {
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .panel-head > div {
+      display: grid;
+      gap: 1px;
+    }
+    .panel-head > div > span:not(.panel-kicker) {
+      color: var(--fg);
+    }
+    .panel-kicker {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .repo-card {
+      margin: 10px 10px 6px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: color-mix(in oklch, var(--surface) 78%, var(--panel));
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .repo-card strong {
+      display: block;
+      font-size: 13px;
+      line-height: 1.2;
+    }
+    .repo-card small {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      overflow-wrap: anywhere;
+    }
+    .repo-meter {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .repo-meter-bar {
+      height: 6px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: color-mix(in oklch, var(--border) 72%, var(--surface));
+    }
+    .repo-meter-bar span {
+      display: block;
+      width: 44%;
+      height: 100%;
+      background: linear-gradient(90deg, var(--info), var(--success));
+      border-radius: inherit;
+    }
+    .tree-caption {
+      padding: 8px 12px 3px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .tree, .change-list, .settings-list {
+      overflow: auto;
+      padding: 8px;
+    }
+    .empty-state {
+      display: none;
+      margin: 8px;
+      border: 1px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      background: color-mix(in oklch, var(--panel) 70%, var(--surface));
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .empty-state strong {
+      display: block;
+      color: var(--fg);
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+    .empty-state.open { display: block; }
+    .tree-group { margin: 4px 0 10px; }
+    .tree-row {
+      min-height: 28px;
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) auto;
+      gap: 6px;
+      align-items: center;
+      border-radius: var(--radius-sm);
+      padding: 4px 7px;
+      color: var(--fg);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    .tree-row.file-row { min-height: 42px; }
+    .tree-row.dim { color: var(--muted); }
+    .tree-row.active, .tree-row:hover {
+      background: color-mix(in oklch, var(--surface) 84%, var(--info));
+      box-shadow: inset 2px 0 0 var(--info);
+    }
+    .tree-row .status { color: var(--success); font-weight: 800; }
+    .tree-row[role="button"] { cursor: pointer; }
+    .tree-row[role="button"]:focus-visible,
+    .change-row:focus-within {
+      background: var(--panel);
+      box-shadow: 0 0 0 2px color-mix(in oklch, var(--info) 24%, transparent);
+    }
+    .file-copy {
+      min-width: 0;
+      display: grid;
+      gap: 2px;
+    }
+    .file-copy strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .file-copy small {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--muted);
+      font-size: 10px;
+      font-family: var(--font-body);
+    }
+
+    .editor {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 40px auto 1fr;
+      background: var(--editor-bg);
+      box-shadow:
+        inset 1px 0 0 color-mix(in oklch, var(--surface) 70%, var(--border)),
+        inset -1px 0 0 color-mix(in oklch, var(--surface) 70%, var(--border));
+    }
+    .tabs {
+      display: flex;
+      align-items: stretch;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in oklch, var(--surface) 76%, var(--panel));
+      overflow-x: auto;
+    }
+    .tab {
+      min-width: 132px;
+      max-width: 190px;
+      border: 0;
+      border-right: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    .tab.active { background: var(--editor-bg); color: var(--fg); box-shadow: inset 0 -2px 0 var(--info); }
+    .editor-context {
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in oklch, var(--editor-bg) 86%, var(--surface));
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+    .file-title {
+      min-width: 0;
+      display: grid;
+      gap: 3px;
+    }
+    .file-title strong {
+      font-family: var(--font-display);
+      font-size: 17px;
+      font-weight: 720;
+    }
+    .file-title span {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .file-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .code-wrap {
+      min-height: 0;
+      overflow: auto;
+      display: grid;
+      grid-template-columns: 58px minmax(0, 1fr);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.62;
+      background: var(--editor-bg);
+    }
+    .lines {
+      padding: 16px 12px;
+      text-align: right;
+      color: color-mix(in oklch, var(--muted) 70%, transparent);
+      border-right: 1px solid var(--border);
+      user-select: none;
+    }
+    .code {
+      padding: 16px 18px;
+      white-space: pre;
+      color: var(--fg);
+    }
+    .tok-key { color: var(--info); }
+    .tok-str { color: var(--accent); }
+    .tok-com { color: var(--muted); }
+    .tok-warn { color: var(--warn); }
+    .current-line {
+      display: inline-block;
+      min-width: 100%;
+      background: color-mix(in oklch, var(--info) 8%, transparent);
+      border-radius: var(--radius-sm);
+    }
+
+    .change-row {
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      padding: 10px;
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+    .change-row:hover, .change-row.active { background: var(--panel); border-color: var(--border); }
+    .panel.right .change-row {
+      background: color-mix(in oklch, var(--surface) 76%, var(--panel));
+      border-color: color-mix(in oklch, var(--border) 76%, transparent);
+      margin-bottom: 8px;
+    }
+    .panel.right .change-row:hover,
+    .panel.right .change-row.active {
+      border-color: color-mix(in oklch, var(--accent) 34%, var(--border));
+      background: var(--surface);
+      box-shadow: 0 8px 22px oklch(20% 0.02 250 / 0.055);
+    }
+    .file-badge {
+      width: 22px;
+      height: 22px;
+      display: grid;
+      place-items: center;
+      border-radius: 5px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .file-badge.m { color: var(--info); }
+    .file-badge.a { color: var(--success); }
+    .file-badge.d { color: var(--danger); }
+    .change-main strong { display: block; font-family: var(--font-mono); font-size: 12px; }
+    .change-main span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .git-summary {
+      border-bottom: 1px solid var(--border);
+      padding: 10px 12px;
+      display: grid;
+      gap: 10px;
+      background:
+        linear-gradient(180deg,
+          color-mix(in oklch, var(--surface) 86%, var(--accent)) 0%,
+          color-mix(in oklch, var(--surface) 80%, var(--panel)) 100%);
+    }
+    .git-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .git-summary-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      padding: 8px;
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+    }
+    .git-summary-card span {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      text-transform: uppercase;
+    }
+    .git-summary-card strong {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+    }
+    .commit-gate {
+      border: 1px solid color-mix(in oklch, var(--success) 28%, var(--border));
+      background: color-mix(in oklch, var(--success) 8%, var(--surface));
+      border-radius: var(--radius);
+      padding: 9px 10px;
+      color: var(--fg);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12px;
+    }
+    .commit-gate strong { font-weight: 700; }
+    .commit-gate span { color: var(--muted); }
+    .branch-panel {
+      border-bottom: 1px solid var(--border);
+      padding: 10px 12px;
+      display: grid;
+      gap: 8px;
+      background: color-mix(in oklch, var(--surface) 78%, var(--panel));
+    }
+    .branch-current {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-width: 0;
+    }
+    .branch-current strong {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .branch-current span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      font-family: var(--font-mono);
+      margin-top: 2px;
+    }
+    .branch-list {
+      display: grid;
+      gap: 4px;
+    }
+    .branch-row {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--fg);
+      min-height: 34px;
+      padding: 6px 8px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 8px;
+      text-align: left;
+    }
+    .branch-row:hover {
+      border-color: color-mix(in oklch, var(--info) 34%, var(--border));
+      background: color-mix(in oklch, var(--info) 6%, var(--surface));
+    }
+    .branch-row.active {
+      border-color: color-mix(in oklch, var(--success) 32%, var(--border));
+      background: color-mix(in oklch, var(--success) 7%, var(--surface));
+    }
+    .branch-row strong { font-family: var(--font-mono); font-size: 12px; }
+    .branch-row span { color: var(--muted); font-size: 11px; }
+    .commit-box {
+      padding: 12px;
+      border-top: 1px solid var(--border);
+      display: grid;
+      gap: 10px;
+    }
+    .commit-box textarea {
+      width: 100%;
+      min-height: 92px;
+      resize: vertical;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px;
+      color: var(--fg);
+      background: var(--editor-bg);
+      outline: 2px solid transparent;
+      outline-offset: 2px;
+    }
+    .notice {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--muted);
+      border-radius: var(--radius);
+      padding: 10px;
+      font-size: 12px;
+    }
+    .notice.error { color: var(--danger); border-color: color-mix(in oklch, var(--danger) 32%, var(--border)); background: color-mix(in oklch, var(--danger) 9%, transparent); }
+    .notice.success { color: var(--success); border-color: color-mix(in oklch, var(--success) 32%, var(--border)); background: color-mix(in oklch, var(--success) 9%, transparent); }
+
+    .diff-screen {
+      grid-template-rows: 44px 1fr;
+      background: var(--editor-bg);
+    }
+    .diff-grid {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 292px minmax(0, 1fr) 58px;
+    }
+    .diff-view {
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      background: var(--editor-bg);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+    }
+    .diff-title {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: color-mix(in oklch, var(--surface) 88%, var(--panel));
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+    .diff-code { padding: 14px 16px 28px; display: grid; gap: 10px; }
+    .diff-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px 16px 0;
+      color: var(--muted);
+      font-family: var(--font-body);
+      font-size: 12px;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px 8px;
+      background: var(--surface);
+    }
+    .legend-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--muted);
+    }
+    .legend-dot.add { background: var(--success); }
+    .legend-dot.del { background: var(--danger); }
+    .legend-dot.mod { background: var(--info); }
+    .side-by-side {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--surface);
+    }
+    .diff-columns {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in oklch, var(--surface) 78%, var(--panel));
+      color: var(--muted);
+      font-family: var(--font-body);
+      font-size: 12px;
+      font-weight: 650;
+    }
+    .diff-columns span {
+      padding: 9px 12px;
+    }
+    .diff-columns span + span { border-left: 1px solid var(--border); }
+    .diff-pair {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      min-height: 28px;
+      border-bottom: 1px solid color-mix(in oklch, var(--border) 62%, transparent);
+    }
+    .diff-pair:last-child { border-bottom: 0; }
+    .diff-pair.added { background: color-mix(in oklch, var(--success) 6%, transparent); }
+    .diff-pair.removed { background: color-mix(in oklch, var(--danger) 6%, transparent); }
+    .diff-pair.modified { background: color-mix(in oklch, var(--info) 4%, transparent); }
+    .diff-cell {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr);
+      min-width: 0;
+      align-items: stretch;
+      color: color-mix(in oklch, var(--fg) 86%, var(--muted));
+    }
+    .diff-cell + .diff-cell { border-left: 1px solid var(--border); }
+    .diff-cell.empty {
+      background:
+        repeating-linear-gradient(
+          -45deg,
+          color-mix(in oklch, var(--border) 28%, transparent) 0,
+          color-mix(in oklch, var(--border) 28%, transparent) 1px,
+          transparent 1px,
+          transparent 8px
+        );
+      color: var(--muted);
+    }
+    .diff-cell.add { background: color-mix(in oklch, var(--success) 10%, transparent); }
+    .diff-cell.del { background: color-mix(in oklch, var(--danger) 9%, transparent); }
+    .diff-cell.mod { background: color-mix(in oklch, var(--info) 6%, transparent); }
+    .ln {
+      color: var(--muted);
+      text-align: right;
+      padding: 6px 10px 6px 4px;
+      user-select: none;
+      border-right: 1px solid color-mix(in oklch, var(--border) 74%, transparent);
+      font-variant-numeric: tabular-nums;
+    }
+    .diff-text {
+      padding: 6px 10px;
+      white-space: pre;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .same { color: color-mix(in oklch, var(--muted) 70%, var(--fg)); }
+    .mark-add,
+    .mark-del,
+    .mark-mod {
+      border-radius: 3px;
+      padding: 1px 2px;
+      font-weight: 720;
+    }
+    .mark-add { background: color-mix(in oklch, var(--success) 24%, transparent); color: color-mix(in oklch, var(--success) 76%, var(--fg)); }
+    .mark-del { background: color-mix(in oklch, var(--danger) 20%, transparent); color: color-mix(in oklch, var(--danger) 76%, var(--fg)); text-decoration: line-through; text-decoration-thickness: 1px; }
+    .mark-mod { background: color-mix(in oklch, var(--info) 19%, transparent); color: color-mix(in oklch, var(--info) 72%, var(--fg)); }
+    .fold-row {
+      display: grid;
+      grid-template-columns: 1fr;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in oklch, var(--panel) 76%, var(--surface));
+    }
+    .fold-toggle {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      min-height: 34px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-family: var(--font-body);
+      font-size: 12px;
+    }
+    .fold-toggle:hover {
+      color: var(--fg);
+      background: color-mix(in oklch, var(--info) 5%, transparent);
+    }
+    .fold-content[hidden] { display: none; }
+    .file-map {
+      min-height: 0;
+      background: color-mix(in oklch, var(--surface) 72%, var(--panel));
+      padding: 12px 10px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 10px;
+    }
+    .map-label {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      margin: 0 auto;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+    .map-track {
+      position: relative;
+      width: 18px;
+      margin: 0 auto;
+      border-radius: 999px;
+      background: color-mix(in oklch, var(--border) 62%, transparent);
+      overflow: hidden;
+    }
+    .map-mark {
+      position: absolute;
+      left: 3px;
+      right: 3px;
+      min-height: 5px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in oklch, var(--surface) 56%, transparent);
+    }
+    .map-mark.add { background: var(--success); }
+    .map-mark.del { background: var(--danger); }
+    .map-mark.mod { background: var(--info); }
+    .map-mark.ctx { background: color-mix(in oklch, var(--muted) 34%, transparent); }
+    .map-stats {
+      display: grid;
+      gap: 5px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      text-align: center;
+    }
+    .diff-line {
+      display: grid;
+      grid-template-columns: 48px 1fr;
+      min-height: 24px;
+      border-radius: 4px;
+    }
+    .diff-line .ln { color: var(--muted); text-align: right; padding-right: 12px; user-select: none; }
+    .diff-line.add { background: color-mix(in oklch, var(--success) 11%, transparent); }
+    .diff-line.del { background: color-mix(in oklch, var(--danger) 10%, transparent); }
+    .diff-line.ctx { color: color-mix(in oklch, var(--fg) 88%, var(--muted)); }
+
+    .commit-header h2 { font-size: 28px; }
+    .commit-header p { color: var(--muted); margin-top: 6px; max-width: 64ch; }
+    .commit-form {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+    }
+    .field { display: grid; gap: 7px; }
+    .field label { font-weight: 650; }
+    .field textarea, .field input, .field select {
+      border: 1px solid var(--border);
+      background: var(--editor-bg);
+      color: var(--fg);
+      border-radius: var(--radius);
+      padding: 10px 11px;
+      outline: 2px solid transparent;
+      outline-offset: 2px;
+    }
+    .field textarea { min-height: 120px; resize: vertical; }
+    .commit-options { display: flex; flex-wrap: wrap; gap: 10px; }
+    .commit-checks {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .commit-check {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--editor-bg);
+      padding: 9px;
+      display: grid;
+      gap: 4px;
+    }
+    .commit-check strong {
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .commit-check span {
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .commit-check.ok {
+      border-color: color-mix(in oklch, var(--success) 28%, var(--border));
+      background: color-mix(in oklch, var(--success) 7%, var(--editor-bg));
+    }
+    .commit-check.warn {
+      border-color: color-mix(in oklch, var(--warn) 34%, var(--border));
+      background: color-mix(in oklch, var(--warn) 8%, var(--editor-bg));
+    }
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .summary-list { padding: 12px; overflow: auto; display: grid; gap: 8px; align-content: start; }
+    .summary-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      background: var(--editor-bg);
+    }
+    .summary-card strong { display: block; margin-bottom: 4px; }
+    .summary-card span { color: var(--muted); font-size: 12px; }
+
+    .settings-screen {
+      grid-template-columns: 260px 1fr;
+      background: var(--editor-bg);
+    }
+    .settings-nav {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 14px;
+      display: grid;
+      align-content: start;
+      gap: 8px;
+    }
+    .settings-nav button {
+      width: 100%;
+      text-align: left;
+      justify-content: flex-start;
+    }
+    .settings-content {
+      overflow: auto;
+      padding: 28px;
+      display: grid;
+      gap: 18px;
+      align-content: start;
+    }
+    .settings-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .settings-section header {
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-section h2 { font-size: 20px; }
+    .settings-section p { color: var(--muted); margin-top: 4px; }
+    .setting-row {
+      display: grid;
+      grid-template-columns: 1fr 260px;
+      gap: 18px;
+      align-items: center;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+    .setting-row:last-child { border-bottom: 0; }
+    .setting-row strong { display: block; }
+    .setting-row span { color: var(--muted); font-size: 12px; }
+    .segmented {
+      display: inline-grid;
+      grid-auto-flow: column;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--panel);
+    }
+    .segmented button {
+      border: 0;
+      border-right: 1px solid var(--border);
+      min-height: 32px;
+      padding: 0 10px;
+      background: transparent;
+      color: var(--muted);
+    }
+    .segmented button:last-child { border-right: 0; }
+    .segmented button.active { background: var(--surface); color: var(--fg); }
+
+    .statusbar {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 0 10px;
+      border-top: 1px solid var(--border);
+      background: color-mix(in oklch, var(--panel) 92%, var(--surface));
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .status-left, .status-right { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .status-left span:first-child { overflow: hidden; text-overflow: ellipsis; }
+    .toast {
+      position: absolute;
+      right: 18px;
+      bottom: 18px;
+      z-index: 30;
+      min-width: 280px;
+      max-width: 420px;
+      border: 1px solid color-mix(in oklch, var(--accent) 34%, var(--border));
+      background: color-mix(in oklch, var(--surface) 94%, var(--accent));
+      color: var(--fg);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      padding: 12px 14px;
+      display: none;
+    }
+    .toast.show { display: block; animation: lift 180ms cubic-bezier(0.2, 0, 0, 1); }
+    .toast strong { display: block; margin-bottom: 3px; }
+    .toast span { color: var(--muted); font-size: 12px; }
+    .modal-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 40;
+      display: none;
+      place-items: center;
+      padding: 28px;
+      background: oklch(15% 0.012 248 / 0.42);
+    }
+    .modal-layer.open { display: grid; animation: fade 120ms cubic-bezier(0.2, 0, 0, 1); }
+    .modal-layer.open .commit-dialog { animation: modal-rise 180ms cubic-bezier(0.2, 0, 0, 1); }
+    .commit-dialog {
+      width: min(720px, 100%);
+      max-height: min(760px, calc(100vh - 72px));
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      background: var(--surface);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .dialog-head {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .dialog-head h2 { font-size: 20px; }
+    .dialog-head p { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .dialog-body {
+      min-height: 0;
+      overflow: auto;
+      padding: 16px;
+      display: grid;
+      gap: 14px;
+    }
+    .commit-file-list {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--editor-bg);
+    }
+    .commit-file-row {
+      display: grid;
+      grid-template-columns: 24px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      min-height: 42px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .commit-file-row:last-child { border-bottom: 0; }
+    .commit-file-row strong { display: block; font-family: var(--font-mono); font-size: 12px; }
+    .commit-file-row span { color: var(--muted); font-size: 12px; }
+    .dialog-foot {
+      border-top: 1px solid var(--border);
+      background: color-mix(in oklch, var(--panel) 70%, var(--surface));
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .dialog-foot .toolbar-right { flex-wrap: wrap; justify-content: flex-end; }
+    @keyframes fade {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes screen-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes modal-rise {
+      from { opacity: 0; transform: translateY(10px) scale(0.985); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes lift {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 1ms !important;
+      }
+      .screen.active,
+      .modal-layer.open,
+      .modal-layer.open .commit-dialog,
+      .toast.show {
+        animation: none !important;
+        transform: none !important;
+      }
+    }
+
+    @media (max-width: 1180px) {
+      .app { width: 100vw; height: 100vh; min-height: 680px; margin: 0; border-radius: 0; border: 0; }
+      .workbench-grid {
+        --left-col: 220px;
+        --right-col: 320px;
+        grid-template-columns: var(--left-col) var(--splitter-col) minmax(360px, 1fr) var(--git-rail-col) var(--right-col);
+      }
+    }
+    @media (max-width: 900px) {
+      .titlebar { grid-template-columns: 100px 1fr auto; }
+      .title-actions .pill { display: none; }
+      .app-body { grid-template-columns: 54px 1fr; }
+      .rail-btn { width: 38px; height: 38px; }
+      .settings-screen { grid-template-columns: 1fr; overflow: auto; }
+      .workbench-grid {
+        --left-col: 210px;
+        --right-col: 320px;
+        grid-template-columns: var(--left-col) var(--splitter-col) minmax(0, 1fr) var(--git-rail-col);
+        grid-template-rows: minmax(0, 1fr) 280px;
+      }
+      .git-rail { grid-column: 4; grid-row: 1; }
+      .panel.right { grid-column: 1 / -1; grid-row: 2; border-left: 0; border-top: 1px solid var(--border); }
+      .workbench-grid.git-collapsed { grid-template-rows: minmax(0, 1fr) 0px; }
+      .workbench-grid.git-collapsed .panel.right { min-height: 0; }
+      .diff-grid { grid-template-columns: 240px minmax(0, 1fr) 48px; }
+      .diff-cell { grid-template-columns: 36px minmax(0, 1fr); }
+      .diff-text { padding-inline: 8px; }
+      .setting-row { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 680px) {
+      .title-center { justify-content: flex-start; }
+      .quick-open-panel {
+        left: auto;
+        right: 0;
+        transform: none;
+        width: min(360px, calc(100vw - 80px));
+      }
+      .repo-button { max-width: 190px; }
+      .diff-grid, .workbench-grid {
+        --left-col: 0px;
+        --right-col: 0px;
+        grid-template-columns: 1fr;
+      }
+      .splitter,
+      .git-rail { display: none; }
+      .file-map { display: none; }
+      .diff-columns,
+      .diff-pair {
+        grid-template-columns: 1fr;
+      }
+      .diff-columns span + span,
+      .diff-cell + .diff-cell { border-left: 0; border-top: 1px solid var(--border); }
+      .panel { min-height: 220px; border-right: 0; border-bottom: 1px solid var(--border); }
+      .panel.right { grid-column: auto; min-height: 300px; }
+      .editor { min-height: 420px; }
+      .commit-checks { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="titlebar">
+      <div class="window-dots" aria-hidden="true">
+        <span class="dot close"></span>
+        <span class="dot min"></span>
+        <span class="dot max"></span>
+      </div>
+      <div class="title-center">
+        <strong>LightCode</strong>
+        <span id="titleContext">norn · main · 工作区有 4 个变更</span>
+      </div>
+      <div class="title-actions">
+        <span class="pill ok">Git CLI 已连接</span>
+        <button class="btn small ghost" id="themeToggle" type="button">切换深色</button>
+      </div>
+    </header>
+
+    <div class="app-body">
+      <aside class="rail" aria-label="主导航">
+        <button class="rail-btn active" type="button" data-view="workbench" aria-label="工作台">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v14H4z"/><path d="M9 5v14"/><path d="M15 5v14"/></svg>
+          <span class="tip">工作台</span>
+        </button>
+        <button class="rail-btn" type="button" data-view="diff" aria-label="Diff 审查">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 4v16"/><path d="M17 4v16"/><path d="M4 8h6"/><path d="M14 16h6"/><path d="M15 8h4"/><path d="M5 16h4"/></svg>
+          <span class="tip">Diff 审查</span>
+        </button>
+        <div class="rail-spacer"></div>
+        <button class="rail-btn" type="button" data-view="settings" aria-label="设置">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/><path d="M4 12h2m12 0h2M12 4v2m0 12v2M6.7 6.7l1.4 1.4m7.8 7.8 1.4 1.4m0-10.6-1.4 1.4m-7.8 7.8-1.4 1.4"/></svg>
+          <span class="tip">设置</span>
+        </button>
+      </aside>
+
+      <main class="workspace">
+        <section class="screen workbench-screen active" data-screen="workbench" data-od-id="workbench-screen">
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <div class="repo-switcher">
+                <button class="branch repo-button" id="repoMenuButton" type="button" aria-expanded="false" aria-label="切换仓库">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h6l2 2h8v10H4z"/></svg>
+                  <span class="repo-path" id="repoPath">D:\yuanll\code\norn</span>
+                  <span class="repo-caret">⌄</span>
+                </button>
+                <div class="repo-menu" id="repoMenu" role="menu" aria-label="最近仓库">
+                  <button class="repo-option" type="button" role="menuitem" data-repo="norn" data-path="D:\yuanll\code\norn" data-summary="main · 4 个变更">
+                    <strong>norn</strong>
+                    <span>D:\yuanll\code\norn · main · 4 个变更</span>
+                  </button>
+                  <button class="repo-option" type="button" role="menuitem" data-repo="ui-shell" data-path="C:\work\ui-shell" data-summary="feature/panel · 干净">
+                    <strong>ui-shell</strong>
+                    <span>C:\work\ui-shell · feature/panel · 干净</span>
+                  </button>
+                  <button class="repo-option" type="button" role="menuitem" data-repo="选择文件夹" data-path="打开系统文件夹选择器" data-summary="选择后立即进入工作台">
+                    <strong>打开其他文件夹...</strong>
+                    <span>选择完成后刷新文件树、编辑器 Tab 和 Git 状态</span>
+                  </button>
+                </div>
+              </div>
+              <span class="branch">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3v12"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="6" r="3"/><path d="M6 12c0-3.5 2.5-6 9-6"/></svg>
+                <span id="topBranchName">main</span>
+              </span>
+              <span class="pill ok">已保存</span>
+              <span class="pill info" id="changeCount">4 个变更</span>
+            </div>
+            <div class="quick-open">
+              <button class="btn small" type="button" id="quickOpenButton" aria-expanded="false" aria-controls="quickOpenPanel">
+                快速打开
+                <span class="kbd">Double Shift</span>
+              </button>
+              <div class="quick-open-panel" id="quickOpenPanel">
+                <input class="search" id="fileSearch" type="search" placeholder="输入文件名，例如 status.ts" aria-label="搜索项目文件" />
+                <div class="quick-open-hint">
+                  <span>只过滤项目文件</span>
+                  <span>Esc 关闭</span>
+                </div>
+              </div>
+            </div>
+            <div class="toolbar-right">
+              <button class="btn small" type="button" data-view-button="diff">查看 Diff</button>
+              <button class="btn small primary" type="button" data-open-commit>提交</button>
+            </div>
+          </div>
+          <div class="workbench-grid">
+            <aside class="panel left" aria-label="仓库导航">
+              <div class="panel-head">
+                <div>
+                  <span class="panel-kicker">Explore</span>
+                  <span>项目文件</span>
+                </div>
+                <button class="btn small ghost icon-btn" type="button" aria-label="刷新文件树">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 11a8 8 0 0 0-14-5"/><path d="M4 5v5h5"/><path d="M4 13a8 8 0 0 0 14 5"/><path d="M20 19v-5h-5"/></svg>
+                </button>
+              </div>
+              <div class="repo-card" aria-label="当前仓库概览">
+                <div>
+                  <strong>norn</strong>
+                  <small>D:\yuanll\code\norn</small>
+                </div>
+                <div class="repo-meter" aria-label="今日活跃文件">
+                  <div class="repo-meter-bar"><span></span></div>
+                  <span>4 个变更</span>
+                </div>
+              </div>
+              <div class="tree-caption">
+                <span>目录</span>
+                <span>最近修改</span>
+              </div>
+              <div class="tree" id="fileTree">
+                <div class="tree-group">
+                  <div class="tree-row"><span>▾</span><strong>src</strong><span></span></div>
+                  <div class="tree-row file-row active" data-file="main.ts" role="button" tabindex="0" aria-label="打开 main.ts，上次修改 09:41"><span></span><span class="file-copy"><strong>main.ts</strong><small>09:41 修改</small></span><span></span></div>
+                  <div class="tree-row file-row" data-file="git/status.ts" role="button" tabindex="0" aria-label="打开 git/status.ts，上次修改 09:32"><span></span><span class="file-copy"><strong>git/status.ts</strong><small>09:32 修改</small></span><span></span></div>
+                  <div class="tree-row file-row" data-file="editor/actions.ts" role="button" tabindex="0" aria-label="打开 editor/actions.ts，昨天 18:05 修改"><span></span><span class="file-copy"><strong>editor/actions.ts</strong><small>昨天 18:05 修改</small></span><span></span></div>
+                  <div class="tree-row file-row" data-file="ui/workbench.ts" role="button" tabindex="0" aria-label="打开 ui/workbench.ts，周一 16:20 修改"><span></span><span class="file-copy"><strong>ui/workbench.ts</strong><small>周一 16:20 修改</small></span><span></span></div>
+                </div>
+                <div class="tree-group">
+                  <div class="tree-row"><span>▾</span><strong>docs</strong><span></span></div>
+                  <div class="tree-row file-row" data-file="docs/requirements.md" role="button" tabindex="0" aria-label="打开 docs/requirements.md，上次修改 08:57"><span></span><span class="file-copy"><strong>requirements.md</strong><small>08:57 修改</small></span><span></span></div>
+                  <div class="tree-row file-row dim" data-file="docs/shortcuts.md" role="button" tabindex="0" aria-label="打开 docs/shortcuts.md，5月28日修改"><span></span><span class="file-copy"><strong>shortcuts.md</strong><small>5月28日 修改</small></span><span></span></div>
+                </div>
+                <div class="tree-group">
+                  <div class="tree-row"><span>▾</span><strong>config</strong><span></span></div>
+                  <div class="tree-row file-row" data-file="tauri.conf.json" role="button" tabindex="0" aria-label="打开 tauri.conf.json，刚刚修改"><span></span><span class="file-copy"><strong>tauri.conf.json</strong><small>刚刚修改</small></span><span></span></div>
+                  <div class="tree-row file-row dim" data-file=".gitignore" role="button" tabindex="0" aria-label="打开 .gitignore，4月12日修改"><span></span><span class="file-copy"><strong>.gitignore</strong><small>4月12日 修改</small></span><span></span></div>
+                </div>
+                <div class="tree-row dim"><span>▸</span><strong>node_modules</strong><span></span></div>
+                <div class="tree-row dim"><span>▸</span><strong>target</strong><span></span></div>
+                <div class="tree-group">
+                  <div class="tree-row"><span>▾</span><strong>临时文件</strong><span></span></div>
+                  <div class="tree-row file-row dim" data-file="temp/patch-preview.diff" role="button" tabindex="0" aria-label="打开 temp/patch-preview.diff，12:08 修改"><span></span><span class="file-copy"><strong>patch-preview.diff</strong><small>12:08 修改</small></span><span></span></div>
+                  <div class="tree-row file-row dim" data-file="temp/commit-message.txt" role="button" tabindex="0" aria-label="打开 temp/commit-message.txt，11:56 修改"><span></span><span class="file-copy"><strong>commit-message.txt</strong><small>11:56 修改</small></span><span></span></div>
+                </div>
+              </div>
+              <div class="empty-state" id="fileSearchEmpty" role="status" aria-live="polite">
+                <strong>没有匹配的文件</strong>
+                换一个关键词，或用 Double Shift 搜索命令和文件。
+              </div>
+            </aside>
+            <button class="splitter" id="fileTreeSplitter" type="button" aria-label="调整项目文件宽度" aria-orientation="vertical" title="拖拽调整文件树宽度，双击恢复默认"></button>
+            <section class="editor" data-od-id="editor-pane">
+              <div class="tabs">
+                <button class="tab active" type="button"><span>main.ts</span><span>●</span></button>
+                <button class="tab" type="button"><span>status.ts</span><span></span></button>
+                <button class="tab" type="button"><span>requirements.md</span><span></span></button>
+              </div>
+              <div class="editor-context" aria-label="当前文件上下文">
+                <div class="file-title">
+                  <strong id="activeFileTitle">main.ts</strong>
+                  <span id="activeFileMeta">src/main.ts · TypeScript · 今天 09:41 修改</span>
+                </div>
+                <div class="file-actions">
+                  <span class="pill info">未保存</span>
+                  <button class="btn small" type="button" data-view-button="diff">查看当前 Diff</button>
+                </div>
+              </div>
+              <div class="code-wrap">
+                <pre class="lines">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18</pre>
+                <pre class="code"><span class="tok-key">import</span> { createApp } <span class="tok-key">from</span> <span class="tok-str">"./app"</span>;
+<span class="tok-key">import</span> { readGitStatus } <span class="tok-key">from</span> <span class="tok-str">"./git/status"</span>;
+
+<span class="tok-com">// MVP：打开仓库后只加载轻量状态，不做项目级索引。</span>
+<span class="tok-key">const</span> workspace = <span class="tok-key">await</span> openWorkspace({
+  path: <span class="tok-str">"D:\\yuanll\\code\\norn"</span>,
+  ignore: [<span class="tok-str">".git"</span>, <span class="tok-str">"node_modules"</span>, <span class="tok-str">"target"</span>, <span class="tok-str">"dist"</span>],
+});
+
+<span class="current-line"><span class="tok-key">const</span> git = <span class="tok-key">await</span> readGitStatus(workspace.root, { porcelain: <span class="tok-str">"v1-z"</span> });</span>
+
+createApp({
+  workspace,
+  git,
+  keymap: <span class="tok-str">"jetbrains-compatible"</span>,
+  editor: <span class="tok-str">"codemirror-6"</span>,
+});
+</pre>
+              </div>
+            </section>
+            <div class="git-rail" aria-label="Git 工作区边界">
+              <div class="git-status-track" aria-hidden="true">
+                <span class="git-status-dot change"></span>
+                <span class="git-status-dot stage"></span>
+                <span class="git-status-dot push"></span>
+              </div>
+              <button class="git-rail-toggle" id="gitRailToggle" type="button" aria-expanded="true" aria-controls="gitPanel" title="折叠或展开 Git 工作区">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+              </button>
+              <span class="git-rail-count" id="gitRailCount" aria-label="4 个工作区变更">4</span>
+            </div>
+            <aside class="panel right" id="gitPanel">
+              <div class="panel-head">
+                <div>
+                  <span class="panel-kicker">Git 工作区</span>
+                  <span>变更队列</span>
+                </div>
+                <button class="btn small" type="button" id="stageAll">全部暂存</button>
+              </div>
+              <div class="git-summary" aria-label="Git 摘要">
+                <div class="git-summary-grid">
+                  <div class="git-summary-card">
+                    <span>工作区</span>
+                    <strong id="summaryTotal">4</strong>
+                  </div>
+                  <div class="git-summary-card">
+                    <span>已暂存</span>
+                    <strong id="summaryStaged">1</strong>
+                  </div>
+                  <div class="git-summary-card">
+                    <span>远端</span>
+                    <strong>ahead 1</strong>
+                  </div>
+                </div>
+                <div class="commit-gate" id="commitGate">
+                  <div>
+                    <strong>提交前检查</strong>
+                    <span id="commitGateText">已有 staged files，可打开确认窗口。</span>
+                  </div>
+                  <span class="pill ok" id="commitGatePill">ready</span>
+                </div>
+              </div>
+              <div class="branch-panel" aria-label="Git 分支">
+                <div class="branch-current">
+                  <div>
+                    <strong id="currentBranchName">main</strong>
+                    <span id="currentBranchTrack">跟踪 origin/main · ahead 1</span>
+                  </div>
+                  <button class="btn small" type="button" id="newBranchButton">新建分支</button>
+                </div>
+                <div class="branch-list" id="branchList">
+                  <button class="branch-row active" type="button" data-branch="main" data-track="origin/main · ahead 1">
+                    <strong>main</strong>
+                    <span>origin/main · ahead 1</span>
+                  </button>
+                  <button class="branch-row" type="button" data-branch="feature/light-shell" data-track="origin/feature/light-shell · 干净">
+                    <strong>feature/light-shell</strong>
+                    <span>远端已同步</span>
+                  </button>
+                  <button class="branch-row" type="button" data-branch="fix/git-stage-flow" data-track="本地分支 · 未推送">
+                    <strong>fix/git-stage-flow</strong>
+                    <span>本地 · 未推送</span>
+                  </button>
+                </div>
+              </div>
+              <div class="change-list" id="changeList">
+                <div class="change-row active" data-staged="false">
+                  <span class="file-badge m">M</span>
+                  <div class="change-main"><strong>src/main.ts</strong><span>工作区修改 · 18 行</span></div>
+                  <button class="btn small" type="button" data-stage>暂存</button>
+                </div>
+                <div class="change-row" data-staged="false">
+                  <span class="file-badge m">M</span>
+                  <div class="change-main"><strong>src/git/status.ts</strong><span>工作区修改 · Git 解析</span></div>
+                  <button class="btn small" type="button" data-stage>暂存</button>
+                </div>
+                <div class="change-row" data-staged="true">
+                  <span class="file-badge a">A</span>
+                  <div class="change-main"><strong>tauri.conf.json</strong><span>已暂存 · 新增配置</span></div>
+                  <button class="btn small" type="button" data-stage>取消暂存</button>
+                </div>
+                <div class="change-row" data-staged="false">
+                  <span class="file-badge m">M</span>
+                  <div class="change-main"><strong>docs/requirements.md</strong><span>工作区修改 · 产品需求</span></div>
+                  <button class="btn small" type="button" data-stage>暂存</button>
+                </div>
+              </div>
+              <div class="commit-box">
+                <textarea id="quickMessage" placeholder="输入提交信息，例如：完善 Git 状态刷新流程"></textarea>
+                <button class="btn primary" type="button" id="quickCommit">提交已暂存</button>
+                <div class="notice" id="quickCommitState">点击提交会打开确认窗口，可复核 staged files、hook 选项和推送动作。</div>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="screen diff-screen" data-screen="diff" data-od-id="diff-screen">
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <button class="btn small ghost" type="button" data-view-button="workbench">返回工作台</button>
+              <span class="branch">src/git/status.ts</span>
+              <span class="pill info">Working Tree Diff</span>
+            </div>
+            <div class="toolbar-right">
+              <button class="btn small" type="button" data-stage-selected>暂存当前文件</button>
+              <button class="btn small primary" type="button" data-open-commit>提交...</button>
+            </div>
+          </div>
+          <div class="diff-grid">
+            <aside class="panel">
+              <div class="panel-head">
+                <span>Changed Files</span>
+                <span class="pill">5</span>
+              </div>
+              <div class="change-list">
+                <div class="change-row active">
+                  <span class="file-badge m">M</span>
+                  <div class="change-main"><strong>src/git/status.ts</strong><span>双栏修改 · 行内高亮</span></div>
+                  <button class="btn small" type="button">查看</button>
+                </div>
+                <div class="change-row">
+                  <span class="file-badge m">M</span>
+                  <div class="change-main"><strong>src/main.ts</strong><span>重复段已折叠</span></div>
+                  <button class="btn small" type="button">查看</button>
+                </div>
+                <div class="change-row">
+                  <span class="file-badge a">A</span>
+                  <div class="change-main"><strong>tauri.conf.json</strong><span>左侧为空 · 右侧新增</span></div>
+                  <button class="btn small" type="button">查看</button>
+                </div>
+                <div class="change-row">
+                  <span class="file-badge d">D</span>
+                  <div class="change-main"><strong>legacy/git-shell.ts</strong><span>左侧存在 · 右侧删除</span></div>
+                  <button class="btn small" type="button">查看</button>
+                </div>
+                <div class="change-row">
+                  <span class="file-badge m">M</span>
+                  <div class="change-main"><strong>docs/requirements.md</strong><span>多处相同内容低亮</span></div>
+                  <button class="btn small" type="button">查看</button>
+                </div>
+              </div>
+            </aside>
+            <div class="diff-view">
+              <div class="diff-title">
+                <div>
+                  <strong>src/git/status.ts</strong>
+                  <span class="pill">Side-by-side Diff</span>
+                </div>
+                <div class="toolbar-right">
+                  <span class="pill ok">+18</span>
+                  <span class="pill warn">-8</span>
+                  <span class="pill info">3 处折叠</span>
+                </div>
+              </div>
+              <div class="diff-legend" aria-label="Diff 图例">
+                <span class="legend-item"><span class="legend-dot del"></span>左侧有、右侧删除</span>
+                <span class="legend-item"><span class="legend-dot add"></span>右侧有、左侧新增</span>
+                <span class="legend-item"><span class="legend-dot mod"></span>同一行内差异高亮</span>
+              </div>
+              <div class="diff-code">
+                <div class="side-by-side" aria-label="src/git/status.ts 双栏 Diff">
+                  <div class="diff-columns"><span>左侧：当前 HEAD</span><span>右侧：工作区修改</span></div>
+                  <div class="diff-pair">
+                    <div class="diff-cell"><span class="ln">21</span><span class="diff-text">export async function readGitStatus(repoPath: string) {</span></div>
+                    <div class="diff-cell"><span class="ln">21</span><span class="diff-text">export async function readGitStatus(repoPath: string) {</span></div>
+                  </div>
+                  <div class="diff-pair modified">
+                    <div class="diff-cell del"><span class="ln">22</span><span class="diff-text"><span class="same">  const output = await </span><span class="mark-del">exec("git status --porcelain=v1 " + repoPath)</span><span class="same">;</span></span></div>
+                    <div class="diff-cell add"><span class="ln">22</span><span class="diff-text"><span class="same">  const output = await </span><span class="mark-add">spawnGit(["status", "--porcelain=v1", "-z"], { cwd: repoPath })</span><span class="same">;</span></span></div>
+                  </div>
+                  <div class="diff-pair modified">
+                    <div class="diff-cell del"><span class="ln">23</span><span class="diff-text"><span class="same">  return </span><span class="mark-del">parseStatus(output)</span><span class="same">;</span></span></div>
+                    <div class="diff-cell add"><span class="ln">23</span><span class="diff-text"><span class="same">  return </span><span class="mark-add">parsePorcelainZ(output.stdout)</span><span class="same">;</span></span></div>
+                  </div>
+                  <div class="diff-pair">
+                    <div class="diff-cell"><span class="ln">24</span><span class="diff-text">}</span></div>
+                    <div class="diff-cell"><span class="ln">24</span><span class="diff-text">}</span></div>
+                  </div>
+                  <div class="fold-row" data-fold>
+                    <button class="fold-toggle" type="button" aria-expanded="false">
+                      <span>展开 18 行未变化内容</span>
+                      <span class="kbd">Space</span>
+                    </button>
+                    <div class="fold-content" hidden>
+                      <div class="diff-pair">
+                        <div class="diff-cell"><span class="ln">25</span><span class="diff-text">const timeout = 2400;</span></div>
+                        <div class="diff-cell"><span class="ln">25</span><span class="diff-text">const timeout = 2400;</span></div>
+                      </div>
+                      <div class="diff-pair">
+                        <div class="diff-cell"><span class="ln">26</span><span class="diff-text">const cwd = normalizeRepo(repoPath);</span></div>
+                        <div class="diff-cell"><span class="ln">26</span><span class="diff-text">const cwd = normalizeRepo(repoPath);</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="diff-pair added">
+                    <div class="diff-cell empty"><span class="ln"> </span><span class="diff-text">右侧新增，左侧没有对应行</span></div>
+                    <div class="diff-cell add"><span class="ln">43</span><span class="diff-text"><span class="mark-add">export function parsePorcelainZ(raw: string) {</span></span></div>
+                  </div>
+                  <div class="diff-pair added">
+                    <div class="diff-cell empty"><span class="ln"> </span><span class="diff-text"></span></div>
+                    <div class="diff-cell add"><span class="ln">44</span><span class="diff-text"><span class="same">  return raw.split("\\0").filter(Boolean).map(</span><span class="mark-add">parseEntry</span><span class="same">);</span></span></div>
+                  </div>
+                  <div class="diff-pair added">
+                    <div class="diff-cell empty"><span class="ln"> </span><span class="diff-text"></span></div>
+                    <div class="diff-cell add"><span class="ln">45</span><span class="diff-text"><span class="mark-add">}</span></span></div>
+                  </div>
+                  <div class="diff-pair removed">
+                    <div class="diff-cell del"><span class="ln">58</span><span class="diff-text"><span class="mark-del">function parseStatus(raw: string) {</span></span></div>
+                    <div class="diff-cell empty"><span class="ln"> </span><span class="diff-text">右侧已删除</span></div>
+                  </div>
+                  <div class="diff-pair modified">
+                    <div class="diff-cell del"><span class="ln">59</span><span class="diff-text"><span class="same">  const status = entry.</span><span class="mark-del">substring(0, 2)</span><span class="same">;</span></span></div>
+                    <div class="diff-cell add"><span class="ln">59</span><span class="diff-text"><span class="same">  const status = entry.</span><span class="mark-add">slice(0, 2)</span><span class="same">;</span></span></div>
+                  </div>
+                  <div class="diff-pair modified">
+                    <div class="diff-cell del"><span class="ln">60</span><span class="diff-text"><span class="same">  const path = entry.</span><span class="mark-del">substring(3)</span><span class="same">;</span></span></div>
+                    <div class="diff-cell add"><span class="ln">60</span><span class="diff-text"><span class="same">  const path = entry.</span><span class="mark-add">slice(3)</span><span class="same">;</span></span></div>
+                  </div>
+                  <div class="diff-pair modified">
+                    <div class="diff-cell del"><span class="ln">61</span><span class="diff-text"><span class="same">  return { status, path, staged: </span><span class="mark-del">Boolean(status.trim())</span><span class="same"> };</span></span></div>
+                    <div class="diff-cell add"><span class="ln">61</span><span class="diff-text"><span class="same">  return { status, path, staged: </span><span class="mark-add">status[0] !== " "</span><span class="same"> };</span></span></div>
+                  </div>
+                  <div class="fold-row" data-fold>
+                    <button class="fold-toggle" type="button" aria-expanded="false">
+                      <span>展开 42 行相同错误处理</span>
+                      <span class="kbd">Space</span>
+                    </button>
+                    <div class="fold-content" hidden>
+                      <div class="diff-pair">
+                        <div class="diff-cell"><span class="ln">62</span><span class="diff-text">if (!repoPath) throw new GitStatusError("missing repo path");</span></div>
+                        <div class="diff-cell"><span class="ln">62</span><span class="diff-text">if (!repoPath) throw new GitStatusError("missing repo path");</span></div>
+                      </div>
+                      <div class="diff-pair">
+                        <div class="diff-cell"><span class="ln">63</span><span class="diff-text">return normalizeStatus(result);</span></div>
+                        <div class="diff-cell"><span class="ln">63</span><span class="diff-text">return normalizeStatus(result);</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="diff-pair">
+                    <div class="diff-cell"><span class="ln">104</span><span class="diff-text">}</span></div>
+                    <div class="diff-cell"><span class="ln">104</span><span class="diff-text">}</span></div>
+                  </div>
+                  <div class="fold-row" data-fold>
+                    <button class="fold-toggle" type="button" aria-expanded="false">
+                      <span>展开 76 行测试夹具与快照</span>
+                      <span class="kbd">Space</span>
+                    </button>
+                    <div class="fold-content" hidden>
+                      <div class="diff-pair">
+                        <div class="diff-cell"><span class="ln">105</span><span class="diff-text">describe("readGitStatus", () => {</span></div>
+                        <div class="diff-cell"><span class="ln">105</span><span class="diff-text">describe("readGitStatus", () => {</span></div>
+                      </div>
+                      <div class="diff-pair">
+                        <div class="diff-cell"><span class="ln">106</span><span class="diff-text">  beforeEach(resetGitFixture);</span></div>
+                        <div class="diff-cell"><span class="ln">106</span><span class="diff-text">  beforeEach(resetGitFixture);</span></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <aside class="file-map" aria-label="文件变化地图">
+              <div class="map-label">文件地图</div>
+              <div class="map-track" aria-hidden="true">
+                <span class="map-mark ctx" style="top: 3%; height: 14%;"></span>
+                <span class="map-mark mod" style="top: 20%; height: 9%;"></span>
+                <span class="map-mark add" style="top: 46%; height: 14%;"></span>
+                <span class="map-mark del" style="top: 66%; height: 8%;"></span>
+                <span class="map-mark mod" style="top: 78%; height: 13%;"></span>
+              </div>
+              <div class="map-stats">
+                <span class="ok">+18</span>
+                <span class="warn">-8</span>
+                <span>5 段</span>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="screen settings-screen" data-screen="settings" data-od-id="settings-screen">
+          <aside class="settings-nav">
+            <button class="btn active" type="button">编辑器</button>
+            <button class="btn" type="button">Git</button>
+            <button class="btn" type="button">快捷键</button>
+            <button class="btn" type="button">外观</button>
+          </aside>
+          <div class="settings-content">
+            <div class="commit-header">
+              <h2>设置</h2>
+              <p>第一版只暴露影响轻量体验的关键项：字体、主题、Git 路径、Pull 策略和推送确认。</p>
+            </div>
+            <div class="settings-section">
+              <header>
+                <h2>编辑器</h2>
+                <p>基于 CodeMirror 6，保留基本编辑能力和可控体积。</p>
+              </header>
+              <div class="setting-row">
+                <div><strong>字体</strong><span>代码区默认使用 JetBrains Mono，适配 JetBrains 用户习惯。</span></div>
+                <select aria-label="字体">
+                  <option>JetBrains Mono</option>
+                  <option>Cascadia Code</option>
+                  <option>系统等宽字体</option>
+                </select>
+              </div>
+              <div class="setting-row">
+                <div><strong>字号</strong><span>默认 13px，适合高密度文件树与 Diff 审查。</span></div>
+                <input type="number" value="13" min="11" max="18" aria-label="字号" />
+              </div>
+              <div class="setting-row">
+                <div><strong>Tab 宽度</strong><span>按项目设置保存，也可跟随 .editorconfig。</span></div>
+                <select aria-label="Tab 宽度"><option>2</option><option>4</option></select>
+              </div>
+            </div>
+            <div class="settings-section">
+              <header>
+                <h2>Git</h2>
+                <p>第一阶段复用系统 Git CLI，继承 SSH key、credential helper、hooks、LFS 和 GPG。</p>
+              </header>
+              <div class="setting-row">
+                <div><strong>Git 路径</strong><span>默认读取 PATH 中的 git；找不到时再让用户指定。</span></div>
+                <div class="toolbar-right">
+                  <input value="git" aria-label="Git 路径" />
+                  <button class="btn small" type="button" id="checkGit">检测</button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div><strong>Pull 策略</strong><span>默认跟随用户 Git 配置，不强行覆盖团队习惯。</span></div>
+                <select aria-label="Pull 策略"><option>跟随 Git 配置</option><option>Merge</option><option>Rebase</option></select>
+              </div>
+              <div class="setting-row">
+                <div><strong>Push 前确认</strong><span>破坏性或远程写入操作默认保守。</span></div>
+                <div class="segmented" role="group" aria-label="Push 前确认">
+                  <button class="active" type="button">开启</button>
+                  <button type="button">关闭</button>
+                </div>
+              </div>
+            </div>
+            <div class="settings-section">
+              <header>
+                <h2>外观与快捷键</h2>
+                <p>提供 IDEA-like Light 与 Darcula-like Dark，快捷键走 Action System。</p>
+              </header>
+              <div class="setting-row">
+                <div><strong>主题</strong><span>设置会立即更新窗口，不影响代码内容。</span></div>
+                <div class="segmented" role="group" aria-label="主题">
+                  <button class="active theme-choice" type="button" data-theme="light">浅色</button>
+                  <button class="theme-choice" type="button" data-theme="dark">深色</button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div><strong>快捷键方案</strong><span>默认贴近 JetBrains：Ctrl+K 提交，Ctrl+Shift+K 推送，Alt+9 打开 Git 面板。</span></div>
+                <select aria-label="快捷键方案"><option>JetBrains 风格</option><option>VS Code 风格</option><option>自定义</option></select>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="toast" id="toast" role="status" aria-live="polite">
+          <strong>状态已更新</strong>
+          <span>操作完成。</span>
+        </div>
+
+        <div class="modal-layer" id="commitModal" role="dialog" aria-modal="true" aria-labelledby="commitDialogTitle" aria-describedby="commitState">
+          <div class="commit-dialog">
+            <header class="dialog-head">
+              <div>
+                <h2 id="commitDialogTitle">提交变更</h2>
+                <p>像 IDEA 一样在当前工作台确认文件与提交信息，不离开代码视图。</p>
+              </div>
+              <button class="btn small ghost icon-btn" type="button" id="closeCommitModal" aria-label="关闭提交窗口">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6 6 18"/></svg>
+              </button>
+            </header>
+            <div class="dialog-body">
+              <div class="section-title">
+                <div>
+                  <h3>将要提交</h3>
+                  <p id="commitFileHint">仅列出已暂存文件，未暂存修改保留在工作区。</p>
+                </div>
+                <button class="btn small" type="button" id="unstageAll">全部取消暂存</button>
+              </div>
+              <div class="commit-file-list" id="stagedSummary" aria-label="已暂存文件"></div>
+              <div class="field">
+                <label for="commitMessage">提交信息</label>
+                <textarea id="commitMessage" placeholder="例如：完善 Git 状态刷新与安全解析"></textarea>
+              </div>
+              <div class="commit-options">
+                <label class="check-row"><input type="checkbox" id="pushAfterCommit" /> 提交后自动推送</label>
+                <label class="check-row"><input type="checkbox" checked /> 运行 pre-commit hook</label>
+                <label class="check-row"><input type="checkbox" /> 添加 Signed-off-by</label>
+              </div>
+              <div class="commit-checks" aria-label="提交检查项">
+                <div class="commit-check ok" id="checkFiles">
+                  <strong>文件范围</strong>
+                  <span>只提交 staged files</span>
+                </div>
+                <div class="commit-check warn" id="checkMessage">
+                  <strong>提交信息</strong>
+                  <span>等待填写</span>
+                </div>
+                <div class="commit-check ok" id="checkIdentity">
+                  <strong>Git 身份</strong>
+                  <span>使用本机配置</span>
+                </div>
+              </div>
+              <div class="notice" id="commitState">提交前会校验 message、staged files、Git hook 和用户身份配置。</div>
+            </div>
+            <footer class="dialog-foot">
+              <span class="kbd">Ctrl K</span>
+              <div class="toolbar-right">
+                <button class="btn" type="button" data-view-button="diff">重新检查 Diff</button>
+                <button class="btn primary" type="button" id="commitButton">提交</button>
+                <button class="btn" type="button" id="pushButton">推送</button>
+              </div>
+            </footer>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <footer class="statusbar">
+      <div class="status-left">
+        <span id="statusPath">D:\yuanll\code\norn\src\main.ts</span>
+        <span>Ln 10, Col 7</span>
+        <span>UTF-8</span>
+        <span>LF</span>
+      </div>
+      <div class="status-right">
+        <span>Spaces: 2</span>
+        <span>main</span>
+        <span id="statusChange">4 modified</span>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    const viewButtons = document.querySelectorAll("[data-view], [data-view-button]");
+    const screens = document.querySelectorAll(".screen");
+    const railButtons = document.querySelectorAll(".rail-btn");
+    const workbenchGrid = document.querySelector(".workbench-grid");
+    const toast = document.getElementById("toast");
+    let lastCommitTrigger = null;
+
+    function showToast(title, message) {
+      toast.querySelector("strong").textContent = title;
+      toast.querySelector("span").textContent = message;
+      toast.classList.add("show");
+      window.clearTimeout(showToast.timer);
+      showToast.timer = window.setTimeout(() => toast.classList.remove("show"), 2600);
+    }
+
+    function setView(view) {
+      if (!document.querySelector(`.screen[data-screen="${view}"]`)) {
+        view = "workbench";
+      }
+      screens.forEach((screen) => screen.classList.toggle("active", screen.dataset.screen === view));
+      railButtons.forEach((button) => button.classList.toggle("active", button.dataset.view === view));
+      localStorage.setItem("lightcode.activeView", view);
+    }
+
+    viewButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const view = button.dataset.view || button.dataset.viewButton;
+        setView(view);
+        const activeModal = document.getElementById("commitModal");
+        if (activeModal?.classList.contains("open") && view === "diff") {
+          activeModal.classList.remove("open");
+        }
+      });
+    });
+
+    const fileTreeSplitter = document.getElementById("fileTreeSplitter");
+    const gitRailToggle = document.getElementById("gitRailToggle");
+    const gitRailCount = document.getElementById("gitRailCount");
+
+    function setLeftColumn(width) {
+      const clamped = Math.max(204, Math.min(340, width));
+      workbenchGrid.style.setProperty("--left-col", `${Math.round(clamped)}px`);
+      localStorage.setItem("lightcode.leftColumn", String(Math.round(clamped)));
+    }
+
+    const savedLeftColumn = Number(localStorage.getItem("lightcode.leftColumn"));
+    if (savedLeftColumn) {
+      setLeftColumn(savedLeftColumn);
+    }
+
+    let resizingFiles = false;
+
+    fileTreeSplitter.addEventListener("pointerdown", (event) => {
+      resizingFiles = true;
+      fileTreeSplitter.setPointerCapture(event.pointerId);
+      workbenchGrid.classList.add("resizing");
+      document.body.style.userSelect = "none";
+    });
+
+    fileTreeSplitter.addEventListener("pointermove", (event) => {
+      if (!resizingFiles) return;
+      const rect = workbenchGrid.getBoundingClientRect();
+      setLeftColumn(event.clientX - rect.left);
+    });
+
+    function stopFileResize() {
+      if (!resizingFiles) return;
+      resizingFiles = false;
+      workbenchGrid.classList.remove("resizing");
+      document.body.style.userSelect = "";
+    }
+
+    fileTreeSplitter.addEventListener("pointerup", stopFileResize);
+    fileTreeSplitter.addEventListener("pointercancel", stopFileResize);
+    fileTreeSplitter.addEventListener("dblclick", () => setLeftColumn(248));
+    fileTreeSplitter.addEventListener("keydown", (event) => {
+      const current = Number.parseInt(getComputedStyle(workbenchGrid).getPropertyValue("--left-col"), 10) || 248;
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        setLeftColumn(current - 16);
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        setLeftColumn(current + 16);
+      }
+      if (event.key === "Home") {
+        event.preventDefault();
+        setLeftColumn(204);
+      }
+      if (event.key === "End") {
+        event.preventDefault();
+        setLeftColumn(340);
+      }
+    });
+
+    function setGitCollapsed(collapsed) {
+      workbenchGrid.classList.toggle("git-collapsed", collapsed);
+      gitRailToggle.setAttribute("aria-expanded", String(!collapsed));
+      gitRailToggle.title = collapsed ? "展开 Git 工作区" : "折叠 Git 工作区";
+      localStorage.setItem("lightcode.gitCollapsed", collapsed ? "true" : "false");
+    }
+
+    gitRailToggle.addEventListener("click", () => {
+      setGitCollapsed(!workbenchGrid.classList.contains("git-collapsed"));
+    });
+
+    setGitCollapsed(localStorage.getItem("lightcode.gitCollapsed") === "true");
+
+    const repoMenuButton = document.getElementById("repoMenuButton");
+    const repoMenu = document.getElementById("repoMenu");
+    const repoPath = document.getElementById("repoPath");
+    const titleContext = document.getElementById("titleContext");
+    let currentBranch = "main";
+
+    repoMenuButton.addEventListener("click", () => {
+      const open = repoMenu.classList.toggle("open");
+      repoMenuButton.setAttribute("aria-expanded", String(open));
+    });
+
+    document.querySelectorAll(".repo-option").forEach((button) => {
+      button.addEventListener("click", () => {
+        repoPath.textContent = button.dataset.path;
+        titleContext.textContent = `${button.dataset.repo} · ${button.dataset.summary}`;
+        repoMenu.classList.remove("open");
+        repoMenuButton.setAttribute("aria-expanded", "false");
+        showToast("仓库已切换", "已在当前工作台刷新文件树、编辑器 Tab 和 Git 状态。");
+      });
+    });
+
+    const quickOpenButton = document.getElementById("quickOpenButton");
+    const quickOpenPanel = document.getElementById("quickOpenPanel");
+    const search = document.getElementById("fileSearch");
+    const treeRows = document.querySelectorAll("#fileTree .tree-row[data-file]");
+    const fileSearchEmpty = document.getElementById("fileSearchEmpty");
+
+    function openQuickOpen() {
+      quickOpenPanel.classList.add("open");
+      quickOpenButton.setAttribute("aria-expanded", "true");
+      search.focus();
+    }
+
+    function closeQuickOpen() {
+      quickOpenPanel.classList.remove("open");
+      quickOpenButton.setAttribute("aria-expanded", "false");
+      if (!search.value.trim()) fileSearchEmpty.classList.remove("open");
+    }
+
+    quickOpenButton.addEventListener("click", () => {
+      if (quickOpenPanel.classList.contains("open")) {
+        closeQuickOpen();
+      } else {
+        openQuickOpen();
+      }
+    });
+
+    document.addEventListener("click", (event) => {
+      if (!repoMenu.contains(event.target) && !repoMenuButton.contains(event.target)) {
+        repoMenu.classList.remove("open");
+        repoMenuButton.setAttribute("aria-expanded", "false");
+      }
+      if (!quickOpenPanel.contains(event.target) && !quickOpenButton.contains(event.target)) {
+        closeQuickOpen();
+      }
+    });
+
+    search.addEventListener("input", () => {
+      const query = search.value.trim().toLowerCase();
+      let visibleCount = 0;
+      treeRows.forEach((row) => {
+        const visible = row.dataset.file.toLowerCase().includes(query);
+        row.style.display = visible ? "grid" : "none";
+        if (visible) visibleCount += 1;
+      });
+      fileSearchEmpty.classList.toggle("open", query.length > 0 && visibleCount === 0);
+    });
+    treeRows.forEach((row) => {
+      row.addEventListener("click", () => activateFileRow(row));
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          activateFileRow(row);
+        }
+      });
+    });
+
+    function activateFileRow(row) {
+      treeRows.forEach((item) => item.classList.toggle("active", item === row));
+      const file = row.dataset.file;
+      const fileName = row.querySelector("strong")?.textContent || file;
+      const fileTime = row.querySelector("small")?.textContent || "刚刚修改";
+      document.querySelector(".tab.active span:first-child").textContent = fileName;
+      document.getElementById("activeFileTitle").textContent = fileName;
+      document.getElementById("activeFileMeta").textContent = `${file} · ${fileTime}`;
+      document.getElementById("statusPath").textContent = `D:\\yuanll\\code\\norn\\${file}`;
+      showToast("文件已打开", `${file} 已载入编辑器。`);
+    }
+
+    document.querySelectorAll("[data-fold]").forEach((fold) => {
+      const button = fold.querySelector(".fold-toggle");
+      const content = fold.querySelector(".fold-content");
+      button.addEventListener("click", () => {
+        const willOpen = content.hasAttribute("hidden");
+        content.toggleAttribute("hidden", !willOpen);
+        button.setAttribute("aria-expanded", String(willOpen));
+        const label = button.querySelector("span:first-child");
+        label.textContent = willOpen
+          ? label.textContent.replace("展开", "收起")
+          : label.textContent.replace("收起", "展开");
+      });
+    });
+
+    function setBranch(button) {
+      currentBranch = button.dataset.branch;
+      const track = button.dataset.track;
+      document.getElementById("topBranchName").textContent = currentBranch;
+      document.getElementById("currentBranchName").textContent = currentBranch;
+      document.getElementById("currentBranchTrack").textContent = `跟踪 ${track}`;
+      document.querySelectorAll(".branch-row").forEach((row) => row.classList.toggle("active", row === button));
+      titleContext.textContent = `norn · ${currentBranch} · ${document.getElementById("changeCount").textContent}`;
+      showToast("分支已切换", `${currentBranch} 已成为当前工作分支。`);
+    }
+
+    document.querySelectorAll(".branch-row").forEach((button) => {
+      button.addEventListener("click", () => setBranch(button));
+    });
+
+    document.getElementById("newBranchButton").addEventListener("click", () => {
+      showToast("准备新建分支", "可从当前 HEAD 创建新分支，提交前会保留未暂存修改。");
+    });
+
+    function stagedRows() {
+      return [...document.querySelectorAll("#changeList .change-row")].filter((row) => row.dataset.staged === "true");
+    }
+
+    function renderStagedSummary() {
+      const summary = document.getElementById("stagedSummary");
+      const rows = stagedRows();
+      summary.innerHTML = "";
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.className = "commit-file-row";
+        const badge = document.createElement("span");
+        badge.className = "file-badge m";
+        badge.textContent = "0";
+        const copy = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = "没有已暂存文件";
+        const hint = document.createElement("span");
+        hint.textContent = "先在右侧 Git 面板选择要进入本次提交的文件。";
+        copy.append(title, hint);
+        const state = document.createElement("span");
+        state.className = "pill warn";
+        state.textContent = "阻止提交";
+        empty.append(badge, copy, state);
+        summary.appendChild(empty);
+        return;
+      }
+      rows.forEach((row) => {
+        const file = row.querySelector(".change-main strong").textContent;
+        const detail = row.querySelector(".change-main span").textContent;
+        const badge = row.querySelector(".file-badge").textContent;
+        const item = document.createElement("div");
+        item.className = "commit-file-row";
+        const badgeNode = document.createElement("span");
+        badgeNode.className = "file-badge";
+        badgeNode.textContent = badge;
+        const copy = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = file;
+        const hint = document.createElement("span");
+        hint.textContent = detail;
+        copy.append(title, hint);
+        const state = document.createElement("span");
+        state.className = "pill ok";
+        state.textContent = "staged";
+        item.append(badgeNode, copy, state);
+        summary.appendChild(item);
+      });
+    }
+
+    function updateCounts() {
+      const rows = [...document.querySelectorAll("#changeList .change-row")];
+      const staged = stagedRows().length;
+      const total = rows.length;
+      document.getElementById("changeCount").textContent = `${total} 个变更`;
+      document.getElementById("statusChange").textContent = `${total} modified`;
+      document.getElementById("summaryTotal").textContent = total;
+      document.getElementById("summaryStaged").textContent = staged;
+      gitRailCount.textContent = total;
+      gitRailCount.setAttribute("aria-label", `${total} 个工作区变更，${staged} 个已暂存`);
+      document.getElementById("stageAll").disabled = staged === total;
+      const gateText = document.getElementById("commitGateText");
+      const gatePill = document.getElementById("commitGatePill");
+      gateText.textContent = staged ? `已有 ${staged} 个 staged files，可打开确认窗口。` : "没有 staged files，提交按钮会先要求暂存文件。";
+      gatePill.textContent = staged ? "ready" : "blocked";
+      gatePill.className = staged ? "pill ok" : "pill warn";
+      const checkFiles = document.getElementById("checkFiles");
+      checkFiles.className = staged ? "commit-check ok" : "commit-check warn";
+      checkFiles.querySelector("span").textContent = staged ? `${staged} 个文件将进入提交` : "未选择提交文件";
+      document.getElementById("commitState").textContent = staged
+        ? `当前已有 ${staged} 个 staged file，可以提交；也可以继续检查未暂存文件。`
+        : "当前没有 staged files。请先在 Git 面板暂存文件。";
+      updateCommitMessageCheck();
+      renderStagedSummary();
+    }
+
+    document.querySelectorAll("[data-stage]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const row = button.closest(".change-row");
+        const staged = row.dataset.staged === "true";
+        row.dataset.staged = staged ? "false" : "true";
+        button.textContent = staged ? "暂存" : "取消暂存";
+        row.querySelector(".change-main span").textContent = staged ? "工作区修改 · 待暂存" : "已暂存 · 将进入提交";
+        updateCounts();
+      });
+    });
+
+    document.getElementById("stageAll").addEventListener("click", () => {
+      document.querySelectorAll("#changeList .change-row").forEach((row) => {
+        row.dataset.staged = "true";
+        row.querySelector("[data-stage]").textContent = "取消暂存";
+        row.querySelector(".change-main span").textContent = "已暂存 · 将进入提交";
+      });
+      updateCounts();
+      showToast("已暂存全部文件", "4 个变更已加入 staged files。");
+    });
+
+    const commitModal = document.getElementById("commitModal");
+    const commitMessage = document.getElementById("commitMessage");
+    const quickMessage = document.getElementById("quickMessage");
+
+    function openCommitModal(trigger = null) {
+      lastCommitTrigger = trigger || document.activeElement;
+      if (quickMessage.value.trim() && !commitMessage.value.trim()) {
+        commitMessage.value = quickMessage.value.trim();
+      }
+      updateCounts();
+      updateCommitMessageCheck();
+      commitModal.classList.add("open");
+      commitMessage.focus();
+    }
+
+    function closeCommitModal() {
+      commitModal.classList.remove("open");
+      if (lastCommitTrigger && document.contains(lastCommitTrigger)) {
+        lastCommitTrigger.focus();
+      }
+    }
+
+    document.querySelectorAll("[data-open-commit]").forEach((button) => {
+      button.addEventListener("click", () => openCommitModal(button));
+    });
+
+    document.getElementById("closeCommitModal").addEventListener("click", closeCommitModal);
+    commitModal.addEventListener("click", (event) => {
+      if (event.target === commitModal) closeCommitModal();
+    });
+
+    function commitFrom(messageInput, stateNode) {
+      const message = messageInput.value.trim();
+      const staged = stagedRows().length;
+      stateNode.className = "notice";
+      updateCommitMessageCheck();
+      if (!message) {
+        stateNode.classList.add("error");
+        stateNode.textContent = "提交失败：Commit message 不能为空。";
+        commitMessage.focus();
+        return;
+      }
+      if (!staged) {
+        stateNode.classList.add("error");
+        stateNode.textContent = "提交失败：没有 staged files，请先暂存至少一个文件。";
+        return;
+      }
+      const commitButton = document.getElementById("commitButton");
+      commitButton.disabled = true;
+      commitButton.classList.add("loading");
+      commitButton.textContent = "提交中";
+      stateNode.textContent = "正在运行 pre-commit hook 并写入提交...";
+      window.setTimeout(() => {
+        stateNode.className = "notice success";
+        stateNode.textContent = `提交成功：${message}`;
+        commitButton.disabled = false;
+        commitButton.classList.remove("loading");
+        commitButton.textContent = "提交";
+        showToast("提交已完成", "Git 状态已刷新，工作区仍保留未暂存文件。");
+        closeCommitModal();
+      }, 520);
+    }
+
+    function updateCommitMessageCheck() {
+      const message = commitMessage.value.trim();
+      const staged = stagedRows().length;
+      const checkMessage = document.getElementById("checkMessage");
+      checkMessage.className = message ? "commit-check ok" : "commit-check warn";
+      checkMessage.querySelector("span").textContent = message ? "已填写，可通过 hook 校验" : "等待填写";
+      document.getElementById("commitButton").disabled = !message || !staged;
+    }
+
+    document.getElementById("quickCommit").addEventListener("click", () => {
+      openCommitModal(document.getElementById("quickCommit"));
+    });
+    commitMessage.addEventListener("input", updateCommitMessageCheck);
+    document.getElementById("commitButton").addEventListener("click", () => {
+      commitFrom(document.getElementById("commitMessage"), document.getElementById("commitState"));
+    });
+    document.getElementById("pushButton").addEventListener("click", (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      button.classList.add("loading");
+      button.textContent = "推送中";
+      window.setTimeout(() => {
+        button.disabled = false;
+        button.classList.remove("loading");
+        button.textContent = "推送";
+        showToast("推送已完成", `${currentBranch} 已推送到对应远端分支。`);
+      }, 620);
+    });
+    document.getElementById("unstageAll").addEventListener("click", () => {
+      document.querySelectorAll("#changeList .change-row").forEach((row) => {
+        row.dataset.staged = "false";
+        row.querySelector("[data-stage]").textContent = "暂存";
+        row.querySelector(".change-main span").textContent = "工作区修改 · 待暂存";
+      });
+      updateCounts();
+      showToast("已取消暂存", "所有文件回到工作区修改状态。");
+    });
+    document.querySelector("[data-stage-selected]").addEventListener("click", () => {
+      const statusRow = [...document.querySelectorAll("#changeList .change-row")]
+        .find((row) => row.querySelector(".change-main strong")?.textContent === "src/git/status.ts");
+      if (statusRow) {
+        statusRow.dataset.staged = "true";
+        statusRow.querySelector("[data-stage]").textContent = "取消暂存";
+        statusRow.querySelector(".change-main span").textContent = "已暂存 · 将进入提交";
+        updateCounts();
+      }
+      showToast("已暂存当前文件", "src/git/status.ts 已加入 staged files。");
+      setView("workbench");
+    });
+
+    const themeToggle = document.getElementById("themeToggle");
+    function setTheme(theme) {
+      document.body.classList.toggle("dark", theme === "dark");
+      localStorage.setItem("lightcode.theme", theme);
+      themeToggle.textContent = theme === "dark" ? "切换浅色" : "切换深色";
+      document.querySelectorAll(".theme-choice").forEach((button) => {
+        button.classList.toggle("active", button.dataset.theme === theme);
+      });
+    }
+    themeToggle.addEventListener("click", () => setTheme(document.body.classList.contains("dark") ? "light" : "dark"));
+    document.querySelectorAll(".theme-choice").forEach((button) => {
+      button.addEventListener("click", () => setTheme(button.dataset.theme));
+    });
+    document.getElementById("checkGit").addEventListener("click", (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      button.classList.add("loading");
+      button.textContent = "检测中";
+      window.setTimeout(() => {
+        button.disabled = false;
+        button.classList.remove("loading");
+        button.textContent = "检测";
+        showToast("Git 检测通过", "已找到系统 git，版本与用户凭据将沿用本机配置。");
+      }, 560);
+    });
+
+    document.addEventListener("keydown", (event) => {
+      const mod = event.ctrlKey || event.metaKey;
+      if (event.key === "Shift") {
+        if (document.activeElement === document.body) {
+          if (document.body.dataset.lastShift && Date.now() - Number(document.body.dataset.lastShift) < 420) {
+            openQuickOpen();
+            document.body.dataset.lastShift = "";
+          } else {
+            document.body.dataset.lastShift = String(Date.now());
+          }
+        }
+      }
+      if (mod && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          showToast("等待推送确认", `当前分支 ${currentBranch} 将推送到对应远端分支。`);
+        } else {
+          openCommitModal();
+        }
+      }
+      if (event.altKey && event.key === "9") {
+        event.preventDefault();
+        setView("workbench");
+      }
+      if (event.key === "Escape" && commitModal.classList.contains("open")) {
+        closeCommitModal();
+      }
+      if (event.key === "Escape" && quickOpenPanel.classList.contains("open")) {
+        closeQuickOpen();
+        quickOpenButton.focus();
+      }
+    });
+
+    setTheme(localStorage.getItem("lightcode.theme") || "light");
+    setView(localStorage.getItem("lightcode.activeView") || "workbench");
+    updateCounts();
+  </script>
+</body>
+</html>

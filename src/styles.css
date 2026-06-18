@@ -1,0 +1,110 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 14% 96%;
+    --foreground: 222 18% 13%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 18% 13%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 18% 13%;
+    --primary: 214 84% 46%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 10% 92%;
+    --secondary-foreground: 222 18% 17%;
+    --muted: 220 12% 91%;
+    --muted-foreground: 220 9% 42%;
+    --accent: 215 42% 88%;
+    --accent-foreground: 218 42% 18%;
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 13% 82%;
+    --input: 220 13% 78%;
+    --ring: 214 84% 46%;
+    --radius: 0.25rem;
+    --editor-background: 220 18% 98%;
+    --editor-gutter: 220 14% 94%;
+    --diff-add: 146 45% 91%;
+    --diff-delete: 0 58% 93%;
+  }
+
+  .dark {
+    --background: 220 12% 12%;
+    --foreground: 220 12% 86%;
+    --card: 220 11% 15%;
+    --card-foreground: 220 12% 86%;
+    --popover: 220 11% 15%;
+    --popover-foreground: 220 12% 86%;
+    --primary: 212 88% 60%;
+    --primary-foreground: 220 20% 10%;
+    --secondary: 220 10% 18%;
+    --secondary-foreground: 220 12% 86%;
+    --muted: 220 10% 18%;
+    --muted-foreground: 220 8% 58%;
+    --accent: 219 18% 24%;
+    --accent-foreground: 220 12% 92%;
+    --destructive: 0 65% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 10% 25%;
+    --input: 220 10% 28%;
+    --ring: 212 88% 60%;
+    --editor-background: 220 12% 13%;
+    --editor-gutter: 220 11% 16%;
+    --diff-add: 145 27% 19%;
+    --diff-delete: 0 31% 18%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    overflow: hidden;
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
+}
+
+@layer components {
+  .tool-row {
+    @apply flex h-8 shrink-0 items-center border-b border-border bg-background/80 px-2;
+  }
+
+  .panel-heading {
+    @apply flex h-9 shrink-0 items-center justify-between border-b border-border bg-muted/45 px-2;
+  }
+
+  .tree-row {
+    @apply grid h-6 grid-cols-[18px_minmax(0,1fr)_24px] items-center gap-1 rounded-sm px-1.5 text-[12px] leading-none text-foreground;
+  }
+
+  .tree-row-muted {
+    @apply text-muted-foreground;
+  }
+
+  .tree-row-active {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .status-token {
+    @apply inline-flex h-5 items-center gap-1 whitespace-nowrap font-mono text-[11px] text-muted-foreground;
+  }
+
+  .editor-line {
+    @apply grid min-h-5 grid-cols-[44px_minmax(0,1fr)] font-mono text-[12px] leading-5;
+  }
+}
