@@ -1,10 +1,21 @@
-import { type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { javascript } from "@codemirror/lang-javascript";
+import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
+import { EditorState, type Extension } from "@codemirror/state";
+import {
+  drawSelection,
+  EditorView,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  keymap,
+  lineNumbers,
+} from "@codemirror/view";
 import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   CircleDot,
-  Code2,
   Columns3,
   Menu,
   Minus,
@@ -13,12 +24,9 @@ import {
   GitBranch,
   GitCommitHorizontal,
   GitPullRequest,
-  History,
   PanelLeftClose,
   PanelRightClose,
-  Search,
   Settings,
-  SplitSquareHorizontal,
   Terminal,
 } from "lucide-react";
 
@@ -36,10 +44,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { changes, editorLines, treeNodes } from "./mock-data";
 
@@ -49,7 +56,7 @@ type ProjectAccentStyle = {
 };
 
 const windowsTitlebarMenus = [
-  { id: "file", label: "File", children: ["New File", "Open Folder", "Save All"] },
+  { id: "file", label: "File", children: ["New File", "Open File"] },
   { id: "edit", label: "Edit", children: ["Undo", "Redo", "Find"] },
   { id: "view", label: "View", children: ["Explorer", "Git Panel", "Terminal"] },
   { id: "window", label: "Window", children: ["Minimize", "Maximize / Restore", "Close"] },
@@ -72,6 +79,95 @@ const windowsTitlebarMenus = [
 ] as const;
 
 type WindowsTitlebarMenuId = (typeof windowsTitlebarMenus)[number]["id"];
+
+type WorkbenchDocument = {
+  id: string;
+  name: string;
+  path: string;
+  content: string;
+  size?: number;
+  lastModified?: number;
+  isUntitled?: boolean;
+};
+
+const initialDocument: WorkbenchDocument = {
+  id: "mock-workbench-page",
+  name: "workbench-page.tsx",
+  path: "src/features/workbench/workbench-page.tsx",
+  content: editorLines.join("\n"),
+};
+
+const getDocumentLines = (document: WorkbenchDocument) => {
+  const lines = document.content.split(/\r\n|\n|\r/);
+  return lines.length > 0 ? lines : [""];
+};
+
+const codeMirrorTheme = EditorView.theme({
+  "&": {
+    height: "100%",
+    backgroundColor: "hsl(var(--editor-background))",
+    color: "hsl(var(--foreground))",
+  },
+  "&.cm-focused": {
+    outline: "none",
+  },
+  ".cm-scroller": {
+    overflow: "auto",
+  },
+  ".cm-content": {
+    minHeight: "100%",
+    padding: "12px 0 28px",
+  },
+  ".cm-line": {
+    padding: "0 12px",
+  },
+  ".cm-gutters": {
+    backgroundColor: "hsl(var(--editor-gutter))",
+    borderRight: "1px solid hsl(var(--border))",
+    color: "hsl(var(--muted-foreground))",
+    paddingBottom: "18px",
+  },
+  ".cm-activeLine": {
+    backgroundColor: "hsl(var(--accent) / 0.32)",
+  },
+  ".cm-activeLineGutter": {
+    backgroundColor: "hsl(var(--accent) / 0.48)",
+    color: "hsl(var(--foreground))",
+  },
+  ".cm-cursor": {
+    borderLeftColor: "hsl(var(--primary))",
+  },
+});
+
+const getCodeMirrorLanguageExtensions = (fileName: string): Extension[] => {
+  const normalizedFileName = fileName.toLowerCase();
+  const isJavaScriptLike = /\.(cjs|mjs|js|jsx|ts|tsx)$/.test(normalizedFileName);
+
+  if (!isJavaScriptLike) {
+    return [];
+  }
+
+  return [javascript({ jsx: true, typescript: normalizedFileName.endsWith(".ts") || normalizedFileName.endsWith(".tsx") })];
+};
+
+const createCodeMirrorExtensions = (fileName: string, onChange: (content: string) => void): Extension[] => [
+  lineNumbers(),
+  highlightActiveLineGutter(),
+  history(),
+  drawSelection(),
+  indentOnInput(),
+  bracketMatching(),
+  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  highlightActiveLine(),
+  keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
+  ...getCodeMirrorLanguageExtensions(fileName),
+  EditorView.updateListener.of((update) => {
+    if (update.docChanged) {
+      onChange(update.state.doc.toString());
+    }
+  }),
+  codeMirrorTheme,
+];
 
 const recentProjects = [
   { name: "norn", path: "D:/yuanll/code/norn" },
@@ -118,14 +214,70 @@ const getProjectAccentStyle = (name: string): ProjectAccentStyle => {
 export function WorkbenchPage() {
   const [dark, setDark] = useState(false);
   const [gitOpen, setGitOpen] = useState(true);
+  const [document, setDocument] = useState<WorkbenchDocument>(initialDocument);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const isWindows = useMemo(() => navigator.userAgent.includes("Windows"), []);
+
+  const createFile = () => {
+    setFileError(null);
+    setDocument({
+      id: `untitled-${Date.now()}`,
+      name: "Untitled.txt",
+      path: "Untitled.txt",
+      content: "",
+      isUntitled: true,
+    });
+  };
+
+  const openFilePicker = () => {
+    setFileError(null);
+    fileInputRef.current?.click();
+  };
+
+  const updateDocumentContent = (content: string) => {
+    setDocument((currentDocument) =>
+      currentDocument.content === content ? currentDocument : { ...currentDocument, content },
+    );
+  };
+
+  const handleFileSelected = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+
+    event.currentTarget.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      setDocument({
+        id: `${file.name}-${file.lastModified}-${Date.now()}`,
+        name: file.name,
+        path: file.webkitRelativePath || file.name,
+        content: typeof reader.result === "string" ? reader.result : "",
+        size: file.size,
+        lastModified: file.lastModified,
+      });
+      setFileError(null);
+    };
+
+    reader.onerror = () => {
+      setFileError(`Unable to open ${file.name}`);
+    };
+
+    reader.readAsText(file);
+  };
 
   return (
     <TooltipProvider delayDuration={250}>
       <div className={cn("h-full bg-background text-[12px] text-foreground", dark && "dark")}>
         <div className="flex h-full min-w-0 flex-col">
-          {isWindows ? <WindowsTitleBar /> : null}
-          <Toolbar
+          <input className="hidden" ref={fileInputRef} type="file" onChange={handleFileSelected} />
+          {isWindows ? <WindowsTitleBar onCreateFile={createFile} onOpenFile={openFilePicker} /> : null}
+          <WorkbenchToolbar
             dark={dark}
             onToggleGit={() => setGitOpen((value) => !value)}
             gitOpen={gitOpen}
@@ -133,24 +285,30 @@ export function WorkbenchPage() {
           />
           <main
             className={cn(
-              "grid min-h-0 flex-1 grid-cols-[260px_1px_minmax(0,1fr)_24px_360px] bg-background transition-[grid-template-columns]",
-              !gitOpen && "grid-cols-[260px_1px_minmax(0,1fr)_24px_0px]",
+              "grid min-h-0 flex-1 grid-cols-[260px_1px_minmax(0,1fr)_32px_360px] bg-background transition-[grid-template-columns]",
+              !gitOpen && "grid-cols-[260px_1px_minmax(0,1fr)_32px_0px]",
             )}
           >
             <ProjectPanel />
             <div className="bg-border" />
-            <EditorMock />
+            <EditorSurface document={document} error={fileError} onChange={updateDocumentContent} />
             <GitRail open={gitOpen} onToggle={() => setGitOpen((value) => !value)} />
             <GitPanel open={gitOpen} />
           </main>
-          <StatusBar />
+          <StatusBar document={document} />
         </div>
       </div>
     </TooltipProvider>
   );
 }
 
-function WindowsTitleBar() {
+function WindowsTitleBar({
+  onCreateFile,
+  onOpenFile,
+}: {
+  onCreateFile: () => void;
+  onOpenFile: () => void;
+}) {
   const appWindow = getCurrentWindow();
   const [projectName, setProjectName] = useState<string>(recentProjects[0].name);
   const projectInitials = getProjectInitials(projectName);
@@ -223,7 +381,7 @@ function WindowsTitleBar() {
     }
 
     const handlePointerDown = (event: PointerEvent) => {
-      if (menuRef.current?.contains(event.target as Node)) {
+      if ((event.target as HTMLElement).closest("[data-titlebar-submenu-action='true']")) {
         return;
       }
 
@@ -271,6 +429,21 @@ function WindowsTitleBar() {
 
   const activeMenuConfig = activeMenu ? windowsTitlebarMenus.find((item) => item.id === activeMenu) : null;
 
+  const handleMenuItemClick = (child: string) => {
+    if (child === "New File") {
+      onCreateFile();
+    }
+
+    if (child === "Open File") {
+      onOpenFile();
+    }
+
+    if (child === "Minimize") appWindow.minimize();
+    if (child === "Maximize / Restore") appWindow.toggleMaximize();
+    if (child === "Close") appWindow.close();
+    collapseMenu();
+  };
+
   return (
     <header className="windows-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
       <div className="windows-titlebar-left" ref={menuRef}>
@@ -316,12 +489,8 @@ function WindowsTitleBar() {
                     className={cn("windows-titlebar-submenu-item", child === "Close" && "windows-titlebar-submenu-item-danger")}
                     key={child}
                     type="button"
-                    onClick={() => {
-                      if (child === "Minimize") appWindow.minimize();
-                      if (child === "Maximize / Restore") appWindow.toggleMaximize();
-                      if (child === "Close") appWindow.close();
-                      collapseMenu();
-                    }}
+                    data-titlebar-submenu-action="true"
+                    onClick={() => handleMenuItemClick(child)}
                   >
                     {child}
                   </button>
@@ -339,7 +508,9 @@ function WindowsTitleBar() {
                 aria-expanded={projectMenuOpen}
                 onClick={() => setProjectMenuOpen((value) => !value)}
               >
-                <span className="windows-titlebar-folder-icon" style={projectAccentStyle}>{projectInitials}</span>
+                <span className="windows-titlebar-folder-icon" style={projectAccentStyle}>
+                  {projectInitials}
+                </span>
                 <span className="windows-titlebar-folder-name">{projectName}</span>
               </button>
               {projectMenuOpen ? (
@@ -429,7 +600,7 @@ function WindowsTitleBar() {
   );
 }
 
-function Toolbar({
+function WorkbenchToolbar({
   dark,
   gitOpen,
   onToggleGit,
@@ -443,40 +614,24 @@ function Toolbar({
   return (
     <div className="tool-row justify-between gap-2">
       <div className="flex min-w-0 items-center gap-1.5">
-        <Code2 className="h-4 w-4 text-primary" />
-        <strong className="mr-1 text-[12px]">Norn</strong>
         <Button size="toolbar" variant="default">
           <GitBranch className="h-3.5 w-3.5" />
           main
           <ChevronDown className="h-3.5 w-3.5" />
         </Button>
-        <Separator orientation="vertical" className="mx-1 h-5" />
-        <div className="relative w-[min(42vw,420px)]">
-          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input className="h-7 pl-7 font-mono" placeholder="输入文件名，例如 status.ts" />
-        </div>
-        <Badge tone="muted">Double Shift</Badge>
       </div>
       <div className="flex items-center gap-1.5">
-        <Badge tone="success">Git CLI 已连接</Badge>
+        <Badge tone="success">Git CLI</Badge>
         <Button variant="ghost" size="sm" onClick={onToggleTheme}>
-          {dark ? "浅色" : "深色"}
+          {dark ? "Light" : "Dark"}
         </Button>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button size="icon" variant="ghost">
-              <SplitSquareHorizontal className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>拆分编辑器</TooltipContent>
-        </Tooltip>
         <Button size="toolbar" variant="default">
           <Columns3 className="h-3.5 w-3.5" />
-          查看 Diff
+          Diff
         </Button>
         <Button size="toolbar" variant="primary">
           <GitCommitHorizontal className="h-3.5 w-3.5" />
-          提交
+          Commit
         </Button>
         <Button size="icon" variant={gitOpen ? "subtle" : "ghost"} onClick={onToggleGit}>
           <PanelRightClose className="h-4 w-4" />
@@ -490,12 +645,12 @@ function ProjectPanel() {
   const nodes = useMemo(() => treeNodes, []);
 
   return (
-    <aside className="flex min-w-0 flex-col border-r border-border bg-card/70">
+    <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-card/70">
       <div className="panel-heading">
         <div className="flex items-center gap-1.5 font-semibold">
           <PanelLeftClose className="h-3.5 w-3.5 text-muted-foreground" />
-          项目
-        </div>
+            Project
+          </div>
         <Badge tone="muted">norn</Badge>
       </div>
       <ScrollArea className="min-h-0 flex-1">
@@ -529,101 +684,69 @@ function ProjectPanel() {
   );
 }
 
-function EditorMock() {
+function EditorSurface({
+  document,
+  error,
+  onChange,
+}: {
+  document: WorkbenchDocument;
+  error: string | null;
+  onChange: (content: string) => void;
+}) {
+  const editorElementRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  const onChangeRef = useRef(onChange);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    const parent = editorElementRef.current;
+
+    if (!parent) {
+      return;
+    }
+
+    const view = new EditorView({
+      parent,
+      state: EditorState.create({
+        doc: document.content,
+        extensions: createCodeMirrorExtensions(document.name, (content) => onChangeRef.current(content)),
+      }),
+    });
+
+    viewRef.current = view;
+
+    return () => {
+      view.destroy();
+      viewRef.current = null;
+    };
+  }, [document.id, document.name]);
+
   return (
-    <section className="flex min-w-0 flex-col bg-[hsl(var(--editor-background))]">
-      <Tabs value="workbench" className="min-w-0">
+    <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-[hsl(var(--editor-background))]">
+      <Tabs value={document.id} className="min-w-0">
         <TabsList className="flex w-full justify-start border-b border-border bg-muted/70">
-          <TabsTrigger value="workbench">workbench-page.tsx</TabsTrigger>
-          <TabsTrigger value="requirements">需求文档.md</TabsTrigger>
-          <TabsTrigger value="tauri">lib.rs</TabsTrigger>
+          <TabsTrigger className="max-w-[240px] justify-start gap-2 px-2.5" value={document.id}>
+            <span className={cn("h-2 w-2 shrink-0 rounded-full", document.isUntitled ? "bg-amber-500" : "bg-emerald-500")} />
+            <span className="truncate">{document.name}</span>
+          </TabsTrigger>
         </TabsList>
       </Tabs>
-      <div className="flex h-8 items-center justify-between border-b border-border bg-background/70 px-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Badge tone="info">CodeMirror 6 mock</Badge>
-          <span className="truncate text-muted-foreground">src/features/workbench/workbench-page.tsx</span>
+      {error ? (
+        <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-[12px] text-destructive">
+          {error}
         </div>
-        <div className="flex items-center gap-1">
-          <Button size="toolbar" variant="ghost">
-            <History className="h-3.5 w-3.5" />
-            最近文件
-          </Button>
-        </div>
-      </div>
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="min-h-full py-3">
-          {editorLines.map((line, index) => (
-            <div className={cn("editor-line", index === 5 && "bg-accent/45")} key={`${line}-${index}`}>
-              <span className="select-none border-r border-border bg-[hsl(var(--editor-gutter))] pr-3 text-right text-muted-foreground">
-                {index + 1}
-              </span>
-              <code className="whitespace-pre px-3 text-foreground">
-                <CodeLine line={line} />
-              </code>
-            </div>
-          ))}
-        </div>
-      </ScrollArea>
+      ) : null}
+      <div className="codemirror-shell min-h-0 flex-1" ref={editorElementRef} />
     </section>
-  );
-}
-
-function CodeLine({ line }: { line: string }) {
-  if (!line) return <span>&nbsp;</span>;
-
-  const highlighted = line
-    .replaceAll("import", "<kw>import</kw>")
-    .replaceAll("export", "<kw>export</kw>")
-    .replaceAll("function", "<kw>function</kw>")
-    .replaceAll("return", "<kw>return</kw>")
-    .replaceAll("from", "<kw>from</kw>")
-    .replaceAll("WorkbenchShell", "<type>WorkbenchShell</type>")
-    .replaceAll("EditorSurface", "<type>EditorSurface</type>")
-    .replaceAll("GitPanel", "<type>GitPanel</type>");
-
-  const parts = highlighted.split(/(<kw>|<\/kw>|<type>|<\/type>)/g);
-  let mode: "normal" | "kw" | "type" = "normal";
-
-  return (
-    <>
-      {parts.map((part, index) => {
-        if (part === "<kw>") {
-          mode = "kw";
-          return null;
-        }
-        if (part === "</kw>") {
-          mode = "normal";
-          return null;
-        }
-        if (part === "<type>") {
-          mode = "type";
-          return null;
-        }
-        if (part === "</type>") {
-          mode = "normal";
-          return null;
-        }
-        return (
-          <span
-            className={cn(
-              mode === "kw" && "text-sky-700 dark:text-sky-300",
-              mode === "type" && "text-violet-700 dark:text-violet-300",
-              part.includes('"') && "text-emerald-700 dark:text-emerald-300",
-            )}
-            key={`${part}-${index}`}
-          >
-            {part}
-          </span>
-        );
-      })}
-    </>
   );
 }
 
 function GitRail({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   return (
-    <div className="flex min-w-0 flex-col items-center border-l border-r border-border bg-muted/50 py-2">
+    <div className="flex min-h-0 min-w-0 flex-col items-center border-x border-border bg-muted/75 py-2 shadow-[inset_1px_0_0_hsl(var(--background)),inset_-1px_0_0_hsl(var(--background))]">
       <div className="grid gap-1">
         <span className="h-5 w-1 rounded-full bg-sky-500/70" />
         <span className="h-5 w-1 rounded-full bg-emerald-500/70" />
@@ -641,19 +764,19 @@ function GitRail({ open, onToggle }: { open: boolean; onToggle: () => void }) {
 
 function GitPanel({ open }: { open: boolean }) {
   return (
-    <aside className={cn("min-w-0 overflow-hidden border-l border-border bg-card transition-opacity", !open && "opacity-0")}>
-      <div className="flex h-full w-[360px] flex-col">
+    <aside className={cn("min-h-0 min-w-0 overflow-hidden bg-card shadow-[-10px_0_18px_-18px_rgba(15,23,42,0.75)] transition-opacity", !open && "opacity-0")}>
+      <div className="flex h-full w-[360px] min-h-0 flex-col">
         <div className="panel-heading">
           <div>
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Git 工作区</div>
-            <div className="font-semibold">变更队列</div>
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Git workspace</div>
+            <div className="font-semibold">Changes</div>
           </div>
           <Badge tone="warning">ahead 1</Badge>
         </div>
         <div className="grid grid-cols-3 gap-1 border-b border-border p-2">
-          <Summary label="工作区" value="4" />
-          <Summary label="已暂存" value="1" />
-          <Summary label="远端" value="+1" />
+          <Summary label="Working" value="4" />
+          <Summary label="Staged" value="1" />
+          <Summary label="Remote" value="+1" />
         </div>
         <div className="border-b border-border p-2">
           <div className="flex items-center justify-between gap-2">
@@ -661,11 +784,11 @@ function GitPanel({ open }: { open: boolean }) {
               <GitBranch className="h-4 w-4 text-primary" />
               <div className="min-w-0">
                 <div className="truncate font-medium">main</div>
-                <div className="truncate text-[11px] text-muted-foreground">origin/main · 可推送 1 个提交</div>
+                <div className="truncate text-[11px] text-muted-foreground">origin/main - 1 commit ready to push</div>
               </div>
             </div>
             <Button size="sm" variant="ghost">
-              切换
+              Switch
             </Button>
           </div>
         </div>
@@ -684,22 +807,22 @@ function GitPanel({ open }: { open: boolean }) {
                 <div className="min-w-0">
                   <div className="truncate font-mono text-[11px]">{change.path}</div>
                   <div className="truncate text-[11px] text-muted-foreground">
-                    {change.status} · {change.description}
+                    {change.status} - {change.description}
                   </div>
                 </div>
                 <Button size="sm" variant={change.staged ? "ghost" : "default"}>
-                  {change.staged ? "取消" : "暂存"}
+                  {change.staged ? "Unstage" : "Stage"}
                 </Button>
               </div>
             ))}
           </div>
         </ScrollArea>
         <div className="border-t border-border p-2">
-          <Textarea placeholder="输入提交信息，例如：搭建 Tauri 工作台骨架" />
+          <Textarea placeholder="Commit message, for example: wire up file open" />
           <div className="mt-2 flex items-center justify-between gap-2">
-            <span className="text-[11px] text-muted-foreground">提交前会复核 staged files 与 hook 输出。</span>
+            <span className="text-[11px] text-muted-foreground">Review staged files before committing.</span>
             <Button size="sm" variant="primary">
-              提交已暂存
+              Commit staged
             </Button>
           </div>
         </div>
@@ -707,7 +830,6 @@ function GitPanel({ open }: { open: boolean }) {
     </aside>
   );
 }
-
 function Summary({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-sm border border-border bg-background px-2 py-1.5">
@@ -717,14 +839,17 @@ function Summary({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StatusBar() {
+function StatusBar({ document }: { document: WorkbenchDocument }) {
+  const lineCount = getDocumentLines(document).length;
+
   return (
     <footer className="flex h-6 shrink-0 items-center justify-between border-t border-border bg-muted/70 px-2">
       <div className="flex min-w-0 items-center gap-3">
-        <span className="status-token truncate">src/features/workbench/workbench-page.tsx</span>
-        <span className="status-token">Ln 6, Col 12</span>
+        <span className="status-token truncate">{document.path}</span>
+        <span className="status-token">{lineCount} lines</span>
         <span className="status-token">UTF-8</span>
         <span className="status-token">LF</span>
+        {document.isUntitled ? <span className="status-token">Unsaved</span> : null}
       </div>
       <div className="flex items-center gap-3">
         <span className="status-token">
