@@ -43,6 +43,15 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 import { changes, editorLines, treeNodes } from "./mock-data";
 
+const windowsTitlebarMenus = [
+  { id: "file", label: "File", children: ["New File", "Open Folder", "Save All"] },
+  { id: "edit", label: "Edit", children: ["Undo", "Redo", "Find"] },
+  { id: "view", label: "View", children: ["Explorer", "Git Panel", "Terminal"] },
+  { id: "window", label: "Window", children: ["Minimize", "Maximize / Restore", "Close"] },
+] as const;
+
+type WindowsTitlebarMenuId = (typeof windowsTitlebarMenus)[number]["id"];
+
 export function WorkbenchPage() {
   const [dark, setDark] = useState(false);
   const [gitOpen, setGitOpen] = useState(true);
@@ -83,7 +92,7 @@ function WindowsTitleBar() {
   const menuRef = useRef<HTMLDivElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuExpanded, setMenuExpanded] = useState(false);
-  const [activeMenu, setActiveMenu] = useState<"file" | "edit" | "view" | "window" | null>(null);
+  const [activeMenu, setActiveMenu] = useState<WindowsTitlebarMenuId | null>(null);
 
   const collapseMenu = () => {
     setMenuExpanded(false);
@@ -103,10 +112,28 @@ function WindowsTitleBar() {
       collapseMenu();
     };
 
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        collapseMenu();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        collapseMenu();
+      }
+    };
+
     document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown, true);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("blur", collapseMenu);
 
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("blur", collapseMenu);
     };
   }, [menuExpanded]);
 
@@ -127,34 +154,30 @@ function WindowsTitleBar() {
   return (
     <header className="windows-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
       <div className="windows-titlebar-left" ref={menuRef}>
-        <button
-          className={cn("windows-titlebar-menu-button", menuExpanded && "windows-titlebar-menu-button-active")}
-          type="button"
-          aria-label="Toggle application menu"
-          aria-expanded={menuExpanded}
-          onClick={() => {
-            setMenuExpanded((value) => !value);
-            setActiveMenu(null);
-          }}
-        >
-          <Menu className="h-4 w-4" />
-        </button>
-        {menuExpanded ? (
+        {!menuExpanded ? (
+          <button
+            className="windows-titlebar-menu-button"
+            type="button"
+            aria-label="Toggle application menu"
+            aria-expanded={menuExpanded}
+            onClick={() => {
+              setMenuExpanded(true);
+            }}
+          >
+            <Menu className="h-4 w-4" />
+          </button>
+        ) : (
           <nav className="windows-titlebar-inline-menu" aria-label="Application menu">
-            {[
-              { id: "file", label: "File", children: ["New File", "Open Folder", "Save All"] },
-              { id: "edit", label: "Edit", children: ["Undo", "Redo", "Find"] },
-              { id: "view", label: "View", children: ["Explorer", "Git Panel", "Terminal"] },
-              { id: "window", label: "Window", children: ["Minimize", "Maximize / Restore", "Close"] },
-            ].map((item) => (
-              <div className="windows-titlebar-parent-menu" key={item.id}>
+            {windowsTitlebarMenus.map((item) => (
+              <div className="windows-titlebar-parent-menu" key={item.id} onPointerEnter={() => setActiveMenu(item.id)}>
                 <button
                   className={cn("windows-titlebar-parent-menu-button", activeMenu === item.id && "windows-titlebar-parent-menu-button-active")}
                   type="button"
-                  onClick={() => setActiveMenu(activeMenu === item.id ? null : (item.id as typeof activeMenu))}
+                  aria-expanded={activeMenu === item.id}
+                  onClick={() => setActiveMenu(item.id)}
+                  onFocus={() => setActiveMenu(item.id)}
                 >
                   {item.label}
-                  <ChevronDown className="h-3 w-3" />
                 </button>
                 {activeMenu === item.id ? (
                   <div className="windows-titlebar-submenu">
@@ -178,7 +201,8 @@ function WindowsTitleBar() {
               </div>
             ))}
           </nav>
-        ) : (
+        )}
+        {!menuExpanded ? (
           <div className="windows-titlebar-project">
             <button className="windows-titlebar-folder" type="button">
               norn
@@ -187,7 +211,7 @@ function WindowsTitleBar() {
               main - 4 modified
             </button>
           </div>
-        )}
+        ) : null}
       </div>
       <div className="windows-titlebar-drag-fill" data-tauri-drag-region />
       <div className="windows-titlebar-search-entry">
