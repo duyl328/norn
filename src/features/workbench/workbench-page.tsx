@@ -43,6 +43,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "@/lib/utils";
 import { changes, editorLines, treeNodes } from "./mock-data";
 
+type ProjectAccentStyle = {
+  "--project-color": string;
+  "--project-color-foreground": string;
+};
+
 const windowsTitlebarMenus = [
   { id: "file", label: "File", children: ["New File", "Open Folder", "Save All"] },
   { id: "edit", label: "Edit", children: ["Undo", "Redo", "Find"] },
@@ -67,6 +72,48 @@ const windowsTitlebarMenus = [
 ] as const;
 
 type WindowsTitlebarMenuId = (typeof windowsTitlebarMenus)[number]["id"];
+
+const recentProjects = [
+  { name: "norn", path: "D:/yuanll/code/norn" },
+  { name: "NornWorkbench", path: "D:/yuanll/code/NornWorkbench" },
+  { name: "robotSDK", path: "D:/yuanll/code/robotSDK" },
+  { name: "QAIStudio", path: "D:/yuanll/code/QAIStudio" },
+] as const;
+
+const getProjectInitials = (name: string) => {
+  const explicitWords = name
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[\s._-]+/)
+    .filter(Boolean);
+
+  const initials = explicitWords
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("");
+
+  return (initials || name.slice(0, 2)).toUpperCase();
+};
+
+const projectColorPairs = [
+  { background: "#2563eb", foreground: "#eff6ff" },
+  { background: "#0f766e", foreground: "#f0fdfa" },
+  { background: "#7c3aed", foreground: "#f5f3ff" },
+  { background: "#be123c", foreground: "#fff1f2" },
+  { background: "#047857", foreground: "#ecfdf5" },
+  { background: "#a16207", foreground: "#fefce8" },
+  { background: "#4338ca", foreground: "#eef2ff" },
+  { background: "#c2410c", foreground: "#fff7ed" },
+];
+
+const getProjectAccentStyle = (name: string): ProjectAccentStyle => {
+  const hash = Array.from(name).reduce((value, character) => value + character.charCodeAt(0), 0);
+  const pair = projectColorPairs[hash % projectColorPairs.length];
+
+  return {
+    "--project-color": pair.background,
+    "--project-color-foreground": pair.foreground,
+  };
+};
 
 export function WorkbenchPage() {
   const [dark, setDark] = useState(false);
@@ -105,13 +152,24 @@ export function WorkbenchPage() {
 
 function WindowsTitleBar() {
   const appWindow = getCurrentWindow();
+  const [projectName, setProjectName] = useState<string>(recentProjects[0].name);
+  const projectInitials = getProjectInitials(projectName);
+  const projectAccentStyle = getProjectAccentStyle(projectName);
   const menuRef = useRef<HTMLDivElement>(null);
+  const projectMenuRef = useRef<HTMLDivElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [menuExpanded, setMenuExpanded] = useState(false);
   const [activeMenu, setActiveMenu] = useState<WindowsTitlebarMenuId | null>(null);
   const [submenuLeft, setSubmenuLeft] = useState(0);
 
+  const selectProject = (name: string) => {
+    setProjectName(name);
+    setProjectMenuOpen(false);
+  };
+
   const openMenu = () => {
+    setProjectMenuOpen(false);
     setMenuExpanded(true);
   };
 
@@ -124,6 +182,40 @@ function WindowsTitleBar() {
     setSubmenuLeft(menuElement.offsetLeft);
     setActiveMenu(menuId);
   };
+
+  useEffect(() => {
+    if (!projectMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (projectMenuRef.current?.contains(event.target as Node)) {
+        return;
+      }
+
+      setProjectMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setProjectMenuOpen(false);
+      }
+    };
+
+    const handleWindowBlur = () => {
+      setProjectMenuOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("blur", handleWindowBlur);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("blur", handleWindowBlur);
+    };
+  }, [projectMenuOpen]);
 
   useEffect(() => {
     if (!menuExpanded) {
@@ -240,9 +332,40 @@ function WindowsTitleBar() {
         )}
         {!menuExpanded ? (
           <div className="windows-titlebar-project">
-            <button className="windows-titlebar-folder" type="button">
-              norn
-            </button>
+            <div className="windows-titlebar-project-picker" ref={projectMenuRef}>
+              <button
+                className={cn("windows-titlebar-folder", projectMenuOpen && "windows-titlebar-folder-active")}
+                type="button"
+                aria-expanded={projectMenuOpen}
+                onClick={() => setProjectMenuOpen((value) => !value)}
+              >
+                <span className="windows-titlebar-folder-icon" style={projectAccentStyle}>{projectInitials}</span>
+                <span className="windows-titlebar-folder-name">{projectName}</span>
+              </button>
+              {projectMenuOpen ? (
+                <div className="windows-titlebar-folder-menu">
+                  <button className="windows-titlebar-folder-menu-item" type="button" onClick={() => setProjectMenuOpen(false)}>
+                    Open New Folder
+                  </button>
+                  <button className="windows-titlebar-folder-menu-item" type="button" onClick={() => setProjectMenuOpen(false)}>
+                    Add Folder to Workspace
+                  </button>
+                  <div className="windows-titlebar-folder-menu-section">
+                    {recentProjects.map((project) => (
+                      <button className="windows-titlebar-recent-project" key={project.path} type="button" onClick={() => selectProject(project.name)}>
+                        <span className="windows-titlebar-recent-project-icon" style={getProjectAccentStyle(project.name)}>
+                          {getProjectInitials(project.name)}
+                        </span>
+                        <span className="windows-titlebar-recent-project-text">
+                          <span className="windows-titlebar-recent-project-name">{project.name}</span>
+                          <span className="windows-titlebar-recent-project-path">{project.path}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
             <button className="windows-titlebar-git" type="button">
               main - 4 modified
             </button>

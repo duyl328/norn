@@ -106,12 +106,69 @@
     @apply flex min-w-[300px] items-center gap-2;
   }
 
-  .windows-titlebar-folder {
-    @apply h-7 min-w-[132px] max-w-[220px] truncate rounded-sm border-0 bg-transparent px-2 text-left text-[12px] font-semibold transition-colors;
+  .windows-titlebar-project-picker {
+    @apply relative h-7 shrink-0;
   }
 
-  .windows-titlebar-folder:hover {
+  .windows-titlebar-folder {
+    @apply flex h-7 max-w-[260px] items-center gap-1.5 rounded-sm border-0 bg-transparent px-1.5 pr-2 text-left text-[12px] font-semibold transition-colors;
+  }
+
+  .windows-titlebar-folder:hover,
+  .windows-titlebar-folder-active {
     @apply bg-accent text-accent-foreground;
+  }
+
+  .windows-titlebar-folder-icon {
+    @apply grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[0.2rem] text-[9px] font-bold leading-none;
+    background: var(--project-color);
+    color: var(--project-color-foreground);
+  }
+
+  .windows-titlebar-folder-name {
+    @apply min-w-0 max-w-[190px] truncate;
+  }
+
+  .windows-titlebar-folder-menu {
+    @apply absolute left-0 top-full z-50 mt-1 grid w-[320px] gap-0 rounded-[0.4125rem] border border-border bg-popover p-1 text-popover-foreground shadow-lg;
+  }
+
+  .windows-titlebar-folder-menu-item {
+    @apply h-7 rounded-[0.35rem] border-0 bg-transparent px-2 text-left text-[12px] text-muted-foreground;
+  }
+
+  .windows-titlebar-folder-menu-item:hover {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .windows-titlebar-folder-menu-section {
+    @apply mt-1 grid border-t border-border pt-1;
+  }
+
+  .windows-titlebar-recent-project {
+    @apply grid min-w-0 grid-cols-[22px_minmax(0,1fr)] items-center gap-2 rounded-[0.35rem] border-0 bg-transparent px-2 py-1.5 text-left;
+  }
+
+  .windows-titlebar-recent-project:hover {
+    @apply bg-accent;
+  }
+
+  .windows-titlebar-recent-project-icon {
+    @apply grid h-[22px] w-[22px] place-items-center rounded-[0.25rem] text-[10px] font-bold leading-none;
+    background: var(--project-color);
+    color: var(--project-color-foreground);
+  }
+
+  .windows-titlebar-recent-project-text {
+    @apply grid min-w-0 gap-0.5;
+  }
+
+  .windows-titlebar-recent-project-name {
+    @apply truncate text-[12px] font-semibold text-foreground;
+  }
+
+  .windows-titlebar-recent-project-path {
+    @apply truncate text-[11px] text-muted-foreground;
   }
 
   .windows-titlebar-git {
