@@ -1,8 +1,16 @@
-import { type ChangeEvent, type MouseEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { javascript } from "@codemirror/lang-javascript";
 import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
-import { EditorState, type Extension } from "@codemirror/state";
+import { EditorState, StateEffect, type Extension } from "@codemirror/state";
 import {
   drawSelection,
   EditorView,
@@ -53,6 +61,92 @@ import { changes, editorLines, treeNodes } from "./mock-data";
 type ProjectAccentStyle = {
   "--project-color": string;
   "--project-color-foreground": string;
+};
+
+type TauriRuntimeWindow = Window & {
+  __TAURI_INTERNALS__?: unknown;
+};
+
+const isTauriRuntime = () => Boolean((window as TauriRuntimeWindow).__TAURI_INTERNALS__);
+
+type EditorScrollMetrics = {
+  clientHeight: number;
+  clientWidth: number;
+  gutterWidth: number;
+  scrollHeight: number;
+  scrollLeft: number;
+  scrollTop: number;
+  scrollWidth: number;
+  shellHeight: number;
+  shellWidth: number;
+};
+
+type EditorScrollbarOrientation = "horizontal" | "vertical";
+
+type EditorScrollbarGeometry = {
+  maxScroll: number;
+  scrollPosition: number;
+  thumbOffset: number;
+  thumbSize: number;
+  trackSize: number;
+};
+
+const EDITOR_SCROLLBAR_SIZE = 18;
+const EDITOR_MIN_THUMB_SIZE = 44;
+
+const emptyEditorScrollMetrics: EditorScrollMetrics = {
+  clientHeight: 0,
+  clientWidth: 0,
+  gutterWidth: 52,
+  scrollHeight: 0,
+  scrollLeft: 0,
+  scrollTop: 0,
+  scrollWidth: 0,
+  shellHeight: 0,
+  shellWidth: 0,
+};
+
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const getEditorScrollbarGeometry = (
+  orientation: EditorScrollbarOrientation,
+  metrics: EditorScrollMetrics,
+): EditorScrollbarGeometry | null => {
+  const maxHorizontalScroll = Math.max(0, metrics.scrollWidth - metrics.clientWidth);
+  const maxVerticalScroll = Math.max(0, metrics.scrollHeight - metrics.clientHeight);
+  const hasHorizontalScrollbar = maxHorizontalScroll > 1;
+  const hasVerticalScrollbar = maxVerticalScroll > 1;
+
+  if (orientation === "horizontal" && !hasHorizontalScrollbar) {
+    return null;
+  }
+
+  if (orientation === "vertical" && !hasVerticalScrollbar) {
+    return null;
+  }
+
+  const trackSize =
+    orientation === "horizontal"
+      ? Math.max(0, metrics.shellWidth - metrics.gutterWidth - (hasVerticalScrollbar ? EDITOR_SCROLLBAR_SIZE : 0))
+      : Math.max(0, metrics.shellHeight);
+  const maxScroll = orientation === "horizontal" ? maxHorizontalScroll : maxVerticalScroll;
+
+  if (trackSize <= 0 || maxScroll <= 0) {
+    return null;
+  }
+
+  const totalSize = trackSize + maxScroll;
+  const thumbSize = Math.min(trackSize, Math.max(EDITOR_MIN_THUMB_SIZE, (trackSize / totalSize) * trackSize));
+  const scrollPosition = orientation === "horizontal" ? metrics.scrollLeft : metrics.scrollTop;
+  const thumbOffset = (clamp(scrollPosition, 0, maxScroll) / maxScroll) * Math.max(0, trackSize - thumbSize);
+
+  return {
+    maxScroll,
+    scrollPosition,
+    thumbOffset,
+    thumbSize,
+    trackSize,
+  };
 };
 
 const windowsTitlebarMenus = [
@@ -116,7 +210,7 @@ const codeMirrorTheme = EditorView.theme({
   },
   ".cm-content": {
     minHeight: "100%",
-    padding: "12px 0 28px",
+    padding: "12px calc(var(--editor-scrollbar-size) + 8px) calc(var(--editor-scrollbar-size) + 18px) 0",
   },
   ".cm-line": {
     padding: "0 12px",
@@ -125,7 +219,7 @@ const codeMirrorTheme = EditorView.theme({
     backgroundColor: "hsl(var(--editor-gutter))",
     borderRight: "1px solid hsl(var(--border))",
     color: "hsl(var(--muted-foreground))",
-    paddingBottom: "18px",
+    paddingBottom: "calc(var(--editor-scrollbar-size) + 12px)",
   },
   ".cm-activeLine": {
     backgroundColor: "hsl(var(--accent) / 0.32)",
@@ -217,7 +311,7 @@ export function WorkbenchPage() {
   const [document, setDocument] = useState<WorkbenchDocument>(initialDocument);
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const isWindows = useMemo(() => navigator.userAgent.includes("Windows"), []);
+  const showWindowsTitlebar = useMemo(() => navigator.userAgent.includes("Windows") && isTauriRuntime(), []);
 
   const createFile = () => {
     setFileError(null);
@@ -276,7 +370,7 @@ export function WorkbenchPage() {
       <div className={cn("h-full bg-background text-[12px] text-foreground", dark && "dark")}>
         <div className="flex h-full min-w-0 flex-col">
           <input className="hidden" ref={fileInputRef} type="file" onChange={handleFileSelected} />
-          {isWindows ? <WindowsTitleBar onCreateFile={createFile} onOpenFile={openFilePicker} /> : null}
+          {showWindowsTitlebar ? <WindowsTitleBar onCreateFile={createFile} onOpenFile={openFilePicker} /> : null}
           <WorkbenchToolbar
             dark={dark}
             onToggleGit={() => setGitOpen((value) => !value)}
@@ -693,9 +787,20 @@ function EditorSurface({
   error: string | null;
   onChange: (content: string) => void;
 }) {
+  const editorFrameRef = useRef<HTMLDivElement>(null);
   const editorElementRef = useRef<HTMLDivElement>(null);
+  const scrollDOMRef = useRef<HTMLElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
+  const dragRef = useRef<{
+    maxScroll: number;
+    orientation: EditorScrollbarOrientation;
+    pointerStart: number;
+    scrollStart: number;
+    thumbSize: number;
+    trackSize: number;
+  } | null>(null);
+  const [scrollMetrics, setScrollMetrics] = useState<EditorScrollMetrics>(emptyEditorScrollMetrics);
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -703,8 +808,9 @@ function EditorSurface({
 
   useEffect(() => {
     const parent = editorElementRef.current;
+    const frame = editorFrameRef.current;
 
-    if (!parent) {
+    if (!parent || !frame) {
       return;
     }
 
@@ -717,12 +823,159 @@ function EditorSurface({
     });
 
     viewRef.current = view;
+    scrollDOMRef.current = view.scrollDOM;
+
+    let animationFrame: number | null = null;
+
+    const readScrollMetrics = () => {
+      const gutterElement = view.scrollDOM.querySelector(".cm-gutters") as HTMLElement | null;
+      const frameRect = frame.getBoundingClientRect();
+
+      return {
+        clientHeight: view.scrollDOM.clientHeight,
+        clientWidth: view.scrollDOM.clientWidth,
+        gutterWidth: gutterElement?.getBoundingClientRect().width ?? emptyEditorScrollMetrics.gutterWidth,
+        scrollHeight: view.scrollDOM.scrollHeight,
+        scrollLeft: view.scrollDOM.scrollLeft,
+        scrollTop: view.scrollDOM.scrollTop,
+        scrollWidth: view.scrollDOM.scrollWidth,
+        shellHeight: frameRect.height,
+        shellWidth: frameRect.width,
+      };
+    };
+
+    const updateScrollMetrics = () => {
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+
+      animationFrame = window.requestAnimationFrame(() => {
+        animationFrame = null;
+        setScrollMetrics(readScrollMetrics());
+      });
+    };
+
+    view.dispatch({
+      effects: StateEffect.appendConfig.of(EditorView.updateListener.of(updateScrollMetrics)),
+    });
+
+    const resizeObserver = new ResizeObserver(updateScrollMetrics);
+    resizeObserver.observe(frame);
+    resizeObserver.observe(view.scrollDOM);
+    resizeObserver.observe(view.contentDOM);
+
+    const gutterElement = view.scrollDOM.querySelector(".cm-gutters");
+
+    if (gutterElement) {
+      resizeObserver.observe(gutterElement);
+    }
+
+    const mutationObserver = new MutationObserver(updateScrollMetrics);
+    mutationObserver.observe(parent, { childList: true, characterData: true, subtree: true });
+
+    view.scrollDOM.addEventListener("scroll", updateScrollMetrics, { passive: true });
+    updateScrollMetrics();
 
     return () => {
+      if (animationFrame !== null) {
+        window.cancelAnimationFrame(animationFrame);
+      }
+
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+      view.scrollDOM.removeEventListener("scroll", updateScrollMetrics);
       view.destroy();
       viewRef.current = null;
+      scrollDOMRef.current = null;
     };
   }, [document.id, document.name]);
+
+  const setScrollPosition = (orientation: EditorScrollbarOrientation, value: number) => {
+    const scrollDOM = scrollDOMRef.current;
+
+    if (!scrollDOM) {
+      return;
+    }
+
+    if (orientation === "horizontal") {
+      scrollDOM.scrollLeft = value;
+      return;
+    }
+
+    scrollDOM.scrollTop = value;
+  };
+
+  const handleScrollbarTrackPointerDown = (
+    orientation: EditorScrollbarOrientation,
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+
+    const geometry = getEditorScrollbarGeometry(orientation, scrollMetrics);
+
+    if (!geometry) {
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pointerPosition = orientation === "horizontal" ? event.clientX - rect.left : event.clientY - rect.top;
+    const pageSize =
+      orientation === "horizontal"
+        ? Math.max(1, scrollMetrics.clientWidth - scrollMetrics.gutterWidth)
+        : Math.max(1, scrollMetrics.clientHeight);
+    const direction = pointerPosition < geometry.thumbOffset ? -1 : 1;
+
+    event.preventDefault();
+    setScrollPosition(orientation, clamp(geometry.scrollPosition + direction * pageSize, 0, geometry.maxScroll));
+  };
+
+  const handleScrollbarThumbPointerDown = (
+    orientation: EditorScrollbarOrientation,
+    event: ReactPointerEvent<HTMLSpanElement>,
+  ) => {
+    const geometry = getEditorScrollbarGeometry(orientation, scrollMetrics);
+
+    if (!geometry) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    dragRef.current = {
+      maxScroll: geometry.maxScroll,
+      orientation,
+      pointerStart: orientation === "horizontal" ? event.clientX : event.clientY,
+      scrollStart: geometry.scrollPosition,
+      thumbSize: geometry.thumbSize,
+      trackSize: geometry.trackSize,
+    };
+
+    const handlePointerMove = (pointerEvent: globalThis.PointerEvent) => {
+      const drag = dragRef.current;
+
+      if (!drag) {
+        return;
+      }
+
+      const pointerPosition = drag.orientation === "horizontal" ? pointerEvent.clientX : pointerEvent.clientY;
+      const draggableSize = Math.max(1, drag.trackSize - drag.thumbSize);
+      const scrollDelta = ((pointerPosition - drag.pointerStart) / draggableSize) * drag.maxScroll;
+
+      setScrollPosition(drag.orientation, clamp(drag.scrollStart + scrollDelta, 0, drag.maxScroll));
+    };
+
+    const handlePointerUp = () => {
+      dragRef.current = null;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
 
   return (
     <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-[hsl(var(--editor-background))]">
@@ -739,8 +992,79 @@ function EditorSurface({
           {error}
         </div>
       ) : null}
-      <div className="codemirror-shell min-h-0 flex-1" ref={editorElementRef} />
+      <div className="codemirror-shell-frame min-h-0 flex-1" ref={editorFrameRef}>
+        <div className="codemirror-shell min-h-0 flex-1" ref={editorElementRef} />
+        <EditorScrollbar
+          metrics={scrollMetrics}
+          orientation="vertical"
+          onThumbPointerDown={handleScrollbarThumbPointerDown}
+          onTrackPointerDown={handleScrollbarTrackPointerDown}
+        />
+        <EditorScrollbar
+          metrics={scrollMetrics}
+          orientation="horizontal"
+          onThumbPointerDown={handleScrollbarThumbPointerDown}
+          onTrackPointerDown={handleScrollbarTrackPointerDown}
+        />
+      </div>
     </section>
+  );
+}
+
+function EditorScrollbar({
+  metrics,
+  orientation,
+  onThumbPointerDown,
+  onTrackPointerDown,
+}: {
+  metrics: EditorScrollMetrics;
+  orientation: EditorScrollbarOrientation;
+  onThumbPointerDown: (orientation: EditorScrollbarOrientation, event: ReactPointerEvent<HTMLSpanElement>) => void;
+  onTrackPointerDown: (orientation: EditorScrollbarOrientation, event: ReactPointerEvent<HTMLDivElement>) => void;
+}) {
+  const geometry = getEditorScrollbarGeometry(orientation, metrics);
+  const hasVerticalScrollbar = metrics.scrollHeight - metrics.clientHeight > 1;
+
+  if (!geometry) {
+    return null;
+  }
+
+  return (
+    <div
+      aria-orientation={orientation}
+      aria-valuemax={Math.round(geometry.maxScroll)}
+      aria-valuemin={0}
+      aria-valuenow={Math.round(geometry.scrollPosition)}
+      className={cn("editor-scrollbar", `editor-scrollbar-${orientation}`)}
+      role="scrollbar"
+      style={
+        orientation === "horizontal"
+          ? {
+              bottom: 0,
+              height: EDITOR_SCROLLBAR_SIZE,
+              left: metrics.gutterWidth,
+              right: hasVerticalScrollbar ? EDITOR_SCROLLBAR_SIZE : 0,
+            }
+          : {
+              bottom: 0,
+              right: 0,
+              top: 0,
+              width: EDITOR_SCROLLBAR_SIZE,
+            }
+      }
+      tabIndex={-1}
+      onPointerDown={(event) => onTrackPointerDown(orientation, event)}
+    >
+      <span
+        className="editor-scrollbar-thumb"
+        style={
+          orientation === "horizontal"
+            ? { left: geometry.thumbOffset, width: geometry.thumbSize }
+            : { height: geometry.thumbSize, top: geometry.thumbOffset }
+        }
+        onPointerDown={(event) => onThumbPointerDown(orientation, event)}
+      />
+    </div>
   );
 }
 

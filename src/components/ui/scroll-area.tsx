@@ -75,8 +75,8 @@ const ScrollBar = React.forwardRef<
     }}
     className={cn(
       "flex touch-none select-none bg-muted-foreground/5 opacity-45 transition-[background-color,opacity] duration-200 group-[.is-scroll-active]/scroll-area:bg-muted-foreground/10 group-[.is-scroll-active]/scroll-area:opacity-100",
-      orientation === "vertical" && "h-full w-3 border-l border-l-transparent p-[2px]",
-      orientation === "horizontal" && "h-3 flex-col border-t border-t-transparent p-[2px]",
+      orientation === "vertical" && "h-full w-4 border-l border-l-transparent p-[3px]",
+      orientation === "horizontal" && "h-4 flex-col border-t border-t-transparent p-[3px]",
       className,
     )}
     {...props}

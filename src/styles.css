@@ -330,8 +330,13 @@
     @apply inline-flex h-5 items-center gap-1 whitespace-nowrap font-mono text-[11px] text-muted-foreground;
   }
 
+  .codemirror-shell-frame {
+    @apply relative min-w-0 overflow-hidden;
+  }
+
   .codemirror-shell {
     @apply min-w-0 overflow-hidden;
+    --editor-scrollbar-size: 18px;
     height: 100%;
   }
 
@@ -345,9 +350,15 @@
     font-family:
       ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     line-height: 20px;
-    scrollbar-color: hsl(var(--muted-foreground) / 0.36) transparent;
-    scrollbar-gutter: stable;
-    scrollbar-width: auto;
+    scrollbar-color: transparent transparent;
+    scrollbar-gutter: auto;
+    scrollbar-width: none;
+  }
+
+  .codemirror-shell .cm-scroller::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
   }
 
   .codemirror-shell .cm-gutterElement {
@@ -364,29 +375,36 @@
     background-color: hsl(var(--primary) / 0.32);
   }
 
-  .codemirror-shell .cm-scroller::-webkit-scrollbar {
-    width: 12px;
-    height: 12px;
+  .editor-scrollbar {
+    @apply absolute z-30;
+    touch-action: none;
+    user-select: none;
   }
 
-  .codemirror-shell .cm-scroller::-webkit-scrollbar-track {
-    background: transparent;
+  .editor-scrollbar-horizontal {
+    @apply z-20;
   }
 
-  .codemirror-shell .cm-scroller::-webkit-scrollbar-thumb {
-    min-height: 32px;
-    border: 3px solid transparent;
-    border-radius: 2px;
-    background-color: hsl(var(--muted-foreground) / 0.32);
-    background-clip: content-box;
-    transition: background-color 200ms ease;
+  .editor-scrollbar-vertical {
+    @apply z-40 border-l border-border bg-muted-foreground/10;
   }
 
-  .codemirror-shell .cm-scroller::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--muted-foreground) / 0.7);
+  .editor-scrollbar-thumb {
+    @apply absolute rounded-[2px] bg-muted-foreground/45 transition-colors duration-150;
   }
 
-  .codemirror-shell .cm-scroller::-webkit-scrollbar-corner {
-    background: hsl(var(--editor-background));
+  .editor-scrollbar:hover .editor-scrollbar-thumb,
+  .editor-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/70;
+  }
+
+  .editor-scrollbar-horizontal .editor-scrollbar-thumb {
+    bottom: 4px;
+    height: 9px;
+  }
+
+  .editor-scrollbar-vertical .editor-scrollbar-thumb {
+    left: 4px;
+    width: 9px;
   }
 }
