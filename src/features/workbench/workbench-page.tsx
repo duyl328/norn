@@ -1,5 +1,4 @@
 import {
-  type ChangeEvent,
   type MouseEvent,
   type PointerEvent as ReactPointerEvent,
   useEffect,
@@ -8,9 +7,8 @@ import {
   useState,
 } from "react";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { javascript } from "@codemirror/lang-javascript";
 import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
-import { EditorState, StateEffect, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, StateEffect, type Extension } from "@codemirror/state";
 import {
   drawSelection,
   EditorView,
@@ -25,6 +23,9 @@ import {
   ChevronRight,
   CircleDot,
   Columns3,
+  FileText,
+  Folder,
+  FolderOpen,
   Menu,
   Minus,
   Square,
@@ -33,7 +34,9 @@ import {
   GitCommitHorizontal,
   GitPullRequest,
   PanelLeftClose,
+  PanelLeftOpen,
   PanelRightClose,
+  Search,
   Settings,
   Terminal,
 } from "lucide-react";
@@ -49,6 +52,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Input } from "@/components/ui/input";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -56,7 +61,13 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { changes, editorLines, treeNodes } from "./mock-data";
+import {
+  FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES,
+  createSmartOverlayExtension,
+  loadHighlightExtensions,
+  resolveHighlightMode,
+} from "./editor-highlighting";
+import { changes, editorLines } from "./mock-data";
 
 type ProjectAccentStyle = {
   "--project-color": string;
@@ -68,6 +79,81 @@ type TauriRuntimeWindow = Window & {
 };
 
 const isTauriRuntime = () => Boolean((window as TauriRuntimeWindow).__TAURI_INTERNALS__);
+
+const nativeMenuEvent = "norn-menu";
+
+const nativeMenuCommands = {
+  find: "menu-find",
+  newFile: "menu-new-file",
+  openFile: "menu-open-file",
+  openFolder: "menu-open-folder",
+  showExplorer: "menu-show-explorer",
+  toggleGitPanel: "menu-toggle-git-panel",
+} as const;
+
+type NativeTextFile = {
+  name: string;
+  path: string;
+  content: string;
+  size: number;
+  lastModified?: number | null;
+};
+
+type NativeTextFileInspection = {
+  name: string;
+  path: string;
+  size: number;
+  lastModified?: number | null;
+  isBinary: boolean;
+  isUtf8: boolean;
+  sample: string;
+};
+
+type NativeTextFileRange = {
+  path: string;
+  content: string;
+  size: number;
+  requestedOffset: number;
+  startOffset: number;
+  endOffset: number;
+  hasMoreBefore: boolean;
+  hasMoreAfter: boolean;
+};
+
+type NativeDirectoryEntry = {
+  name: string;
+  path: string;
+  relativePath: string;
+  kind: "file" | "directory";
+  size?: number | null;
+  lastModified?: number | null;
+};
+
+type FolderView = {
+  rootPath: string;
+  rootName: string;
+  origin: "open-folder" | "containing-folder";
+  nodes: FileTreeNode[];
+  loadingPath: string | null;
+  error: string | null;
+};
+
+type FileTreeNode = {
+  name: string;
+  path: string;
+  relativePath: string;
+  kind: "file" | "directory";
+  size?: number;
+  lastModified?: number;
+  children?: FileTreeNode[];
+  childrenLoaded?: boolean;
+  expanded?: boolean;
+  error?: string;
+};
+
+type PendingFileOpen =
+  | { kind: "file-dialog" }
+  | { kind: "path"; clearFolderView?: boolean; path: string; size?: number };
 
 type EditorScrollMetrics = {
   clientHeight: number;
@@ -93,6 +179,10 @@ type EditorScrollbarGeometry = {
 
 const EDITOR_SCROLLBAR_SIZE = 18;
 const EDITOR_MIN_THUMB_SIZE = 44;
+const LARGE_FILE_CONFIRM_BYTES = 5 * 1024 * 1024;
+const LARGE_FILE_READONLY_BYTES = 25 * 1024 * 1024;
+const SUPER_LARGE_FILE_BYTES = 100 * 1024 * 1024;
+const LARGE_FILE_CHUNK_BYTES = 512 * 1024;
 
 const emptyEditorScrollMetrics: EditorScrollMetrics = {
   clientHeight: 0,
@@ -107,6 +197,80 @@ const emptyEditorScrollMetrics: EditorScrollMetrics = {
 };
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+const getPathName = (path: string) => {
+  const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  const name = normalizedPath.split("/").filter(Boolean).pop();
+
+  return name || path;
+};
+
+const getParentPath = (path: string) => {
+  const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+
+  if (separatorIndex < 0) {
+    return null;
+  }
+
+  if (separatorIndex === 0) {
+    return "/";
+  }
+
+  if (/^[a-zA-Z]:[\\/]/.test(path) && separatorIndex === 2) {
+    return path.slice(0, 3);
+  }
+
+  return path.slice(0, separatorIndex);
+};
+
+const isAbsolutePath = (path: string) => path.startsWith("/") || path.startsWith("\\\\") || /^[a-zA-Z]:[\\/]/.test(path);
+
+const getFileOpenId = (path: string, lastModified?: number | null) => `${path}-${lastModified ?? Date.now()}`;
+
+const formatFileSize = (size?: number) => {
+  if (typeof size !== "number") {
+    return "";
+  }
+
+  if (size < 1024) {
+    return `${size} B`;
+  }
+
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const toFileTreeNode = (entry: NativeDirectoryEntry): FileTreeNode => ({
+  name: entry.name,
+  path: entry.path,
+  relativePath: entry.relativePath,
+  kind: entry.kind,
+  size: entry.size ?? undefined,
+  lastModified: entry.lastModified ?? undefined,
+  children: entry.kind === "directory" ? [] : undefined,
+  childrenLoaded: false,
+  expanded: false,
+});
+
+const updateTreeNode = (
+  nodes: FileTreeNode[],
+  path: string,
+  update: (node: FileTreeNode) => FileTreeNode,
+): FileTreeNode[] =>
+  nodes.map((node) => {
+    if (node.path === path) {
+      return update(node);
+    }
+
+    if (node.children) {
+      return { ...node, children: updateTreeNode(node.children, path, update) };
+    }
+
+    return node;
+  });
 
 const getEditorScrollbarGeometry = (
   orientation: EditorScrollbarOrientation,
@@ -150,7 +314,7 @@ const getEditorScrollbarGeometry = (
 };
 
 const windowsTitlebarMenus = [
-  { id: "file", label: "File", children: ["New File", "Open File"] },
+  { id: "file", label: "File", children: ["New File", "Open File", "Open Folder"] },
   { id: "edit", label: "Edit", children: ["Undo", "Redo", "Find"] },
   { id: "view", label: "View", children: ["Explorer", "Git Panel", "Terminal"] },
   { id: "window", label: "Window", children: ["Minimize", "Maximize / Restore", "Close"] },
@@ -179,9 +343,17 @@ type WorkbenchDocument = {
   name: string;
   path: string;
   content: string;
+  savedContent: string;
   size?: number;
   lastModified?: number;
   isUntitled?: boolean;
+  mode?: "editable" | "large-readonly";
+  range?: {
+    endOffset: number;
+    hasMoreAfter: boolean;
+    hasMoreBefore: boolean;
+    startOffset: number;
+  };
 };
 
 const initialDocument: WorkbenchDocument = {
@@ -189,6 +361,8 @@ const initialDocument: WorkbenchDocument = {
   name: "workbench-page.tsx",
   path: "src/features/workbench/workbench-page.tsx",
   content: editorLines.join("\n"),
+  savedContent: editorLines.join("\n"),
+  mode: "editable",
 };
 
 const getDocumentLines = (document: WorkbenchDocument) => {
@@ -233,18 +407,11 @@ const codeMirrorTheme = EditorView.theme({
   },
 });
 
-const getCodeMirrorLanguageExtensions = (fileName: string): Extension[] => {
-  const normalizedFileName = fileName.toLowerCase();
-  const isJavaScriptLike = /\.(cjs|mjs|js|jsx|ts|tsx)$/.test(normalizedFileName);
-
-  if (!isJavaScriptLike) {
-    return [];
-  }
-
-  return [javascript({ jsx: true, typescript: normalizedFileName.endsWith(".ts") || normalizedFileName.endsWith(".tsx") })];
-};
-
-const createCodeMirrorExtensions = (fileName: string, onChange: (content: string) => void): Extension[] => [
+const createCodeMirrorExtensions = (
+  languageCompartment: Compartment,
+  document: WorkbenchDocument,
+  onChange: (content: string) => void,
+): Extension[] => [
   lineNumbers(),
   highlightActiveLineGutter(),
   history(),
@@ -254,7 +421,9 @@ const createCodeMirrorExtensions = (fileName: string, onChange: (content: string
   syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
   highlightActiveLine(),
   keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
-  ...getCodeMirrorLanguageExtensions(fileName),
+  languageCompartment.of([]),
+  ...createSmartOverlayExtension(document.content.length),
+  EditorView.editable.of(document.mode !== "large-readonly"),
   EditorView.updateListener.of((update) => {
     if (update.docChanged) {
       onChange(update.state.doc.toString());
@@ -309,24 +478,294 @@ export function WorkbenchPage() {
   const [dark, setDark] = useState(false);
   const [gitOpen, setGitOpen] = useState(true);
   const [document, setDocument] = useState<WorkbenchDocument>(initialDocument);
+  const [explorerOpen, setExplorerOpen] = useState(true);
   const [fileError, setFileError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [folderView, setFolderView] = useState<FolderView | null>(null);
+  const [pendingFileOpen, setPendingFileOpen] = useState<PendingFileOpen | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
   const showWindowsTitlebar = useMemo(() => navigator.userAgent.includes("Windows") && isTauriRuntime(), []);
+  const showMacTitlebar = useMemo(() => navigator.userAgent.includes("Mac") && isTauriRuntime(), []);
+  const isDirty = document.content !== document.savedContent;
 
   const createFile = () => {
     setFileError(null);
+    setExplorerOpen(false);
+    setFolderView(null);
     setDocument({
       id: `untitled-${Date.now()}`,
       name: "Untitled.txt",
       path: "Untitled.txt",
       content: "",
+      savedContent: "",
       isUntitled: true,
+      mode: "editable",
     });
   };
 
-  const openFilePicker = () => {
+  const readFolderEntries = async (path: string) => {
+    const entries = await invoke<NativeDirectoryEntry[]>("list_directory", { path });
+
+    return entries.map(toFileTreeNode);
+  };
+
+  const openNativeFile = async (path: string, options: { clearFolderView?: boolean; size?: number } = {}) => {
+    const { clearFolderView = false, size } = options;
+
     setFileError(null);
-    fileInputRef.current?.click();
+
+    try {
+      const inspection = await invoke<NativeTextFileInspection>("inspect_text_file", { path });
+
+      if (inspection.isBinary || !inspection.isUtf8) {
+        setFileError(`${inspection.name} cannot be opened as UTF-8 text.`);
+        return;
+      }
+
+      if (inspection.size > LARGE_FILE_READONLY_BYTES) {
+        const rangeOffset =
+          inspection.size > SUPER_LARGE_FILE_BYTES
+            ? Math.max(0, inspection.size - LARGE_FILE_CHUNK_BYTES)
+            : 0;
+        const range = await invoke<NativeTextFileRange>("read_text_file_range", {
+          path,
+          offset: rangeOffset,
+          length: LARGE_FILE_CHUNK_BYTES,
+        });
+        const contentPrefix = range.hasMoreBefore ? "[Earlier content omitted in large file browsing mode]\n\n" : "";
+        const contentSuffix = range.hasMoreAfter ? "\n\n[More content omitted in large file browsing mode]" : "";
+        const rangeContent = `${contentPrefix}${range.content}${contentSuffix}`;
+
+        setDocument({
+          id: getFileOpenId(inspection.path, inspection.lastModified),
+          name: inspection.name,
+          path: inspection.path,
+          content: rangeContent,
+          savedContent: rangeContent,
+          size: inspection.size,
+          lastModified: inspection.lastModified ?? undefined,
+          mode: "large-readonly",
+          range: {
+            endOffset: range.endOffset,
+            hasMoreAfter: range.hasMoreAfter,
+            hasMoreBefore: range.hasMoreBefore,
+            startOffset: range.startOffset,
+          },
+        });
+
+        if (clearFolderView) {
+          setFolderView(null);
+          setExplorerOpen(false);
+        }
+
+        return;
+      }
+
+      if ((typeof size === "number" ? size : inspection.size) > LARGE_FILE_CONFIRM_BYTES) {
+        const shouldOpen = window.confirm(`This file is ${formatFileSize(inspection.size)}. Open it as text?`);
+
+        if (!shouldOpen) {
+          return;
+        }
+      }
+
+      const file = await invoke<NativeTextFile>("read_text_file", { path });
+
+      setDocument({
+        id: getFileOpenId(file.path, file.lastModified),
+        name: file.name,
+        path: file.path,
+        content: file.content,
+        savedContent: file.content,
+        size: file.size,
+        lastModified: file.lastModified ?? undefined,
+        mode: "editable",
+      });
+
+      if (clearFolderView) {
+        setFolderView(null);
+        setExplorerOpen(false);
+      }
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const continueFileOpen = async (pendingOpen: PendingFileOpen) => {
+    if (pendingOpen.kind === "path") {
+      await openNativeFile(pendingOpen.path, {
+        clearFolderView: pendingOpen.clearFolderView,
+        size: pendingOpen.size,
+      });
+      return;
+    }
+
+    if (!isTauriRuntime()) {
+      setFileError("Native file opening is only available in the Tauri desktop app.");
+      return;
+    }
+
+    try {
+      const path = await invoke<string | null>("open_file_dialog");
+
+      if (path) {
+        await openNativeFile(path, { clearFolderView: true });
+      }
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const requestFileOpen = (pendingOpen: PendingFileOpen) => {
+    if (isDirty) {
+      setPendingFileOpen(pendingOpen);
+      return;
+    }
+
+    void continueFileOpen(pendingOpen);
+  };
+
+  const openFilePicker = () => {
+    requestFileOpen({ kind: "file-dialog" });
+  };
+
+  const openFolderView = async (rootPath: string, origin: FolderView["origin"]) => {
+    setExplorerOpen(true);
+    setFolderView({
+      rootPath,
+      rootName: getPathName(rootPath),
+      origin,
+      nodes: [],
+      loadingPath: rootPath,
+      error: null,
+    });
+
+    try {
+      const nodes = await readFolderEntries(rootPath);
+
+      setFolderView({
+        rootPath,
+        rootName: getPathName(rootPath),
+        origin,
+        nodes,
+        loadingPath: null,
+        error: null,
+      });
+    } catch (error) {
+      setFolderView({
+        rootPath,
+        rootName: getPathName(rootPath),
+        origin,
+        nodes: [],
+        loadingPath: null,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const openFolderPicker = async () => {
+    if (!isTauriRuntime()) {
+      setFileError("Native folder opening is only available in the Tauri desktop app.");
+      return;
+    }
+
+    try {
+      const path = await invoke<string | null>("open_folder_dialog");
+
+      if (path) {
+        await openFolderView(path, "open-folder");
+      }
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const openContainingFolder = async () => {
+    const parentPath = getParentPath(document.path);
+
+    if (!parentPath) {
+      setFileError("Unable to determine the containing folder for this file.");
+      return;
+    }
+
+    await openFolderView(parentPath, "containing-folder");
+  };
+
+  const toggleDirectory = async (node: FileTreeNode) => {
+    if (!folderView || node.kind !== "directory") {
+      return;
+    }
+
+    if (node.childrenLoaded) {
+      setFolderView((currentView) =>
+        currentView
+          ? {
+              ...currentView,
+              nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
+                ...currentNode,
+                expanded: !currentNode.expanded,
+              })),
+            }
+          : currentView,
+      );
+      return;
+    }
+
+    setFolderView((currentView) =>
+      currentView
+        ? {
+            ...currentView,
+            loadingPath: node.path,
+            nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
+              ...currentNode,
+              expanded: true,
+              error: undefined,
+            })),
+          }
+        : currentView,
+    );
+
+    try {
+      const children = await readFolderEntries(node.path);
+
+      setFolderView((currentView) =>
+        currentView
+          ? {
+              ...currentView,
+              loadingPath: null,
+              nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
+                ...currentNode,
+                children,
+                childrenLoaded: true,
+                expanded: true,
+                error: undefined,
+              })),
+            }
+          : currentView,
+      );
+    } catch (error) {
+      setFolderView((currentView) =>
+        currentView
+          ? {
+              ...currentView,
+              loadingPath: null,
+              nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
+                ...currentNode,
+                childrenLoaded: true,
+                expanded: true,
+                error: error instanceof Error ? error.message : String(error),
+              })),
+            }
+          : currentView,
+      );
+    }
+  };
+
+  const openTreeFile = async (node: FileTreeNode) => {
+    if (node.kind !== "file") {
+      return;
+    }
+
+    requestFileOpen({ kind: "path", path: node.path, size: node.size });
   };
 
   const updateDocumentContent = (content: string) => {
@@ -335,42 +774,74 @@ export function WorkbenchPage() {
     );
   };
 
-  const handleFileSelected = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
-
-    event.currentTarget.value = "";
-
-    if (!file) {
+  useEffect(() => {
+    if (!isTauriRuntime()) {
       return;
     }
 
-    const reader = new FileReader();
+    let disposed = false;
+    let unlisten: UnlistenFn | undefined;
 
-    reader.onload = () => {
-      setDocument({
-        id: `${file.name}-${file.lastModified}-${Date.now()}`,
-        name: file.name,
-        path: file.webkitRelativePath || file.name,
-        content: typeof reader.result === "string" ? reader.result : "",
-        size: file.size,
-        lastModified: file.lastModified,
+    listen<string>(nativeMenuEvent, (event) => {
+      if (event.payload === nativeMenuCommands.newFile) {
+        createFile();
+      }
+
+      if (event.payload === nativeMenuCommands.openFile) {
+        openFilePicker();
+      }
+
+      if (event.payload === nativeMenuCommands.openFolder) {
+        openFolderPicker();
+      }
+
+      if (event.payload === nativeMenuCommands.showExplorer) {
+        setExplorerOpen((value) => !value);
+      }
+
+      if (event.payload === nativeMenuCommands.find) {
+        setSearchOpen(true);
+      }
+
+      if (event.payload === nativeMenuCommands.toggleGitPanel) {
+        setGitOpen((value) => !value);
+      }
+    })
+      .then((cleanup) => {
+        if (disposed) {
+          cleanup();
+          return;
+        }
+
+        unlisten = cleanup;
+      })
+      .catch(() => {
+        unlisten = undefined;
       });
-      setFileError(null);
-    };
 
-    reader.onerror = () => {
-      setFileError(`Unable to open ${file.name}`);
+    return () => {
+      disposed = true;
+      unlisten?.();
     };
-
-    reader.readAsText(file);
-  };
+  }, [document.content, document.savedContent]);
 
   return (
     <TooltipProvider delayDuration={250}>
       <div className={cn("h-full bg-background text-[12px] text-foreground", dark && "dark")}>
         <div className="flex h-full min-w-0 flex-col">
-          <input className="hidden" ref={fileInputRef} type="file" onChange={handleFileSelected} />
-          {showWindowsTitlebar ? <WindowsTitleBar onCreateFile={createFile} onOpenFile={openFilePicker} /> : null}
+          {showWindowsTitlebar ? (
+            <WindowsTitleBar
+              onCreateFile={createFile}
+              onOpenFile={openFilePicker}
+              onOpenFolder={openFolderPicker}
+              onOpenSearch={() => setSearchOpen(true)}
+              searchOpen={searchOpen}
+              onCloseSearch={() => setSearchOpen(false)}
+            />
+          ) : null}
+          {showMacTitlebar ? (
+            <MacTitlebar searchOpen={searchOpen} onCloseSearch={() => setSearchOpen(false)} onOpenSearch={() => setSearchOpen(true)} />
+          ) : null}
           <WorkbenchToolbar
             dark={dark}
             onToggleGit={() => setGitOpen((value) => !value)}
@@ -380,16 +851,42 @@ export function WorkbenchPage() {
           <main
             className={cn(
               "grid min-h-0 flex-1 grid-cols-[260px_1px_minmax(0,1fr)_32px_360px] bg-background transition-[grid-template-columns]",
+              !explorerOpen && "grid-cols-[40px_1px_minmax(0,1fr)_32px_360px]",
               !gitOpen && "grid-cols-[260px_1px_minmax(0,1fr)_32px_0px]",
+              !explorerOpen && !gitOpen && "grid-cols-[40px_1px_minmax(0,1fr)_32px_0px]",
             )}
           >
-            <ProjectPanel />
+            <ProjectPanel
+              activePath={document.path}
+              document={document}
+              explorerOpen={explorerOpen}
+              folderView={folderView}
+              onOpenContainingFolder={openContainingFolder}
+              onOpenExplorer={() => setExplorerOpen(true)}
+              onCloseExplorer={() => setExplorerOpen(false)}
+              onOpenFile={openFilePicker}
+              onOpenFolder={openFolderPicker}
+              onOpenTreeFile={openTreeFile}
+              onToggleDirectory={toggleDirectory}
+            />
             <div className="bg-border" />
             <EditorSurface document={document} error={fileError} onChange={updateDocumentContent} />
             <GitRail open={gitOpen} onToggle={() => setGitOpen((value) => !value)} />
             <GitPanel open={gitOpen} />
           </main>
           <StatusBar document={document} />
+          <DiscardChangesDialog
+            open={Boolean(pendingFileOpen)}
+            onCancel={() => setPendingFileOpen(null)}
+            onDiscard={() => {
+              const pendingOpen = pendingFileOpen;
+              setPendingFileOpen(null);
+
+              if (pendingOpen) {
+                void continueFileOpen(pendingOpen);
+              }
+            }}
+          />
         </div>
       </div>
     </TooltipProvider>
@@ -397,11 +894,19 @@ export function WorkbenchPage() {
 }
 
 function WindowsTitleBar({
+  onCloseSearch,
   onCreateFile,
   onOpenFile,
+  onOpenFolder,
+  onOpenSearch,
+  searchOpen,
 }: {
+  onCloseSearch: () => void;
   onCreateFile: () => void;
   onOpenFile: () => void;
+  onOpenFolder: () => void;
+  onOpenSearch: () => void;
+  searchOpen: boolean;
 }) {
   const appWindow = getCurrentWindow();
   const [projectName, setProjectName] = useState<string>(recentProjects[0].name);
@@ -409,7 +914,6 @@ function WindowsTitleBar({
   const projectAccentStyle = getProjectAccentStyle(projectName);
   const menuRef = useRef<HTMLDivElement>(null);
   const projectMenuRef = useRef<HTMLDivElement>(null);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [menuExpanded, setMenuExpanded] = useState(false);
   const [activeMenu, setActiveMenu] = useState<WindowsTitlebarMenuId | null>(null);
@@ -532,6 +1036,10 @@ function WindowsTitleBar({
       onOpenFile();
     }
 
+    if (child === "Open Folder") {
+      onOpenFolder();
+    }
+
     if (child === "Minimize") appWindow.minimize();
     if (child === "Maximize / Restore") appWindow.toggleMaximize();
     if (child === "Close") appWindow.close();
@@ -609,11 +1117,11 @@ function WindowsTitleBar({
               </button>
               {projectMenuOpen ? (
                 <div className="windows-titlebar-folder-menu">
-                  <button className="windows-titlebar-folder-menu-item" type="button" onClick={() => setProjectMenuOpen(false)}>
-                    Open New Folder
+                  <button className="windows-titlebar-folder-menu-item" type="button" onClick={onOpenFolder}>
+                    Open Folder
                   </button>
                   <button className="windows-titlebar-folder-menu-item" type="button" onClick={() => setProjectMenuOpen(false)}>
-                    Add Folder to Workspace
+                    Add Folder
                   </button>
                   <div className="windows-titlebar-folder-menu-section">
                     {recentProjects.map((project) => (
@@ -639,40 +1147,9 @@ function WindowsTitleBar({
       </div>
       <div className="windows-titlebar-drag-fill" data-tauri-drag-region />
       <div className="windows-titlebar-search-entry">
-        <button className="windows-titlebar-search-button" type="button" onClick={() => setSearchOpen(true)}>
-          Search files, commands, symbols
-        </button>
-        {searchOpen ? (
-          <div className="windows-quick-search" role="dialog" aria-label="Quick search" onClick={() => setSearchOpen(false)}>
-            <div className="windows-quick-search-panel" onClick={(event) => event.stopPropagation()}>
-              <input
-                className="windows-quick-search-input"
-                autoFocus
-                placeholder="Search files, commands, symbols"
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    setSearchOpen(false);
-                  }
-                }}
-              />
-              <div className="windows-quick-search-results">
-                <button className="windows-quick-search-result" type="button">
-                  src/features/workbench/workbench-page.tsx
-                </button>
-                <button className="windows-quick-search-result" type="button">
-                  src-tauri/src/lib.rs
-                </button>
-                <button className="windows-quick-search-result" type="button">
-                  src/styles.css
-                </button>
-              </div>
-              <button className="windows-quick-search-close" type="button" onClick={() => setSearchOpen(false)}>
-                Close
-              </button>
-            </div>
-          </div>
-        ) : null}
+        <TopSearchButton className="windows-titlebar-search-button" onClick={onOpenSearch} />
       </div>
+      <QuickSearch open={searchOpen} onClose={onCloseSearch} />
       <div className="windows-titlebar-drag-fill windows-titlebar-drag-fill-right" data-tauri-drag-region />
       <div className="windows-titlebar-controls" onDoubleClick={(event) => event.stopPropagation()}>
         <button className="windows-window-button" type="button" aria-label="Minimize" onClick={() => appWindow.minimize()}>
@@ -691,6 +1168,73 @@ function WindowsTitleBar({
         </button>
       </div>
     </header>
+  );
+}
+
+function MacTitlebar({
+  onCloseSearch,
+  onOpenSearch,
+  searchOpen,
+}: {
+  onCloseSearch: () => void;
+  onOpenSearch: () => void;
+  searchOpen: boolean;
+}) {
+  return (
+    <header className="mac-titlebar" data-tauri-drag-region>
+      <div className="mac-titlebar-side" data-tauri-drag-region />
+      <div className="mac-titlebar-search">
+        <TopSearchButton className="mac-titlebar-search-button" onClick={onOpenSearch} />
+      </div>
+      <div className="mac-titlebar-side" data-tauri-drag-region />
+      <QuickSearch open={searchOpen} onClose={onCloseSearch} />
+    </header>
+  );
+}
+
+function TopSearchButton({ className, onClick }: { className: string; onClick: () => void }) {
+  return (
+    <button className={className} type="button" onClick={onClick}>
+      <Search className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">Search files, commands, symbols</span>
+    </button>
+  );
+}
+
+function QuickSearch({ onClose, open }: { onClose: () => void; open: boolean }) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="windows-quick-search" role="dialog" aria-label="Quick search" onClick={onClose}>
+      <div className="windows-quick-search-panel" onClick={(event) => event.stopPropagation()}>
+        <input
+          className="windows-quick-search-input"
+          autoFocus
+          placeholder="Search files, commands, symbols"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              onClose();
+            }
+          }}
+        />
+        <div className="windows-quick-search-results">
+          <button className="windows-quick-search-result" type="button">
+            src/features/workbench/workbench-page.tsx
+          </button>
+          <button className="windows-quick-search-result" type="button">
+            src-tauri/src/lib.rs
+          </button>
+          <button className="windows-quick-search-result" type="button">
+            src/styles.css
+          </button>
+        </div>
+        <button className="windows-quick-search-close" type="button" onClick={onClose}>
+          Close
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -735,46 +1279,262 @@ function WorkbenchToolbar({
   );
 }
 
-function ProjectPanel() {
-  const nodes = useMemo(() => treeNodes, []);
+function ProjectPanel({
+  activePath,
+  document,
+  explorerOpen,
+  folderView,
+  onCloseExplorer,
+  onOpenContainingFolder,
+  onOpenExplorer,
+  onOpenFile,
+  onOpenFolder,
+  onOpenTreeFile,
+  onToggleDirectory,
+}: {
+  activePath: string;
+  document: WorkbenchDocument;
+  explorerOpen: boolean;
+  folderView: FolderView | null;
+  onCloseExplorer: () => void;
+  onOpenContainingFolder: () => void;
+  onOpenExplorer: () => void;
+  onOpenFile: () => void;
+  onOpenFolder: () => void;
+  onOpenTreeFile: (node: FileTreeNode) => void;
+  onToggleDirectory: (node: FileTreeNode) => void;
+}) {
+  if (!explorerOpen) {
+    return (
+      <aside className="flex min-h-0 min-w-0 flex-col items-center gap-1 overflow-hidden border-r border-border bg-card/70 py-1.5">
+        <Button size="icon" variant="ghost" aria-label="Show Explorer" title="Show Explorer" onClick={onOpenExplorer}>
+          <PanelLeftOpen className="h-4 w-4" />
+        </Button>
+        <Button size="icon" variant="ghost" aria-label="Open File" title="Open File" onClick={onOpenFile}>
+          <FileText className="h-4 w-4" />
+        </Button>
+        <Button size="icon" variant="ghost" aria-label="Open Folder" title="Open Folder" onClick={onOpenFolder}>
+          <FolderOpen className="h-4 w-4" />
+        </Button>
+      </aside>
+    );
+  }
 
   return (
     <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-card/70">
       <div className="panel-heading">
-        <div className="flex items-center gap-1.5 font-semibold">
-          <PanelLeftClose className="h-3.5 w-3.5 text-muted-foreground" />
-            Project
-          </div>
-        <Badge tone="muted">norn</Badge>
+        <div className="flex min-w-0 items-center gap-1.5 font-semibold">
+          <PanelLeftOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="truncate">Explorer</span>
+        </div>
+        <Button size="icon" variant="ghost" aria-label="Hide Explorer" title="Hide Explorer" onClick={onCloseExplorer}>
+          <PanelLeftClose className="h-3.5 w-3.5" />
+        </Button>
       </div>
+      {folderView ? (
+        <FolderTreePanel
+          activePath={activePath}
+          folderView={folderView}
+          onOpenFile={onOpenTreeFile}
+          onOpenFolder={onOpenFolder}
+          onToggleDirectory={onToggleDirectory}
+        />
+      ) : (
+        <SingleFilePanel
+          document={document}
+          onOpenContainingFolder={onOpenContainingFolder}
+          onOpenFile={onOpenFile}
+          onOpenFolder={onOpenFolder}
+        />
+      )}
+    </aside>
+  );
+}
+
+function SingleFilePanel({
+  document,
+  onOpenContainingFolder,
+  onOpenFile,
+  onOpenFolder,
+}: {
+  document: WorkbenchDocument;
+  onOpenContainingFolder: () => void;
+  onOpenFile: () => void;
+  onOpenFolder: () => void;
+}) {
+  const canOpenContainingFolder = !document.isUntitled && isAbsolutePath(document.path) && Boolean(getParentPath(document.path));
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
+      <div className="rounded-sm border border-border bg-background p-3">
+        <div className="mb-1 flex items-center gap-1.5 text-[12px] font-semibold">
+          <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="truncate">{document.name}</span>
+        </div>
+        <div className="truncate font-mono text-[11px] text-muted-foreground">{document.path}</div>
+      </div>
+      <div className="grid gap-2">
+        <Button className="gap-1.5" size="sm" variant="default" onClick={onOpenContainingFolder} disabled={!canOpenContainingFolder}>
+          <FolderOpen className="h-3.5 w-3.5" />
+          Open Containing Folder
+        </Button>
+        <Button className="gap-1.5" size="sm" variant="subtle" onClick={onOpenFolder}>
+          <Folder className="h-3.5 w-3.5" />
+          Open Folder
+        </Button>
+        <Button className="gap-1.5" size="sm" variant="ghost" onClick={onOpenFile}>
+          <FileText className="h-3.5 w-3.5" />
+          Open File
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function FolderTreePanel({
+  activePath,
+  folderView,
+  onOpenFile,
+  onOpenFolder,
+  onToggleDirectory,
+}: {
+  activePath: string;
+  folderView: FolderView;
+  onOpenFile: (node: FileTreeNode) => void;
+  onOpenFolder: () => void;
+  onToggleDirectory: (node: FileTreeNode) => void;
+}) {
+  return (
+    <>
+      <div className="border-b border-border px-2 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="truncate text-[12px] font-semibold">{folderView.rootName}</div>
+            <div className="truncate font-mono text-[11px] text-muted-foreground">{folderView.rootPath}</div>
+          </div>
+          <Button size="sm" variant="ghost" onClick={onOpenFolder}>
+            Open
+          </Button>
+        </div>
+      </div>
+      {folderView.error ? (
+        <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+          {folderView.error}
+        </div>
+      ) : null}
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-0.5 p-1.5">
-          {nodes.map((node) => {
-            const Icon = node.icon;
-            return (
-              <button
-                className={cn(
-                  "tree-row w-full text-left",
-                  node.active && "tree-row-active",
-                  node.muted && "tree-row-muted",
-                )}
-                key={`${node.name}-${node.depth ?? 0}`}
-                type="button"
-              >
-                <span style={{ paddingLeft: `${(node.depth ?? 0) * 12}px` }} className="flex items-center">
-                  {(node.depth ?? 0) < 2 ? <ChevronDown className="h-3 w-3" /> : null}
-                </span>
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="truncate">{node.name}</span>
-                </span>
-                <span className="justify-self-end font-mono text-[11px] text-muted-foreground">{node.status}</span>
-              </button>
-            );
-          })}
+          {folderView.loadingPath === folderView.rootPath && folderView.nodes.length === 0 ? (
+            <div className="px-2 py-2 text-[12px] text-muted-foreground">Loading folder...</div>
+          ) : null}
+          {folderView.nodes.map((node) => (
+            <FileTreeRow
+              activePath={activePath}
+              key={node.path}
+              loadingPath={folderView.loadingPath}
+              node={node}
+              onOpenFile={onOpenFile}
+              onToggleDirectory={onToggleDirectory}
+            />
+          ))}
+          {folderView.nodes.length === 0 && folderView.loadingPath !== folderView.rootPath && !folderView.error ? (
+            <div className="px-2 py-2 text-[12px] text-muted-foreground">No files in this folder.</div>
+          ) : null}
         </div>
       </ScrollArea>
-    </aside>
+    </>
+  );
+}
+
+function FileTreeRow({
+  activePath,
+  depth = 0,
+  loadingPath,
+  node,
+  onOpenFile,
+  onToggleDirectory,
+}: {
+  activePath: string;
+  depth?: number;
+  loadingPath: string | null;
+  node: FileTreeNode;
+  onOpenFile: (node: FileTreeNode) => void;
+  onToggleDirectory: (node: FileTreeNode) => void;
+}) {
+  const isDirectory = node.kind === "directory";
+  const isActive = node.path === activePath;
+  const isLoading = loadingPath === node.path;
+  const Icon = isDirectory ? (node.expanded ? FolderOpen : Folder) : FileText;
+
+  return (
+    <>
+      <button
+        className={cn("tree-row w-full text-left", isActive && "tree-row-active", node.error && "tree-row-muted")}
+        type="button"
+        title={node.path}
+        onClick={() => (isDirectory ? onToggleDirectory(node) : onOpenFile(node))}
+      >
+        <span style={{ paddingLeft: `${depth * 12}px` }} className="flex items-center">
+          {isDirectory ? (
+            node.expanded ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )
+          ) : null}
+        </span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="truncate">{node.name}</span>
+        </span>
+        <span className="justify-self-end font-mono text-[11px] text-muted-foreground">
+          {isLoading ? "..." : isDirectory ? "" : formatFileSize(node.size)}
+        </span>
+      </button>
+      {node.error ? <div className="px-2 py-1 text-[11px] text-destructive">{node.error}</div> : null}
+      {node.expanded && node.children?.map((child) => (
+        <FileTreeRow
+          activePath={activePath}
+          depth={depth + 1}
+          key={child.path}
+          loadingPath={loadingPath}
+          node={child}
+          onOpenFile={onOpenFile}
+          onToggleDirectory={onToggleDirectory}
+        />
+      ))}
+    </>
+  );
+}
+
+function DiscardChangesDialog({
+  onCancel,
+  onDiscard,
+  open,
+}: {
+  onCancel: () => void;
+  onDiscard: () => void;
+  open: boolean;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => (!nextOpen ? onCancel() : undefined)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Discard unsaved changes?</DialogTitle>
+          <DialogDescription>
+            Current changes are not saved. Discard them and open another file?
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={onDiscard}>
+            Discard and Open
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -792,6 +1552,7 @@ function EditorSurface({
   const scrollDOMRef = useRef<HTMLElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
+  const languageCompartmentRef = useRef(new Compartment());
   const dragRef = useRef<{
     maxScroll: number;
     orientation: EditorScrollbarOrientation;
@@ -801,6 +1562,7 @@ function EditorSurface({
     trackSize: number;
   } | null>(null);
   const [scrollMetrics, setScrollMetrics] = useState<EditorScrollMetrics>(emptyEditorScrollMetrics);
+  const [highlightWarning, setHighlightWarning] = useState<string | null>(null);
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -818,12 +1580,50 @@ function EditorSurface({
       parent,
       state: EditorState.create({
         doc: document.content,
-        extensions: createCodeMirrorExtensions(document.name, (content) => onChangeRef.current(content)),
+        extensions: createCodeMirrorExtensions(
+          languageCompartmentRef.current,
+          document,
+          (content) => onChangeRef.current(content),
+        ),
       }),
     });
 
     viewRef.current = view;
     scrollDOMRef.current = view.scrollDOM;
+    setHighlightWarning(null);
+
+    let isCurrentDocument = true;
+
+    const mode =
+      document.mode === "large-readonly" ||
+      (typeof document.size === "number" && document.size > FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES)
+        ? ({ kind: "plain-text", label: "Plain Text", reason: "large-file" } as const)
+        : resolveHighlightMode(document);
+
+    loadHighlightExtensions(mode)
+      .then((extensions) => {
+        if (!isCurrentDocument || viewRef.current !== view) {
+          return;
+        }
+
+        setHighlightWarning(null);
+        view.dispatch({
+          effects: languageCompartmentRef.current.reconfigure(extensions),
+        });
+      })
+      .catch((highlightError) => {
+        if (!isCurrentDocument || viewRef.current !== view) {
+          return;
+        }
+
+        setHighlightWarning(
+          `Syntax highlighting for ${mode.label} could not be loaded. Showing plain text instead.`,
+        );
+        view.dispatch({
+          effects: languageCompartmentRef.current.reconfigure([]),
+        });
+        console.warn("Failed to load editor highlighting", highlightError);
+      });
 
     let animationFrame: number | null = null;
 
@@ -877,6 +1677,8 @@ function EditorSurface({
     updateScrollMetrics();
 
     return () => {
+      isCurrentDocument = false;
+
       if (animationFrame !== null) {
         window.cancelAnimationFrame(animationFrame);
       }
@@ -992,6 +1794,16 @@ function EditorSurface({
           {error}
         </div>
       ) : null}
+      {highlightWarning ? (
+        <div className="border-b border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-[12px] text-amber-700 dark:text-amber-300">
+          {highlightWarning}
+        </div>
+      ) : null}
+      {document.mode === "large-readonly" ? (
+        <div className="border-b border-border bg-muted/40 px-3 py-1.5 text-[12px] text-muted-foreground">
+          Large file browsing mode{document.size ? ` (${formatFileSize(document.size)})` : ""}. This view is read-only and shows a loaded text range.
+        </div>
+      ) : null}
       <div className="codemirror-shell-frame min-h-0 flex-1" ref={editorFrameRef}>
         <div className="codemirror-shell min-h-0 flex-1" ref={editorElementRef} />
         <EditorScrollbar
@@ -1092,7 +1904,7 @@ function GitPanel({ open }: { open: boolean }) {
       <div className="flex h-full w-[360px] min-h-0 flex-col">
         <div className="panel-heading">
           <div>
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Git workspace</div>
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Git</div>
             <div className="font-semibold">Changes</div>
           </div>
           <Badge tone="warning">ahead 1</Badge>
@@ -1171,8 +1983,10 @@ function StatusBar({ document }: { document: WorkbenchDocument }) {
       <div className="flex min-w-0 items-center gap-3">
         <span className="status-token truncate">{document.path}</span>
         <span className="status-token">{lineCount} lines</span>
+        {document.size ? <span className="status-token">{formatFileSize(document.size)}</span> : null}
         <span className="status-token">UTF-8</span>
         <span className="status-token">LF</span>
+        {document.mode === "large-readonly" ? <span className="status-token">Read-only range</span> : null}
         {document.isUntitled ? <span className="status-token">Unsaved</span> : null}
       </div>
       <div className="flex items-center gap-3">

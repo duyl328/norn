@@ -232,10 +232,31 @@
   }
 
   .windows-titlebar-search-button {
-    @apply h-7 w-full rounded-sm border border-border bg-background/75 px-3 text-right text-[12px] text-muted-foreground outline-none transition-colors;
+    @apply flex h-7 w-full items-center justify-center gap-2 rounded-sm border border-border bg-background/75 px-3 text-[12px] text-muted-foreground outline-none transition-colors;
   }
 
   .windows-titlebar-search-button:hover {
+    @apply border-ring bg-background text-foreground;
+  }
+
+  .mac-titlebar {
+    @apply grid h-10 shrink-0 grid-cols-[minmax(116px,1fr)_minmax(252px,420px)_minmax(116px,1fr)] items-center border-b border-border bg-card/95 px-3 text-foreground;
+    user-select: none;
+  }
+
+  .mac-titlebar-side {
+    @apply h-full min-w-0;
+  }
+
+  .mac-titlebar-search {
+    @apply min-w-0 px-2;
+  }
+
+  .mac-titlebar-search-button {
+    @apply flex h-7 w-full items-center justify-center gap-2 rounded-sm border border-border bg-background/75 px-3 text-[12px] text-muted-foreground outline-none transition-colors;
+  }
+
+  .mac-titlebar-search-button:hover {
     @apply border-ring bg-background text-foreground;
   }
 

@@ -1,16 +1,563 @@
-use tauri::Manager;
+use tauri::{
+    menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu},
+    Emitter,
+};
+use tauri_plugin_dialog::DialogExt;
+
+use serde::Serialize;
+use std::{
+    fs::{self, File},
+    io::{Read, Seek, SeekFrom},
+    path::{Path, PathBuf},
+    time::UNIX_EPOCH,
+};
+
+const MENU_EVENT: &str = "norn-menu";
+const MENU_NEW_FILE: &str = "menu-new-file";
+const MENU_OPEN_FILE: &str = "menu-open-file";
+const MENU_OPEN_FOLDER: &str = "menu-open-folder";
+const MENU_FIND: &str = "menu-find";
+const MENU_SHOW_EXPLORER: &str = "menu-show-explorer";
+const MENU_TOGGLE_GIT_PANEL: &str = "menu-toggle-git-panel";
+const MENU_TOGGLE_TERMINAL: &str = "menu-toggle-terminal";
+const MENU_WELCOME: &str = "menu-welcome";
+const MENU_DOCUMENTATION: &str = "menu-documentation";
+const MENU_KEYBOARD_SHORTCUTS: &str = "menu-keyboard-shortcuts";
+const MENU_RELEASE_NOTES: &str = "menu-release-notes";
+const MENU_REPORT_ISSUE: &str = "menu-report-issue";
+const MENU_VIEW_LOGS: &str = "menu-view-logs";
+const MENU_CHECK_FOR_UPDATES: &str = "menu-check-for-updates";
+const MENU_COMMUNITY: &str = "menu-community";
+const MENU_PRIVACY_STATEMENT: &str = "menu-privacy-statement";
+const MENU_ABOUT_NORN: &str = "menu-about-norn";
+const IGNORED_DIRECTORY_NAMES: &[&str] = &[
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "out",
+    ".gradle",
+];
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TextFile {
+    name: String,
+    path: String,
+    content: String,
+    size: u64,
+    last_modified: Option<u64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TextFileInspection {
+    name: String,
+    path: String,
+    size: u64,
+    last_modified: Option<u64>,
+    is_binary: bool,
+    is_utf8: bool,
+    sample: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TextFileRange {
+    path: String,
+    content: String,
+    size: u64,
+    requested_offset: u64,
+    start_offset: u64,
+    end_offset: u64,
+    has_more_before: bool,
+    has_more_after: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DirectoryEntry {
+    name: String,
+    path: String,
+    relative_path: String,
+    kind: DirectoryEntryKind,
+    size: Option<u64>,
+    last_modified: Option<u64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "lowercase")]
+enum DirectoryEntryKind {
+    File,
+    Directory,
+}
 
 #[tauri::command]
 fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+#[tauri::command]
+async fn open_file_dialog(app: tauri::AppHandle) -> Option<String> {
+    app.dialog()
+        .file()
+        .blocking_pick_file()
+        .and_then(|path| path.into_path().ok())
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+async fn open_folder_dialog(app: tauri::AppHandle) -> Option<String> {
+    app.dialog()
+        .file()
+        .blocking_pick_folder()
+        .and_then(|path| path.into_path().ok())
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn read_text_file(path: String) -> Result<TextFile, String> {
+    let path = PathBuf::from(path);
+    let metadata = fs::metadata(&path)
+        .map_err(|error| format_file_error("Unable to read file metadata", &path, error))?;
+
+    if !metadata.is_file() {
+        return Err(format!("{} is not a file", path.display()));
+    }
+
+    let bytes =
+        fs::read(&path).map_err(|error| format_file_error("Unable to read file", &path, error))?;
+
+    if bytes.contains(&0) {
+        return Err(format!("{} appears to be a binary file", path.display()));
+    }
+
+    let content = String::from_utf8(bytes)
+        .map_err(|_| format!("{} is not valid UTF-8 text", path.display()))?;
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Untitled")
+        .to_string();
+
+    Ok(TextFile {
+        name,
+        path: path.to_string_lossy().into_owned(),
+        content,
+        size: metadata.len(),
+        last_modified: modified_time_millis(&metadata),
+    })
+}
+
+#[tauri::command]
+fn inspect_text_file(path: String) -> Result<TextFileInspection, String> {
+    const SAMPLE_BYTES: usize = 16 * 1024;
+
+    let path = PathBuf::from(path);
+    let metadata = fs::metadata(&path)
+        .map_err(|error| format_file_error("Unable to read file metadata", &path, error))?;
+
+    if !metadata.is_file() {
+        return Err(format!("{} is not a file", path.display()));
+    }
+
+    let mut file =
+        File::open(&path).map_err(|error| format_file_error("Unable to open file", &path, error))?;
+    let mut buffer = vec![0; SAMPLE_BYTES.min(metadata.len() as usize)];
+    let bytes_read = file
+        .read(&mut buffer)
+        .map_err(|error| format_file_error("Unable to inspect file", &path, error))?;
+    buffer.truncate(bytes_read);
+
+    let is_binary = buffer.contains(&0);
+    let is_utf8 = !is_binary && std::str::from_utf8(&buffer).is_ok();
+    let sample = if is_utf8 {
+        String::from_utf8_lossy(&buffer).into_owned()
+    } else {
+        String::new()
+    };
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Untitled")
+        .to_string();
+
+    Ok(TextFileInspection {
+        name,
+        path: path.to_string_lossy().into_owned(),
+        size: metadata.len(),
+        last_modified: modified_time_millis(&metadata),
+        is_binary,
+        is_utf8,
+        sample,
+    })
+}
+
+#[tauri::command]
+fn read_text_file_range(path: String, offset: u64, length: u64) -> Result<TextFileRange, String> {
+    const MAX_RANGE_BYTES: u64 = 1024 * 1024;
+
+    let path = PathBuf::from(path);
+    let metadata = fs::metadata(&path)
+        .map_err(|error| format_file_error("Unable to read file metadata", &path, error))?;
+
+    if !metadata.is_file() {
+        return Err(format!("{} is not a file", path.display()));
+    }
+
+    let file_size = metadata.len();
+    let requested_offset = offset.min(file_size);
+    let read_length = length.min(MAX_RANGE_BYTES).min(file_size.saturating_sub(requested_offset));
+    let start_offset = align_range_start(&path, requested_offset)?;
+    let target_end_offset = requested_offset.saturating_add(read_length).min(file_size);
+    let end_offset = align_range_end(&path, target_end_offset, file_size)?;
+    let byte_count = end_offset.saturating_sub(start_offset);
+
+    let mut file =
+        File::open(&path).map_err(|error| format_file_error("Unable to open file", &path, error))?;
+    file.seek(SeekFrom::Start(start_offset))
+        .map_err(|error| format_file_error("Unable to seek file", &path, error))?;
+
+    let mut buffer = vec![0; byte_count as usize];
+    file.read_exact(&mut buffer)
+        .map_err(|error| format_file_error("Unable to read file range", &path, error))?;
+
+    if buffer.contains(&0) {
+        return Err(format!("{} appears to be a binary file", path.display()));
+    }
+
+    let content = String::from_utf8(buffer)
+        .map_err(|_| format!("{} range is not valid UTF-8 text", path.display()))?;
+
+    Ok(TextFileRange {
+        path: path.to_string_lossy().into_owned(),
+        content,
+        size: file_size,
+        requested_offset,
+        start_offset,
+        end_offset,
+        has_more_before: start_offset > 0,
+        has_more_after: end_offset < file_size,
+    })
+}
+
+#[tauri::command]
+fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String> {
+    let root = PathBuf::from(path);
+    let metadata = fs::metadata(&root)
+        .map_err(|error| format_file_error("Unable to read directory metadata", &root, error))?;
+
+    if !metadata.is_dir() {
+        return Err(format!("{} is not a directory", root.display()));
+    }
+
+    let mut entries = Vec::new();
+
+    for entry in fs::read_dir(&root)
+        .map_err(|error| format_file_error("Unable to read directory", &root, error))?
+    {
+        let entry = entry
+            .map_err(|error| format_file_error("Unable to read directory entry", &root, error))?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+
+        if should_ignore_entry(&path, &name) {
+            continue;
+        }
+
+        let metadata = entry.metadata().map_err(|error| {
+            format_file_error("Unable to read directory entry metadata", &path, error)
+        })?;
+        let kind = if metadata.is_dir() {
+            DirectoryEntryKind::Directory
+        } else {
+            DirectoryEntryKind::File
+        };
+
+        entries.push(DirectoryEntry {
+            relative_path: name.clone(),
+            name,
+            path: path.to_string_lossy().into_owned(),
+            kind,
+            size: metadata.is_file().then_some(metadata.len()),
+            last_modified: modified_time_millis(&metadata),
+        });
+    }
+
+    entries.sort_by(|left, right| match (&left.kind, &right.kind) {
+        (DirectoryEntryKind::Directory, DirectoryEntryKind::File) => std::cmp::Ordering::Less,
+        (DirectoryEntryKind::File, DirectoryEntryKind::Directory) => std::cmp::Ordering::Greater,
+        _ => left.name.to_lowercase().cmp(&right.name.to_lowercase()),
+    });
+
+    Ok(entries)
+}
+
+fn should_ignore_entry(path: &Path, name: &str) -> bool {
+    path.is_dir() && IGNORED_DIRECTORY_NAMES.contains(&name)
+}
+
+fn align_range_start(path: &Path, offset: u64) -> Result<u64, String> {
+    const MAX_ALIGNMENT_SCAN_BYTES: u64 = 64 * 1024;
+
+    if offset == 0 {
+        return Ok(0);
+    }
+
+    let mut file =
+        File::open(path).map_err(|error| format_file_error("Unable to open file", path, error))?;
+    let mut position = offset;
+    let stop_at = offset.saturating_sub(MAX_ALIGNMENT_SCAN_BYTES);
+    let mut byte = [0; 1];
+
+    while position > stop_at {
+        position -= 1;
+        file.seek(SeekFrom::Start(position))
+            .map_err(|error| format_file_error("Unable to seek file", path, error))?;
+        file.read_exact(&mut byte)
+            .map_err(|error| format_file_error("Unable to align file range", path, error))?;
+
+        if byte[0] == b'\n' {
+            return Ok(position + 1);
+        }
+    }
+
+    Ok(position)
+}
+
+fn align_range_end(path: &Path, offset: u64, file_size: u64) -> Result<u64, String> {
+    const MAX_ALIGNMENT_SCAN_BYTES: u64 = 64 * 1024;
+
+    if offset >= file_size {
+        return Ok(file_size);
+    }
+
+    let mut file =
+        File::open(path).map_err(|error| format_file_error("Unable to open file", path, error))?;
+    let mut position = offset;
+    let stop_at = offset.saturating_add(MAX_ALIGNMENT_SCAN_BYTES).min(file_size);
+    let mut byte = [0; 1];
+
+    while position < stop_at {
+        file.seek(SeekFrom::Start(position))
+            .map_err(|error| format_file_error("Unable to seek file", path, error))?;
+        file.read_exact(&mut byte)
+            .map_err(|error| format_file_error("Unable to align file range", path, error))?;
+        position += 1;
+
+        if byte[0] == b'\n' {
+            return Ok(position);
+        }
+    }
+
+    Ok(position)
+}
+
+fn modified_time_millis(metadata: &fs::Metadata) -> Option<u64> {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .and_then(|duration| duration.as_millis().try_into().ok())
+}
+
+fn format_file_error(context: &str, path: &Path, error: std::io::Error) -> String {
+    format!("{} for {}: {}", context, path.display(), error)
+}
+
+#[cfg(target_os = "macos")]
+fn build_macos_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let package_info = app.package_info();
+    let config = app.config();
+    let about_metadata = AboutMetadata {
+        name: Some(package_info.name.clone()),
+        version: Some(package_info.version.to_string()),
+        copyright: config.bundle.copyright.clone(),
+        authors: config
+            .bundle
+            .publisher
+            .clone()
+            .map(|publisher| vec![publisher]),
+        ..Default::default()
+    };
+
+    let app_menu = Submenu::with_items(
+        app,
+        package_info.name.clone(),
+        true,
+        &[
+            &PredefinedMenuItem::about(app, None, Some(about_metadata))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::services(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::show_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, None)?,
+        ],
+    )?;
+
+    let file_menu = Submenu::with_items(
+        app,
+        "File",
+        true,
+        &[
+            &MenuItem::with_id(app, MENU_NEW_FILE, "New File", true, Some("CmdOrCtrl+N"))?,
+            &MenuItem::with_id(
+                app,
+                MENU_OPEN_FILE,
+                "Open File...",
+                true,
+                Some("CmdOrCtrl+O"),
+            )?,
+            &MenuItem::with_id(
+                app,
+                MENU_OPEN_FOLDER,
+                "Open Folder...",
+                true,
+                Some("CmdOrCtrl+Shift+O"),
+            )?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+
+    let edit_menu = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, MENU_FIND, "Find", true, Some("CmdOrCtrl+P"))?,
+        ],
+    )?;
+
+    let view_menu = Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[
+            &MenuItem::with_id(app, MENU_SHOW_EXPLORER, "Explorer", true, None::<&str>)?,
+            &MenuItem::with_id(app, MENU_TOGGLE_GIT_PANEL, "Git Panel", true, None::<&str>)?,
+            &MenuItem::with_id(app, MENU_TOGGLE_TERMINAL, "Terminal", true, None::<&str>)?,
+        ],
+    )?;
+
+    let window_menu = Submenu::with_id_and_items(
+        app,
+        tauri::menu::WINDOW_SUBMENU_ID,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+
+    let help_menu = Submenu::with_id_and_items(
+        app,
+        tauri::menu::HELP_SUBMENU_ID,
+        "Help",
+        true,
+        &[
+            &MenuItem::with_id(app, MENU_WELCOME, "Welcome", true, None::<&str>)?,
+            &MenuItem::with_id(app, MENU_DOCUMENTATION, "Documentation", true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                MENU_KEYBOARD_SHORTCUTS,
+                "Keyboard Shortcuts",
+                true,
+                None::<&str>,
+            )?,
+            &MenuItem::with_id(app, MENU_RELEASE_NOTES, "Release Notes", true, None::<&str>)?,
+            &MenuItem::with_id(app, MENU_REPORT_ISSUE, "Report Issue", true, None::<&str>)?,
+            &MenuItem::with_id(app, MENU_VIEW_LOGS, "View Logs", true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                MENU_CHECK_FOR_UPDATES,
+                "Check for Updates",
+                true,
+                None::<&str>,
+            )?,
+            &MenuItem::with_id(app, MENU_COMMUNITY, "Community", true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                MENU_PRIVACY_STATEMENT,
+                "Privacy Statement",
+                true,
+                None::<&str>,
+            )?,
+            &MenuItem::with_id(app, MENU_ABOUT_NORN, "About Norn", true, None::<&str>)?,
+        ],
+    )?;
+
+    Menu::with_items(
+        app,
+        &[
+            &app_menu,
+            &file_menu,
+            &edit_menu,
+            &view_menu,
+            &window_menu,
+            &help_menu,
+        ],
+    )
+}
+
+fn is_forwarded_menu_event(id: &str) -> bool {
+    matches!(
+        id,
+        MENU_NEW_FILE
+            | MENU_OPEN_FILE
+            | MENU_OPEN_FOLDER
+            | MENU_FIND
+            | MENU_SHOW_EXPLORER
+            | MENU_TOGGLE_GIT_PANEL
+            | MENU_TOGGLE_TERMINAL
+            | MENU_WELCOME
+            | MENU_DOCUMENTATION
+            | MENU_KEYBOARD_SHORTCUTS
+            | MENU_RELEASE_NOTES
+            | MENU_REPORT_ISSUE
+            | MENU_VIEW_LOGS
+            | MENU_CHECK_FOR_UPDATES
+            | MENU_COMMUNITY
+            | MENU_PRIVACY_STATEMENT
+            | MENU_ABOUT_NORN
+    )
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .on_menu_event(|app, event| {
+            let id = event.id().as_ref();
+
+            if is_forwarded_menu_event(id) {
+                let _ = app.emit(MENU_EVENT, id);
+            }
+        })
         .setup(|app| {
-            #[cfg(not(target_os = "windows"))]
+            #[cfg(target_os = "macos")]
+            {
+                let menu = build_macos_menu(app.handle())?;
+                app.set_menu(menu)?;
+            }
+
+            #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
             {
                 let menu = tauri::menu::Menu::default(app.handle())?;
                 app.set_menu(menu)?;
@@ -23,7 +570,15 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![app_version])
+        .invoke_handler(tauri::generate_handler![
+            app_version,
+            open_file_dialog,
+            open_folder_dialog,
+            inspect_text_file,
+            read_text_file,
+            read_text_file_range,
+            list_directory,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running norn");
 }
