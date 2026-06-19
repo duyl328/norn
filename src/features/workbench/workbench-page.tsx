@@ -22,7 +22,6 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDot,
-  Columns3,
   FileText,
   Folder,
   FolderOpen,
@@ -31,11 +30,10 @@ import {
   Square,
   X,
   GitBranch,
-  GitCommitHorizontal,
   GitPullRequest,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightClose,
+  PanelLeft,
+  PanelRight,
+  Plus,
   Search,
   Settings,
   Terminal,
@@ -57,7 +55,6 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Input } from "@/components/ui/input";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -80,6 +77,9 @@ type TauriRuntimeWindow = Window & {
 
 const isTauriRuntime = () => Boolean((window as TauriRuntimeWindow).__TAURI_INTERNALS__);
 
+const createDocumentId = (prefix: string) =>
+  `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+
 const nativeMenuEvent = "norn-menu";
 
 const nativeMenuCommands = {
@@ -87,6 +87,8 @@ const nativeMenuCommands = {
   newFile: "menu-new-file",
   openFile: "menu-open-file",
   openFolder: "menu-open-folder",
+  saveFile: "menu-save-file",
+  saveFileAs: "menu-save-file-as",
   showExplorer: "menu-show-explorer",
   toggleGitPanel: "menu-toggle-git-panel",
 } as const;
@@ -118,6 +120,20 @@ type NativeTextFileRange = {
   endOffset: number;
   hasMoreBefore: boolean;
   hasMoreAfter: boolean;
+};
+
+type NativeSavedTextFile = {
+  name: string;
+  path: string;
+  size: number;
+  lastModified?: number | null;
+};
+
+type NativeSaveErrorKind = "deleted" | "invalid-path" | "io" | "modified" | "permission";
+
+type NativeSaveError = {
+  kind?: NativeSaveErrorKind;
+  message?: string;
 };
 
 type NativeDirectoryEntry = {
@@ -175,6 +191,15 @@ type EditorScrollbarGeometry = {
   thumbOffset: number;
   thumbSize: number;
   trackSize: number;
+};
+
+type SaveState = "idle" | "saving" | "saved" | "error";
+
+type SaveConflict = {
+  content: string;
+  lastModified?: number;
+  message: string;
+  path: string;
 };
 
 const EDITOR_SCROLLBAR_SIZE = 18;
@@ -241,6 +266,14 @@ const formatFileSize = (size?: number) => {
   }
 
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const getNativeSaveError = (error: unknown): NativeSaveError => {
+  if (error && typeof error === "object") {
+    return error as NativeSaveError;
+  }
+
+  return { kind: "io", message: error instanceof Error ? error.message : String(error) };
 };
 
 const toFileTreeNode = (entry: NativeDirectoryEntry): FileTreeNode => ({
@@ -314,7 +347,7 @@ const getEditorScrollbarGeometry = (
 };
 
 const windowsTitlebarMenus = [
-  { id: "file", label: "File", children: ["New File", "Open File", "Open Folder"] },
+  { id: "file", label: "File", children: ["New File", "Open File", "Open Folder", "Save", "Save As"] },
   { id: "edit", label: "Edit", children: ["Undo", "Redo", "Find"] },
   { id: "view", label: "View", children: ["Explorer", "Git Panel", "Terminal"] },
   { id: "window", label: "Window", children: ["Minimize", "Maximize / Restore", "Close"] },
@@ -356,6 +389,12 @@ type WorkbenchDocument = {
   };
 };
 
+type EditorTabPreview = {
+  id: string;
+  name: string;
+  dirty?: boolean;
+};
+
 const initialDocument: WorkbenchDocument = {
   id: "mock-workbench-page",
   name: "workbench-page.tsx",
@@ -364,6 +403,21 @@ const initialDocument: WorkbenchDocument = {
   savedContent: editorLines.join("\n"),
   mode: "editable",
 };
+
+const editorTabPreviewNames = [
+  "workbench-page.tsx",
+  "settings.json",
+  "runtime.log",
+  "app.config.toml",
+  "README.md",
+  "very-long-file-name-for-overflow-testing.yaml",
+  "main.rs",
+  "docker-compose.yml",
+  ".env.local",
+  "query.sql",
+  "notes.txt",
+  "index.html",
+];
 
 const getDocumentLines = (document: WorkbenchDocument) => {
   const lines = document.content.split(/\r\n|\n|\r/);
@@ -475,13 +529,14 @@ const getProjectAccentStyle = (name: string): ProjectAccentStyle => {
 };
 
 export function WorkbenchPage() {
-  const [dark, setDark] = useState(false);
-  const [gitOpen, setGitOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [document, setDocument] = useState<WorkbenchDocument>(initialDocument);
-  const [explorerOpen, setExplorerOpen] = useState(true);
+  const [leftPanelOpen, setLeftPanelOpen] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [folderView, setFolderView] = useState<FolderView | null>(null);
   const [pendingFileOpen, setPendingFileOpen] = useState<PendingFileOpen | null>(null);
+  const [saveConflict, setSaveConflict] = useState<SaveConflict | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
   const [searchOpen, setSearchOpen] = useState(false);
   const showWindowsTitlebar = useMemo(() => navigator.userAgent.includes("Windows") && isTauriRuntime(), []);
   const showMacTitlebar = useMemo(() => navigator.userAgent.includes("Mac") && isTauriRuntime(), []);
@@ -489,10 +544,12 @@ export function WorkbenchPage() {
 
   const createFile = () => {
     setFileError(null);
-    setExplorerOpen(false);
+    setLeftPanelOpen(false);
     setFolderView(null);
+    setSaveConflict(null);
+    setSaveState("idle");
     setDocument({
-      id: `untitled-${Date.now()}`,
+      id: createDocumentId("untitled"),
       name: "Untitled.txt",
       path: "Untitled.txt",
       content: "",
@@ -500,6 +557,135 @@ export function WorkbenchPage() {
       isUntitled: true,
       mode: "editable",
     });
+  };
+
+  const applySavedDocument = (savedFile: NativeSavedTextFile, content: string) => {
+    setDocument((currentDocument) => ({
+      ...currentDocument,
+      id: getFileOpenId(savedFile.path, savedFile.lastModified),
+      name: savedFile.name,
+      path: savedFile.path,
+      content,
+      savedContent: content,
+      size: savedFile.size,
+      lastModified: savedFile.lastModified ?? undefined,
+      isUntitled: false,
+      mode: "editable",
+      range: undefined,
+    }));
+    setSaveConflict(null);
+    setSaveState("saved");
+    setFileError(null);
+  };
+
+  const saveDocumentAs = async (contentOverride?: string) => {
+    if (document.mode === "large-readonly") {
+      setSaveState("error");
+      setFileError("Large files are opened in read-only browsing mode and cannot be saved yet.");
+      return;
+    }
+
+    if (!isTauriRuntime()) {
+      setSaveState("error");
+      setFileError("Native saving is only available in the Tauri desktop app.");
+      return;
+    }
+
+    try {
+      const path = await invoke<string | null>("open_save_dialog", { defaultName: document.name });
+
+      if (!path) {
+        setSaveState(document.content !== document.savedContent ? "idle" : "saved");
+        return;
+      }
+
+      const content = contentOverride ?? document.content;
+      setSaveState("saving");
+      setFileError(null);
+
+      const savedFile = await invoke<NativeSavedTextFile>("save_text_file_as", {
+        path,
+        content,
+      });
+
+      applySavedDocument(savedFile, content);
+    } catch (error) {
+      const saveError = getNativeSaveError(error);
+      setSaveState("error");
+      setFileError(saveError.message ?? "Unable to save this file.");
+    }
+  };
+
+  const saveDocument = async (options: { force?: boolean } = {}) => {
+    if (saveState === "saving") {
+      return;
+    }
+
+    if (document.mode === "large-readonly") {
+      setSaveState("error");
+      setFileError("Large files are opened in read-only browsing mode and cannot be saved yet.");
+      return;
+    }
+
+    if (document.isUntitled || !isAbsolutePath(document.path)) {
+      await saveDocumentAs();
+      return;
+    }
+
+    if (!isTauriRuntime()) {
+      setSaveState("error");
+      setFileError("Native saving is only available in the Tauri desktop app.");
+      return;
+    }
+
+    const content = document.content;
+    setSaveState("saving");
+    setFileError(null);
+
+    try {
+      const savedFile = await invoke<NativeSavedTextFile>("save_text_file", {
+        path: document.path,
+        content,
+        expectedLastModified: options.force ? null : document.lastModified ?? null,
+        force: options.force ?? false,
+      });
+
+      applySavedDocument(savedFile, content);
+    } catch (error) {
+      const saveError = getNativeSaveError(error);
+
+      if (saveError.kind === "deleted") {
+        setSaveState("idle");
+        setFileError(saveError.message ?? "The original file was deleted. Choose a new location to save it.");
+        await saveDocumentAs(content);
+        return;
+      }
+
+      if (saveError.kind === "modified") {
+        setSaveState("idle");
+        setSaveConflict({
+          content,
+          lastModified: document.lastModified,
+          message: saveError.message ?? "This file was changed outside Norn.",
+          path: document.path,
+        });
+        return;
+      }
+
+      setSaveState("error");
+      setFileError(saveError.message ?? "Unable to save this file.");
+    }
+  };
+
+  const reloadConflictedDocument = async () => {
+    const conflict = saveConflict;
+
+    if (!conflict) {
+      return;
+    }
+
+    setSaveConflict(null);
+    await openNativeFile(conflict.path);
   };
 
   const readFolderEntries = async (path: string) => {
@@ -512,6 +698,7 @@ export function WorkbenchPage() {
     const { clearFolderView = false, size } = options;
 
     setFileError(null);
+    setSaveConflict(null);
 
     try {
       const inspection = await invoke<NativeTextFileInspection>("inspect_text_file", { path });
@@ -551,10 +738,11 @@ export function WorkbenchPage() {
             startOffset: range.startOffset,
           },
         });
+        setSaveState("saved");
 
         if (clearFolderView) {
           setFolderView(null);
-          setExplorerOpen(false);
+          setLeftPanelOpen(false);
         }
 
         return;
@@ -580,10 +768,11 @@ export function WorkbenchPage() {
         lastModified: file.lastModified ?? undefined,
         mode: "editable",
       });
+      setSaveState("saved");
 
       if (clearFolderView) {
         setFolderView(null);
-        setExplorerOpen(false);
+        setLeftPanelOpen(false);
       }
     } catch (error) {
       setFileError(error instanceof Error ? error.message : String(error));
@@ -629,7 +818,7 @@ export function WorkbenchPage() {
   };
 
   const openFolderView = async (rootPath: string, origin: FolderView["origin"]) => {
-    setExplorerOpen(true);
+    setLeftPanelOpen(true);
     setFolderView({
       rootPath,
       rootName: getPathName(rootPath),
@@ -772,6 +961,7 @@ export function WorkbenchPage() {
     setDocument((currentDocument) =>
       currentDocument.content === content ? currentDocument : { ...currentDocument, content },
     );
+    setSaveState((currentState) => (currentState === "saving" ? currentState : "idle"));
   };
 
   useEffect(() => {
@@ -795,8 +985,16 @@ export function WorkbenchPage() {
         openFolderPicker();
       }
 
+      if (event.payload === nativeMenuCommands.saveFile) {
+        void saveDocument();
+      }
+
+      if (event.payload === nativeMenuCommands.saveFileAs) {
+        void saveDocumentAs();
+      }
+
       if (event.payload === nativeMenuCommands.showExplorer) {
-        setExplorerOpen((value) => !value);
+        setLeftPanelOpen((value) => !value);
       }
 
       if (event.payload === nativeMenuCommands.find) {
@@ -804,7 +1002,7 @@ export function WorkbenchPage() {
       }
 
       if (event.payload === nativeMenuCommands.toggleGitPanel) {
-        setGitOpen((value) => !value);
+        setRightPanelOpen((value) => !value);
       }
     })
       .then((cleanup) => {
@@ -823,58 +1021,101 @@ export function WorkbenchPage() {
       disposed = true;
       unlisten?.();
     };
-  }, [document.content, document.savedContent]);
+  }, [document.content, document.savedContent, document.path, document.lastModified, document.mode, document.isUntitled, saveState]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isSaveShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s";
+
+      if (!isSaveShortcut) {
+        return;
+      }
+
+      event.preventDefault();
+
+      if (event.shiftKey) {
+        void saveDocumentAs();
+        return;
+      }
+
+      void saveDocument();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [document.content, document.savedContent, document.path, document.lastModified, document.mode, document.isUntitled, saveState]);
 
   return (
     <TooltipProvider delayDuration={250}>
-      <div className={cn("h-full bg-background text-[12px] text-foreground", dark && "dark")}>
+      <div className="h-full bg-background text-[12px] text-foreground">
         <div className="flex h-full min-w-0 flex-col">
           {showWindowsTitlebar ? (
             <WindowsTitleBar
+              leftPanelOpen={leftPanelOpen}
               onCreateFile={createFile}
+              onToggleLeftPanel={() => setLeftPanelOpen((value) => !value)}
+              onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
               onOpenFile={openFilePicker}
               onOpenFolder={openFolderPicker}
+              onSaveFile={() => void saveDocument()}
+              onSaveFileAs={() => void saveDocumentAs()}
               onOpenSearch={() => setSearchOpen(true)}
+              rightPanelOpen={rightPanelOpen}
               searchOpen={searchOpen}
               onCloseSearch={() => setSearchOpen(false)}
             />
           ) : null}
           {showMacTitlebar ? (
-            <MacTitlebar searchOpen={searchOpen} onCloseSearch={() => setSearchOpen(false)} onOpenSearch={() => setSearchOpen(true)} />
-          ) : null}
-          <WorkbenchToolbar
-            dark={dark}
-            onToggleGit={() => setGitOpen((value) => !value)}
-            gitOpen={gitOpen}
-            onToggleTheme={() => setDark((value) => !value)}
-          />
-          <main
-            className={cn(
-              "grid min-h-0 flex-1 grid-cols-[260px_1px_minmax(0,1fr)_32px_360px] bg-background transition-[grid-template-columns]",
-              !explorerOpen && "grid-cols-[40px_1px_minmax(0,1fr)_32px_360px]",
-              !gitOpen && "grid-cols-[260px_1px_minmax(0,1fr)_32px_0px]",
-              !explorerOpen && !gitOpen && "grid-cols-[40px_1px_minmax(0,1fr)_32px_0px]",
-            )}
-          >
-            <ProjectPanel
-              activePath={document.path}
-              document={document}
-              explorerOpen={explorerOpen}
-              folderView={folderView}
-              onOpenContainingFolder={openContainingFolder}
-              onOpenExplorer={() => setExplorerOpen(true)}
-              onCloseExplorer={() => setExplorerOpen(false)}
-              onOpenFile={openFilePicker}
-              onOpenFolder={openFolderPicker}
-              onOpenTreeFile={openTreeFile}
-              onToggleDirectory={toggleDirectory}
+            <MacTitlebar
+              leftPanelOpen={leftPanelOpen}
+              onCloseSearch={() => setSearchOpen(false)}
+              onOpenSearch={() => setSearchOpen(true)}
+              onToggleLeftPanel={() => setLeftPanelOpen((value) => !value)}
+              onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
+              rightPanelOpen={rightPanelOpen}
+              searchOpen={searchOpen}
             />
-            <div className="bg-border" />
-            <EditorSurface document={document} error={fileError} onChange={updateDocumentContent} />
-            <GitRail open={gitOpen} onToggle={() => setGitOpen((value) => !value)} />
-            <GitPanel open={gitOpen} />
+          ) : null}
+          <main
+            className="workbench-layout grid min-h-0 flex-1 bg-background"
+            style={{
+              gridTemplateColumns: `${leftPanelOpen ? "260px" : "0px"} ${leftPanelOpen ? "1px" : "0px"} minmax(0,1fr) ${
+                rightPanelOpen ? "1px" : "0px"
+              } ${rightPanelOpen ? "360px" : "0px"}`,
+            }}
+          >
+            <div
+              className={cn("workbench-side-panel workbench-left-panel", !leftPanelOpen && "workbench-side-panel-closed")}
+              aria-hidden={!leftPanelOpen}
+            >
+              <ProjectPanel
+                activePath={document.path}
+                folderView={folderView}
+                onOpenFolder={openFolderPicker}
+                onOpenTreeFile={openTreeFile}
+                onToggleDirectory={toggleDirectory}
+              />
+            </div>
+            <div className={cn("workbench-panel-separator bg-border", !leftPanelOpen && "opacity-0")} />
+            <EditorSurface
+              document={document}
+              error={fileError}
+              isDirty={isDirty}
+              onChange={updateDocumentContent}
+              onCreateFile={createFile}
+            />
+            <div className={cn("workbench-panel-separator bg-border", !rightPanelOpen && "opacity-0")} />
+            <div
+              className={cn("workbench-side-panel workbench-right-panel", !rightPanelOpen && "workbench-side-panel-closed")}
+              aria-hidden={!rightPanelOpen}
+            >
+              <GitPanel />
+            </div>
           </main>
-          <StatusBar document={document} />
+          <StatusBar document={document} isDirty={isDirty} saveState={saveState} />
           <DiscardChangesDialog
             open={Boolean(pendingFileOpen)}
             onCancel={() => setPendingFileOpen(null)}
@@ -887,6 +1128,23 @@ export function WorkbenchPage() {
               }
             }}
           />
+          <SaveConflictDialog
+            open={Boolean(saveConflict)}
+            message={saveConflict?.message}
+            onCancel={() => setSaveConflict(null)}
+            onOverwrite={() => {
+              setSaveConflict(null);
+              void saveDocument({ force: true });
+            }}
+            onReload={() => {
+              void reloadConflictedDocument();
+            }}
+            onSaveAs={() => {
+              const content = saveConflict?.content;
+              setSaveConflict(null);
+              void saveDocumentAs(content);
+            }}
+          />
         </div>
       </div>
     </TooltipProvider>
@@ -894,18 +1152,30 @@ export function WorkbenchPage() {
 }
 
 function WindowsTitleBar({
+  leftPanelOpen,
   onCloseSearch,
   onCreateFile,
   onOpenFile,
   onOpenFolder,
   onOpenSearch,
+  onSaveFile,
+  onSaveFileAs,
+  onToggleLeftPanel,
+  onToggleRightPanel,
+  rightPanelOpen,
   searchOpen,
 }: {
+  leftPanelOpen: boolean;
   onCloseSearch: () => void;
   onCreateFile: () => void;
   onOpenFile: () => void;
   onOpenFolder: () => void;
   onOpenSearch: () => void;
+  onSaveFile: () => void;
+  onSaveFileAs: () => void;
+  onToggleLeftPanel: () => void;
+  onToggleRightPanel: () => void;
+  rightPanelOpen: boolean;
   searchOpen: boolean;
 }) {
   const appWindow = getCurrentWindow();
@@ -1040,6 +1310,14 @@ function WindowsTitleBar({
       onOpenFolder();
     }
 
+    if (child === "Save") {
+      onSaveFile();
+    }
+
+    if (child === "Save As") {
+      onSaveFileAs();
+    }
+
     if (child === "Minimize") appWindow.minimize();
     if (child === "Maximize / Restore") appWindow.toggleMaximize();
     if (child === "Close") appWindow.close();
@@ -1050,15 +1328,23 @@ function WindowsTitleBar({
     <header className="windows-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
       <div className="windows-titlebar-left" ref={menuRef}>
         {!menuExpanded ? (
-          <button
-            className="windows-titlebar-menu-button"
-            type="button"
-            aria-label="Toggle application menu"
-            aria-expanded={menuExpanded}
-            onClick={openMenu}
-          >
-            <Menu className="h-4 w-4" />
-          </button>
+          <>
+            <button
+              className="windows-titlebar-menu-button"
+              type="button"
+              aria-label="Toggle application menu"
+              aria-expanded={menuExpanded}
+              onClick={openMenu}
+            >
+              <Menu className="h-4 w-4" />
+            </button>
+            <PanelToggleButton
+              className="titlebar-panel-button"
+              open={leftPanelOpen}
+              side="left"
+              onClick={onToggleLeftPanel}
+            />
+          </>
         ) : (
           <nav className="windows-titlebar-inline-menu" aria-label="Application menu">
             {windowsTitlebarMenus.map((item) => (
@@ -1139,9 +1425,6 @@ function WindowsTitleBar({
                 </div>
               ) : null}
             </div>
-            <button className="windows-titlebar-git" type="button">
-              main - 4 modified
-            </button>
           </div>
         ) : null}
       </div>
@@ -1151,6 +1434,15 @@ function WindowsTitleBar({
       </div>
       <QuickSearch open={searchOpen} onClose={onCloseSearch} />
       <div className="windows-titlebar-drag-fill windows-titlebar-drag-fill-right" data-tauri-drag-region />
+      <div className="windows-titlebar-right-tools">
+        <PanelToggleButton
+          className="titlebar-panel-button"
+          open={rightPanelOpen}
+          side="right"
+          showBadge
+          onClick={onToggleRightPanel}
+        />
+      </div>
       <div className="windows-titlebar-controls" onDoubleClick={(event) => event.stopPropagation()}>
         <button className="windows-window-button" type="button" aria-label="Minimize" onClick={() => appWindow.minimize()}>
           <Minus className="h-3.5 w-3.5" />
@@ -1172,23 +1464,105 @@ function WindowsTitleBar({
 }
 
 function MacTitlebar({
+  leftPanelOpen,
   onCloseSearch,
   onOpenSearch,
+  onToggleLeftPanel,
+  onToggleRightPanel,
+  rightPanelOpen,
   searchOpen,
 }: {
+  leftPanelOpen: boolean;
   onCloseSearch: () => void;
   onOpenSearch: () => void;
+  onToggleLeftPanel: () => void;
+  onToggleRightPanel: () => void;
+  rightPanelOpen: boolean;
   searchOpen: boolean;
 }) {
   return (
     <header className="mac-titlebar" data-tauri-drag-region>
-      <div className="mac-titlebar-side" data-tauri-drag-region />
+      <div className="mac-titlebar-side mac-titlebar-side-left" data-tauri-drag-region>
+        <PanelToggleButton
+          className="titlebar-panel-button mac-panel-toggle-button"
+          open={leftPanelOpen}
+          side="left"
+          useLocalSidebarIcon
+          onClick={onToggleLeftPanel}
+        />
+      </div>
       <div className="mac-titlebar-search">
         <TopSearchButton className="mac-titlebar-search-button" onClick={onOpenSearch} />
       </div>
-      <div className="mac-titlebar-side" data-tauri-drag-region />
+      <div className="mac-titlebar-side mac-titlebar-side-right" data-tauri-drag-region>
+        <PanelToggleButton
+          className="titlebar-panel-button mac-panel-toggle-button"
+          open={rightPanelOpen}
+          side="right"
+          showBadge
+          useLocalSidebarIcon
+          onClick={onToggleRightPanel}
+        />
+      </div>
       <QuickSearch open={searchOpen} onClose={onCloseSearch} />
     </header>
+  );
+}
+
+function PanelToggleButton({
+  className,
+  onClick,
+  open,
+  showBadge = false,
+  side,
+  useLocalSidebarIcon = false,
+}: {
+  className?: string;
+  onClick: () => void;
+  open: boolean;
+  showBadge?: boolean;
+  side: "left" | "right";
+  useLocalSidebarIcon?: boolean;
+}) {
+  const Icon = side === "left" ? PanelLeft : PanelRight;
+  const label =
+    side === "left"
+      ? open
+        ? "Hide file tree"
+        : "Show file tree"
+      : open
+        ? "Hide Git panel"
+        : "Show Git panel";
+
+  return (
+    <button
+      className={cn("panel-toggle-button", className, open && "panel-toggle-button-active")}
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-pressed={open}
+      onClick={onClick}
+    >
+      {useLocalSidebarIcon ? <SidebarPanelIcon side={side} /> : <Icon className="h-3 w-3" />}
+      {showBadge ? <span className="panel-toggle-badge">4</span> : null}
+    </button>
+  );
+}
+
+function SidebarPanelIcon({ side }: { side: "left" | "right" }) {
+  return (
+    <svg
+      className={cn("sidebar-panel-svg", side === "right" && "sidebar-panel-svg-right")}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <rect x="1" y="1" width="22" height="22" rx="6" fill="#F3F6E6" />
+      <rect x="4" y="4" width="16" height="16" rx="3.4" stroke="#7E847A" strokeWidth="1.4" fill="none" />
+      <rect x="6.75" y="7.4" width="2.05" height="9" rx="1.02" fill="#7B8178" />
+    </svg>
   );
 }
 
@@ -1238,99 +1612,21 @@ function QuickSearch({ onClose, open }: { onClose: () => void; open: boolean }) 
   );
 }
 
-function WorkbenchToolbar({
-  dark,
-  gitOpen,
-  onToggleGit,
-  onToggleTheme,
-}: {
-  dark: boolean;
-  gitOpen: boolean;
-  onToggleGit: () => void;
-  onToggleTheme: () => void;
-}) {
-  return (
-    <div className="tool-row justify-between gap-2">
-      <div className="flex min-w-0 items-center gap-1.5">
-        <Button size="toolbar" variant="default">
-          <GitBranch className="h-3.5 w-3.5" />
-          main
-          <ChevronDown className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-      <div className="flex items-center gap-1.5">
-        <Badge tone="success">Git CLI</Badge>
-        <Button variant="ghost" size="sm" onClick={onToggleTheme}>
-          {dark ? "Light" : "Dark"}
-        </Button>
-        <Button size="toolbar" variant="default">
-          <Columns3 className="h-3.5 w-3.5" />
-          Diff
-        </Button>
-        <Button size="toolbar" variant="primary">
-          <GitCommitHorizontal className="h-3.5 w-3.5" />
-          Commit
-        </Button>
-        <Button size="icon" variant={gitOpen ? "subtle" : "ghost"} onClick={onToggleGit}>
-          <PanelRightClose className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function ProjectPanel({
   activePath,
-  document,
-  explorerOpen,
   folderView,
-  onCloseExplorer,
-  onOpenContainingFolder,
-  onOpenExplorer,
-  onOpenFile,
   onOpenFolder,
   onOpenTreeFile,
   onToggleDirectory,
 }: {
   activePath: string;
-  document: WorkbenchDocument;
-  explorerOpen: boolean;
   folderView: FolderView | null;
-  onCloseExplorer: () => void;
-  onOpenContainingFolder: () => void;
-  onOpenExplorer: () => void;
-  onOpenFile: () => void;
   onOpenFolder: () => void;
   onOpenTreeFile: (node: FileTreeNode) => void;
   onToggleDirectory: (node: FileTreeNode) => void;
 }) {
-  if (!explorerOpen) {
-    return (
-      <aside className="flex min-h-0 min-w-0 flex-col items-center gap-1 overflow-hidden border-r border-border bg-card/70 py-1.5">
-        <Button size="icon" variant="ghost" aria-label="Show Explorer" title="Show Explorer" onClick={onOpenExplorer}>
-          <PanelLeftOpen className="h-4 w-4" />
-        </Button>
-        <Button size="icon" variant="ghost" aria-label="Open File" title="Open File" onClick={onOpenFile}>
-          <FileText className="h-4 w-4" />
-        </Button>
-        <Button size="icon" variant="ghost" aria-label="Open Folder" title="Open Folder" onClick={onOpenFolder}>
-          <FolderOpen className="h-4 w-4" />
-        </Button>
-      </aside>
-    );
-  }
-
   return (
-    <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-card/70">
-      <div className="panel-heading">
-        <div className="flex min-w-0 items-center gap-1.5 font-semibold">
-          <PanelLeftOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="truncate">Explorer</span>
-        </div>
-        <Button size="icon" variant="ghost" aria-label="Hide Explorer" title="Hide Explorer" onClick={onCloseExplorer}>
-          <PanelLeftClose className="h-3.5 w-3.5" />
-        </Button>
-      </div>
+    <aside className="flex h-full min-h-0 w-[260px] min-w-0 flex-col overflow-hidden bg-card/70">
       {folderView ? (
         <FolderTreePanel
           activePath={activePath}
@@ -1340,54 +1636,9 @@ function ProjectPanel({
           onToggleDirectory={onToggleDirectory}
         />
       ) : (
-        <SingleFilePanel
-          document={document}
-          onOpenContainingFolder={onOpenContainingFolder}
-          onOpenFile={onOpenFile}
-          onOpenFolder={onOpenFolder}
-        />
+        <div className="min-h-0 flex-1" />
       )}
     </aside>
-  );
-}
-
-function SingleFilePanel({
-  document,
-  onOpenContainingFolder,
-  onOpenFile,
-  onOpenFolder,
-}: {
-  document: WorkbenchDocument;
-  onOpenContainingFolder: () => void;
-  onOpenFile: () => void;
-  onOpenFolder: () => void;
-}) {
-  const canOpenContainingFolder = !document.isUntitled && isAbsolutePath(document.path) && Boolean(getParentPath(document.path));
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
-      <div className="rounded-sm border border-border bg-background p-3">
-        <div className="mb-1 flex items-center gap-1.5 text-[12px] font-semibold">
-          <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="truncate">{document.name}</span>
-        </div>
-        <div className="truncate font-mono text-[11px] text-muted-foreground">{document.path}</div>
-      </div>
-      <div className="grid gap-2">
-        <Button className="gap-1.5" size="sm" variant="default" onClick={onOpenContainingFolder} disabled={!canOpenContainingFolder}>
-          <FolderOpen className="h-3.5 w-3.5" />
-          Open Containing Folder
-        </Button>
-        <Button className="gap-1.5" size="sm" variant="subtle" onClick={onOpenFolder}>
-          <Folder className="h-3.5 w-3.5" />
-          Open Folder
-        </Button>
-        <Button className="gap-1.5" size="sm" variant="ghost" onClick={onOpenFile}>
-          <FileText className="h-3.5 w-3.5" />
-          Open File
-        </Button>
-      </div>
-    </div>
   );
 }
 
@@ -1406,17 +1657,6 @@ function FolderTreePanel({
 }) {
   return (
     <>
-      <div className="border-b border-border px-2 py-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="truncate text-[12px] font-semibold">{folderView.rootName}</div>
-            <div className="truncate font-mono text-[11px] text-muted-foreground">{folderView.rootPath}</div>
-          </div>
-          <Button size="sm" variant="ghost" onClick={onOpenFolder}>
-            Open
-          </Button>
-        </div>
-      </div>
       {folderView.error ? (
         <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
           {folderView.error}
@@ -1538,18 +1778,68 @@ function DiscardChangesDialog({
   );
 }
 
+function SaveConflictDialog({
+  message,
+  onCancel,
+  onOverwrite,
+  onReload,
+  onSaveAs,
+  open,
+}: {
+  message?: string;
+  onCancel: () => void;
+  onOverwrite: () => void;
+  onReload: () => void;
+  onSaveAs: () => void;
+  open: boolean;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(nextOpen) => (!nextOpen ? onCancel() : undefined)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>File changed on disk</DialogTitle>
+          <DialogDescription>
+            {message ?? "This file was changed outside Norn. Choose how to handle your unsaved edits."}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="ghost" onClick={onSaveAs}>
+            Save As
+          </Button>
+          <Button variant="ghost" onClick={onReload}>
+            Reload
+          </Button>
+          <Button variant="destructive" onClick={onOverwrite}>
+            Overwrite
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function EditorSurface({
   document,
   error,
+  isDirty,
   onChange,
+  onCreateFile,
 }: {
   document: WorkbenchDocument;
   error: string | null;
+  isDirty: boolean;
   onChange: (content: string) => void;
+  onCreateFile: () => void;
 }) {
   const editorFrameRef = useRef<HTMLDivElement>(null);
   const editorElementRef = useRef<HTMLDivElement>(null);
+  const tabScrollRef = useRef<HTMLDivElement>(null);
+  const tabButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const scrollDOMRef = useRef<HTMLElement | null>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const languageCompartmentRef = useRef(new Compartment());
@@ -1561,6 +1851,124 @@ function EditorSurface({
     thumbSize: number;
     trackSize: number;
   } | null>(null);
+  const [activePreviewTabId, setActivePreviewTabId] = useState(document.id);
+  const [editingPreviewTabId, setEditingPreviewTabId] = useState<string | null>(null);
+  const [editingPreviewTabName, setEditingPreviewTabName] = useState("");
+  const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
+  const [previewTabs, setPreviewTabs] = useState<EditorTabPreview[]>(() =>
+    editorTabPreviewNames.map((name, index) => ({
+      id: index === 0 ? document.id : `preview-tab-${index}`,
+      name: index === 0 ? document.name : name,
+      dirty: index === 0 ? isDirty || document.isUntitled : index % 4 === 1,
+    })),
+  );
+
+  const commitPreviewTabName = () => {
+    if (!editingPreviewTabId) {
+      return;
+    }
+
+    const nextName = editingPreviewTabName.trim();
+
+    if (nextName) {
+      setPreviewTabs((currentTabs) =>
+        currentTabs.map((tab) => (tab.id === editingPreviewTabId ? { ...tab, name: nextName } : tab)),
+      );
+    }
+
+    setEditingPreviewTabId(null);
+  };
+
+  const addPreviewTab = () => {
+    setEditingPreviewTabId(null);
+    onCreateFile();
+  };
+
+  const updateTabOverflow = () => {
+    const tabScroll = tabScrollRef.current;
+
+    if (!tabScroll) {
+      setTabOverflow({ left: false, right: false });
+      return;
+    }
+
+    const maxScrollLeft = tabScroll.scrollWidth - tabScroll.clientWidth;
+
+    setTabOverflow({
+      left: tabScroll.scrollLeft > 2,
+      right: tabScroll.scrollLeft < maxScrollLeft - 2,
+    });
+  };
+
+  useEffect(() => {
+    setPreviewTabs((currentTabs) => {
+      const documentTab: EditorTabPreview = {
+        id: document.id,
+        name: document.name,
+        dirty: isDirty || document.isUntitled,
+      };
+
+      if (!currentTabs.some((tab) => tab.id === document.id)) {
+        return [...currentTabs, documentTab];
+      }
+
+      return currentTabs.map((tab) => (tab.id === document.id ? { ...tab, ...documentTab } : tab));
+    });
+  }, [document.id, document.isUntitled, document.name, isDirty]);
+
+  useEffect(() => {
+    setActivePreviewTabId(document.id);
+
+    window.requestAnimationFrame(() => {
+      tabButtonRefs.current[document.id]?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "nearest",
+      });
+      updateTabOverflow();
+
+      viewRef.current?.focus();
+    });
+  }, [document.id]);
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => {
+      tabButtonRefs.current[activePreviewTabId]?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+        inline: "nearest",
+      });
+      updateTabOverflow();
+    });
+  }, [activePreviewTabId, previewTabs.length]);
+
+  useEffect(() => {
+    const tabScroll = tabScrollRef.current;
+
+    if (!tabScroll) {
+      return;
+    }
+
+    updateTabOverflow();
+    tabScroll.addEventListener("scroll", updateTabOverflow, { passive: true });
+    window.addEventListener("resize", updateTabOverflow);
+
+    return () => {
+      tabScroll.removeEventListener("scroll", updateTabOverflow);
+      window.removeEventListener("resize", updateTabOverflow);
+    };
+  }, [previewTabs.length]);
+
+  useEffect(() => {
+    if (!editingPreviewTabId) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    });
+  }, [editingPreviewTabId]);
   const [scrollMetrics, setScrollMetrics] = useState<EditorScrollMetrics>(emptyEditorScrollMetrics);
   const [highlightWarning, setHighlightWarning] = useState<string | null>(null);
 
@@ -1781,14 +2189,67 @@ function EditorSurface({
 
   return (
     <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-[hsl(var(--editor-background))]">
-      <Tabs value={document.id} className="min-w-0">
-        <TabsList className="flex w-full justify-start border-b border-border bg-muted/70">
-          <TabsTrigger className="max-w-[240px] justify-start gap-2 px-2.5" value={document.id}>
-            <span className={cn("h-2 w-2 shrink-0 rounded-full", document.isUntitled ? "bg-amber-500" : "bg-emerald-500")} />
-            <span className="truncate">{document.name}</span>
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div
+        className={cn("editor-file-tabs", tabOverflow.left && "editor-file-tabs-has-left", tabOverflow.right && "editor-file-tabs-has-right")}
+        role="tablist"
+        aria-label="Open files"
+      >
+        <div className="editor-file-tabs-scroll" ref={tabScrollRef}>
+          {previewTabs.map((tab) => {
+            const active = tab.id === activePreviewTabId;
+            const editing = tab.id === editingPreviewTabId;
+
+            return (
+              <button
+                className={cn("editor-file-tab", active && "editor-file-tab-active")}
+                key={tab.id}
+                ref={(element) => {
+                  tabButtonRefs.current[tab.id] = element;
+                }}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setActivePreviewTabId(tab.id)}
+                onDoubleClick={() => {
+                  setActivePreviewTabId(tab.id);
+                  setEditingPreviewTabId(tab.id);
+                  setEditingPreviewTabName(tab.name);
+                }}
+              >
+                <span className={cn("editor-file-tab-dot", tab.dirty ? "bg-amber-500" : "bg-emerald-500")} />
+                {editing ? (
+                  <input
+                    ref={renameInputRef}
+                    className="editor-file-tab-input"
+                    value={editingPreviewTabName}
+                    onChange={(event) => setEditingPreviewTabName(event.target.value)}
+                    onBlur={commitPreviewTabName}
+                    onClick={(event) => event.stopPropagation()}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        commitPreviewTabName();
+                      }
+
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setEditingPreviewTabId(null);
+                      }
+                    }}
+                  />
+                ) : (
+                  <span className="truncate">{tab.name}</span>
+                )}
+                {tab.dirty && !editing ? <span className="text-muted-foreground">•</span> : null}
+              </button>
+            );
+          })}
+        </div>
+        <button className="editor-file-tab-add" type="button" aria-label="Add test tab" title="Add test tab" onClick={addPreviewTab}>
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </div>
       {error ? (
         <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-[12px] text-destructive">
           {error}
@@ -1880,27 +2341,9 @@ function EditorScrollbar({
   );
 }
 
-function GitRail({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+function GitPanel() {
   return (
-    <div className="flex min-h-0 min-w-0 flex-col items-center border-x border-border bg-muted/75 py-2 shadow-[inset_1px_0_0_hsl(var(--background)),inset_-1px_0_0_hsl(var(--background))]">
-      <div className="grid gap-1">
-        <span className="h-5 w-1 rounded-full bg-sky-500/70" />
-        <span className="h-5 w-1 rounded-full bg-emerald-500/70" />
-        <span className="h-5 w-1 rounded-full bg-amber-500/80" />
-      </div>
-      <Button className="mt-3 h-8 w-[18px] p-0" size="icon" variant="ghost" onClick={onToggle}>
-        <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", !open && "-rotate-180")} />
-      </Button>
-      <Badge className="mt-2 px-1" tone="info">
-        4
-      </Badge>
-    </div>
-  );
-}
-
-function GitPanel({ open }: { open: boolean }) {
-  return (
-    <aside className={cn("min-h-0 min-w-0 overflow-hidden bg-card shadow-[-10px_0_18px_-18px_rgba(15,23,42,0.75)] transition-opacity", !open && "opacity-0")}>
+    <aside className="min-h-0 min-w-0 overflow-hidden bg-card shadow-[-10px_0_18px_-18px_rgba(15,23,42,0.75)]">
       <div className="flex h-full w-[360px] min-h-0 flex-col">
         <div className="panel-heading">
           <div>
@@ -1975,8 +2418,26 @@ function Summary({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StatusBar({ document }: { document: WorkbenchDocument }) {
+function StatusBar({
+  document,
+  isDirty,
+  saveState,
+}: {
+  document: WorkbenchDocument;
+  isDirty: boolean;
+  saveState: SaveState;
+}) {
   const lineCount = getDocumentLines(document).length;
+  const saveLabel =
+    document.mode === "large-readonly"
+      ? "Read-only"
+      : saveState === "saving"
+        ? "Saving..."
+        : saveState === "error"
+          ? "Save failed"
+          : isDirty || document.isUntitled
+            ? "Unsaved"
+            : "Saved";
 
   return (
     <footer className="flex h-6 shrink-0 items-center justify-between border-t border-border bg-muted/70 px-2">
@@ -1987,7 +2448,7 @@ function StatusBar({ document }: { document: WorkbenchDocument }) {
         <span className="status-token">UTF-8</span>
         <span className="status-token">LF</span>
         {document.mode === "large-readonly" ? <span className="status-token">Read-only range</span> : null}
-        {document.isUntitled ? <span className="status-token">Unsaved</span> : null}
+        <span className="status-token">{saveLabel}</span>
       </div>
       <div className="flex items-center gap-3">
         <span className="status-token">

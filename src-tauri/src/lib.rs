@@ -7,15 +7,17 @@ use tauri_plugin_dialog::DialogExt;
 use serde::Serialize;
 use std::{
     fs::{self, File},
-    io::{Read, Seek, SeekFrom},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    time::UNIX_EPOCH,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 const MENU_EVENT: &str = "norn-menu";
 const MENU_NEW_FILE: &str = "menu-new-file";
 const MENU_OPEN_FILE: &str = "menu-open-file";
 const MENU_OPEN_FOLDER: &str = "menu-open-folder";
+const MENU_SAVE_FILE: &str = "menu-save-file";
+const MENU_SAVE_FILE_AS: &str = "menu-save-file-as";
 const MENU_FIND: &str = "menu-find";
 const MENU_SHOW_EXPLORER: &str = "menu-show-explorer";
 const MENU_TOGGLE_GIT_PANEL: &str = "menu-toggle-git-panel";
@@ -77,6 +79,32 @@ struct TextFileRange {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct SavedTextFile {
+    name: String,
+    path: String,
+    size: u64,
+    last_modified: Option<u64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveTextFileError {
+    kind: SaveTextFileErrorKind,
+    message: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum SaveTextFileErrorKind {
+    Deleted,
+    InvalidPath,
+    Io,
+    Modified,
+    Permission,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct DirectoryEntry {
     name: String,
     path: String,
@@ -117,6 +145,20 @@ async fn open_folder_dialog(app: tauri::AppHandle) -> Option<String> {
 }
 
 #[tauri::command]
+async fn open_save_dialog(app: tauri::AppHandle, default_name: Option<String>) -> Option<String> {
+    let dialog = app.dialog().file();
+    let dialog = match default_name {
+        Some(default_name) => dialog.set_file_name(default_name),
+        None => dialog,
+    };
+
+    dialog
+        .blocking_save_file()
+        .and_then(|path| path.into_path().ok())
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
 fn read_text_file(path: String) -> Result<TextFile, String> {
     let path = PathBuf::from(path);
     let metadata = fs::metadata(&path)
@@ -148,6 +190,89 @@ fn read_text_file(path: String) -> Result<TextFile, String> {
         size: metadata.len(),
         last_modified: modified_time_millis(&metadata),
     })
+}
+
+#[tauri::command]
+fn save_text_file(
+    path: String,
+    content: String,
+    expected_last_modified: Option<u64>,
+    force: Option<bool>,
+) -> Result<SavedTextFile, SaveTextFileError> {
+    let path = PathBuf::from(path);
+    let metadata = fs::metadata(&path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            return save_error(
+                SaveTextFileErrorKind::Deleted,
+                format!("{} no longer exists. Choose a new location to save this file.", path.display()),
+            );
+        }
+
+        save_error_from_io("Unable to read file metadata before saving", &path, error)
+    })?;
+
+    if !metadata.is_file() {
+        return Err(save_error(
+            SaveTextFileErrorKind::InvalidPath,
+            format!("{} is not a writable file", path.display()),
+        ));
+    }
+
+    if metadata.permissions().readonly() {
+        return Err(save_error(
+            SaveTextFileErrorKind::Permission,
+            format!("{} is read-only and cannot be saved.", path.display()),
+        ));
+    }
+
+    let should_check_mtime = !force.unwrap_or(false);
+    let current_last_modified = modified_time_millis(&metadata);
+
+    if should_check_mtime
+        && expected_last_modified.is_some()
+        && current_last_modified != expected_last_modified
+    {
+        return Err(save_error(
+            SaveTextFileErrorKind::Modified,
+            format!(
+                "{} was changed outside Norn. Review the conflict before saving.",
+                path.display()
+            ),
+        ));
+    }
+
+    atomic_write_text_file(&path, &content)?;
+    saved_text_file_from_path(&path)
+}
+
+#[tauri::command]
+fn save_text_file_as(path: String, content: String) -> Result<SavedTextFile, SaveTextFileError> {
+    let path = PathBuf::from(path);
+
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.trim().is_empty())
+        .unwrap_or(true)
+    {
+        return Err(save_error(
+            SaveTextFileErrorKind::InvalidPath,
+            "Choose a valid file name before saving.".to_string(),
+        ));
+    }
+
+    if fs::metadata(&path)
+        .map(|metadata| metadata.is_dir())
+        .unwrap_or(false)
+    {
+        return Err(save_error(
+            SaveTextFileErrorKind::InvalidPath,
+            format!("{} is a directory. Choose a file path instead.", path.display()),
+        ));
+    }
+
+    atomic_write_text_file(&path, &content)?;
+    saved_text_file_from_path(&path)
 }
 
 #[tauri::command]
@@ -362,6 +487,143 @@ fn modified_time_millis(metadata: &fs::Metadata) -> Option<u64> {
         .and_then(|duration| duration.as_millis().try_into().ok())
 }
 
+fn saved_text_file_from_path(path: &Path) -> Result<SavedTextFile, SaveTextFileError> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| save_error_from_io("Unable to read saved file metadata", path, error))?;
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Untitled")
+        .to_string();
+
+    Ok(SavedTextFile {
+        name,
+        path: path.to_string_lossy().into_owned(),
+        size: metadata.len(),
+        last_modified: modified_time_millis(&metadata),
+    })
+}
+
+fn atomic_write_text_file(path: &Path, content: &str) -> Result<(), SaveTextFileError> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+
+    if !parent.exists() {
+        return Err(save_error(
+            SaveTextFileErrorKind::InvalidPath,
+            format!("The folder {} does not exist.", parent.display()),
+        ));
+    }
+
+    if !parent.is_dir() {
+        return Err(save_error(
+            SaveTextFileErrorKind::InvalidPath,
+            format!("{} is not a folder.", parent.display()),
+        ));
+    }
+
+    let existing_permissions = match fs::metadata(path) {
+        Ok(metadata) => {
+            if metadata.permissions().readonly() {
+                return Err(save_error(
+                    SaveTextFileErrorKind::Permission,
+                    format!("{} is read-only and cannot be saved.", path.display()),
+                ));
+            }
+
+            Some(metadata.permissions())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(save_error_from_io("Unable to read existing file metadata", path, error)),
+    };
+
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            save_error(
+                SaveTextFileErrorKind::InvalidPath,
+                "Choose a valid file name before saving.".to_string(),
+            )
+        })?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let mut last_create_error = None;
+
+    for attempt in 0..10 {
+        let temp_path = parent.join(format!(
+            ".{}.norn-save-{}-{}-{}.tmp",
+            file_name,
+            std::process::id(),
+            timestamp,
+            attempt
+        ));
+
+        let mut file = match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp_path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                last_create_error = Some(error);
+                continue;
+            }
+            Err(error) => return Err(save_error_from_io("Unable to create temporary save file", &temp_path, error)),
+        };
+
+        if let Err(error) = file.write_all(content.as_bytes()) {
+            let _ = fs::remove_file(&temp_path);
+            return Err(save_error_from_io("Unable to write temporary save file", &temp_path, error));
+        }
+
+        if let Err(error) = file.sync_all() {
+            let _ = fs::remove_file(&temp_path);
+            return Err(save_error_from_io("Unable to flush temporary save file", &temp_path, error));
+        }
+
+        drop(file);
+
+        if let Some(permissions) = existing_permissions.clone() {
+            if let Err(error) = fs::set_permissions(&temp_path, permissions) {
+                let _ = fs::remove_file(&temp_path);
+                return Err(save_error_from_io("Unable to preserve file permissions while saving", &temp_path, error));
+            }
+        }
+
+        if let Err(error) = fs::rename(&temp_path, path) {
+            let _ = fs::remove_file(&temp_path);
+            return Err(save_error_from_io("Unable to replace file while saving", path, error));
+        }
+
+        return Ok(());
+    }
+
+    Err(save_error_from_io(
+        "Unable to create a unique temporary save file",
+        parent,
+        last_create_error.unwrap_or_else(|| std::io::Error::from(std::io::ErrorKind::AlreadyExists)),
+    ))
+}
+
+fn save_error(kind: SaveTextFileErrorKind, message: String) -> SaveTextFileError {
+    SaveTextFileError { kind, message }
+}
+
+fn save_error_from_io(context: &str, path: &Path, error: std::io::Error) -> SaveTextFileError {
+    let kind = match error.kind() {
+        std::io::ErrorKind::NotFound => SaveTextFileErrorKind::Deleted,
+        std::io::ErrorKind::PermissionDenied => SaveTextFileErrorKind::Permission,
+        _ => SaveTextFileErrorKind::Io,
+    };
+
+    save_error(kind, format_file_error(context, path, error))
+}
+
 fn format_file_error(context: &str, path: &Path, error: std::io::Error) -> String {
     format!("{} for {}: {}", context, path.display(), error)
 }
@@ -418,6 +680,15 @@ fn build_macos_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Resu
                 "Open Folder...",
                 true,
                 Some("CmdOrCtrl+Shift+O"),
+            )?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, MENU_SAVE_FILE, "Save", true, Some("CmdOrCtrl+S"))?,
+            &MenuItem::with_id(
+                app,
+                MENU_SAVE_FILE_AS,
+                "Save As...",
+                true,
+                Some("CmdOrCtrl+Shift+S"),
             )?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::close_window(app, None)?,
@@ -521,6 +792,8 @@ fn is_forwarded_menu_event(id: &str) -> bool {
         MENU_NEW_FILE
             | MENU_OPEN_FILE
             | MENU_OPEN_FOLDER
+            | MENU_SAVE_FILE
+            | MENU_SAVE_FILE_AS
             | MENU_FIND
             | MENU_SHOW_EXPLORER
             | MENU_TOGGLE_GIT_PANEL
@@ -574,9 +847,12 @@ pub fn run() {
             app_version,
             open_file_dialog,
             open_folder_dialog,
+            open_save_dialog,
             inspect_text_file,
             read_text_file,
             read_text_file_range,
+            save_text_file,
+            save_text_file_as,
             list_directory,
         ])
         .run(tauri::generate_context!())
