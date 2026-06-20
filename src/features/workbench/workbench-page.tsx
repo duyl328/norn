@@ -1,4 +1,6 @@
 import {
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   type PointerEvent as ReactPointerEvent,
   useEffect,
@@ -19,6 +21,7 @@ import {
 } from "@codemirror/view";
 import {
   CheckCircle2,
+  Check,
   ChevronDown,
   ChevronRight,
   CircleDot,
@@ -48,8 +51,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { Input } from "@/components/ui/input";
@@ -69,6 +77,11 @@ import { changes, editorLines } from "./mock-data";
 type ProjectAccentStyle = {
   "--project-color": string;
   "--project-color-foreground": string;
+};
+
+type RecentFolder = {
+  name: string;
+  path: string;
 };
 
 type TauriRuntimeWindow = Window & {
@@ -208,6 +221,12 @@ const LARGE_FILE_CONFIRM_BYTES = 5 * 1024 * 1024;
 const LARGE_FILE_READONLY_BYTES = 25 * 1024 * 1024;
 const SUPER_LARGE_FILE_BYTES = 100 * 1024 * 1024;
 const LARGE_FILE_CHUNK_BYTES = 512 * 1024;
+const leftPanelMinWidth = 220;
+const leftPanelMaxWidth = 380;
+const leftPanelDefaultWidth = 260;
+const rightPanelMinWidth = 300;
+const rightPanelMaxWidth = 520;
+const rightPanelDefaultWidth = 360;
 
 const emptyEditorScrollMetrics: EditorScrollMetrics = {
   clientHeight: 0,
@@ -390,9 +409,15 @@ type WorkbenchDocument = {
 };
 
 type EditorTabPreview = {
+  accent: string;
   id: string;
   name: string;
   dirty?: boolean;
+};
+
+type TabFoldStacks = {
+  left: EditorTabPreview[];
+  right: EditorTabPreview[];
 };
 
 const initialDocument: WorkbenchDocument = {
@@ -493,6 +518,35 @@ const recentProjects = [
   { name: "QAIStudio", path: "D:/yuanll/code/QAIStudio" },
 ] as const;
 
+const recentFoldersStorageKey = "norn.recentFolders";
+const maxRecentFolders = 8;
+
+const loadRecentFolders = (): RecentFolder[] => {
+  try {
+    const value = window.localStorage.getItem(recentFoldersStorageKey);
+
+    if (!value) {
+      return [];
+    }
+
+    const folders = JSON.parse(value);
+
+    if (!Array.isArray(folders)) {
+      return [];
+    }
+
+    return folders
+      .filter((folder): folder is RecentFolder => Boolean(folder?.path && folder?.name))
+      .slice(0, maxRecentFolders);
+  } catch {
+    return [];
+  }
+};
+
+const saveRecentFolders = (folders: RecentFolder[]) => {
+  window.localStorage.setItem(recentFoldersStorageKey, JSON.stringify(folders.slice(0, maxRecentFolders)));
+};
+
 const getProjectInitials = (name: string) => {
   const explicitWords = name
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
@@ -528,12 +582,23 @@ const getProjectAccentStyle = (name: string): ProjectAccentStyle => {
   };
 };
 
+const getTabAccent = (id: string) => {
+  const hash = Array.from(id).reduce((value, character) => value + character.charCodeAt(0), 0);
+
+  return projectColorPairs[hash % projectColorPairs.length].background;
+};
+
 export function WorkbenchPage() {
-  const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [document, setDocument] = useState<WorkbenchDocument>(initialDocument);
   const [leftPanelOpen, setLeftPanelOpen] = useState(false);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(leftPanelDefaultWidth);
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [rightPanelWidth, setRightPanelWidth] = useState(rightPanelDefaultWidth);
+  const [resizingPanel, setResizingPanel] = useState<"left" | "right" | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [folderView, setFolderView] = useState<FolderView | null>(null);
+  const [recentFolders, setRecentFolders] = useState<RecentFolder[]>(() => loadRecentFolders());
   const [pendingFileOpen, setPendingFileOpen] = useState<PendingFileOpen | null>(null);
   const [saveConflict, setSaveConflict] = useState<SaveConflict | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -817,6 +882,113 @@ export function WorkbenchPage() {
     requestFileOpen({ kind: "file-dialog" });
   };
 
+  const toggleFilesTool = () => {
+    setLeftPanelOpen((value) => !value);
+  };
+
+  const openSearchTool = () => {
+    setSearchOpen(true);
+  };
+
+  const closeSearchTool = () => {
+    setSearchOpen(false);
+  };
+
+  const openSettingsTool = () => {
+    setSettingsOpen(true);
+  };
+
+  const updateSettingsOpen = (open: boolean) => {
+    setSettingsOpen(open);
+  };
+
+  const resizePanelWithKeyboard = (side: "left" | "right", event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const keyDeltas: Record<string, number> = {
+      ArrowLeft: -16,
+      ArrowRight: 16,
+    };
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      if (side === "left") {
+        setLeftPanelWidth(leftPanelMinWidth);
+        return;
+      }
+      setRightPanelWidth(rightPanelMinWidth);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      if (side === "left") {
+        setLeftPanelWidth(leftPanelMaxWidth);
+        return;
+      }
+      setRightPanelWidth(rightPanelMaxWidth);
+      return;
+    }
+
+    const delta = keyDeltas[event.key];
+
+    if (!delta) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (side === "left") {
+      setLeftPanelWidth((width) => clamp(width + delta, leftPanelMinWidth, leftPanelMaxWidth));
+      return;
+    }
+
+    setRightPanelWidth((width) => clamp(width - delta, rightPanelMinWidth, rightPanelMaxWidth));
+  };
+
+  const startPanelResize = (side: "left" | "right", event: ReactPointerEvent<HTMLDivElement>) => {
+    const pointerStart = event.clientX;
+    const widthStart = side === "left" ? leftPanelWidth : rightPanelWidth;
+
+    event.preventDefault();
+    setResizingPanel(side);
+
+    const previousCursor = globalThis.document.body.style.cursor;
+    const previousUserSelect = globalThis.document.body.style.userSelect;
+    globalThis.document.body.style.cursor = "col-resize";
+    globalThis.document.body.style.userSelect = "none";
+
+    const handlePointerMove = (pointerEvent: globalThis.PointerEvent) => {
+      const delta = pointerEvent.clientX - pointerStart;
+
+      if (side === "left") {
+        setLeftPanelWidth(clamp(widthStart + delta, leftPanelMinWidth, leftPanelMaxWidth));
+        return;
+      }
+
+      setRightPanelWidth(clamp(widthStart - delta, rightPanelMinWidth, rightPanelMaxWidth));
+    };
+
+    const handlePointerUp = () => {
+      setResizingPanel(null);
+      globalThis.document.body.style.cursor = previousCursor;
+      globalThis.document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
+
+  const rememberRecentFolder = (path: string) => {
+    const folder = { name: getPathName(path), path };
+
+    setRecentFolders((currentFolders) => {
+      const nextFolders = [folder, ...currentFolders.filter((item) => item.path !== path)].slice(0, maxRecentFolders);
+      saveRecentFolders(nextFolders);
+      return nextFolders;
+    });
+  };
+
   const openFolderView = async (rootPath: string, origin: FolderView["origin"]) => {
     setLeftPanelOpen(true);
     setFolderView({
@@ -839,6 +1011,7 @@ export function WorkbenchPage() {
         loadingPath: null,
         error: null,
       });
+      rememberRecentFolder(rootPath);
     } catch (error) {
       setFolderView({
         rootPath,
@@ -994,11 +1167,11 @@ export function WorkbenchPage() {
       }
 
       if (event.payload === nativeMenuCommands.showExplorer) {
-        setLeftPanelOpen((value) => !value);
+        toggleFilesTool();
       }
 
       if (event.payload === nativeMenuCommands.find) {
-        setSearchOpen(true);
+        openSearchTool();
       }
 
       if (event.payload === nativeMenuCommands.toggleGitPanel) {
@@ -1050,41 +1223,41 @@ export function WorkbenchPage() {
 
   return (
     <TooltipProvider delayDuration={250}>
-      <div className="h-full bg-background text-[12px] text-foreground">
+      <div className={cn("h-full bg-transparent text-[12px] text-foreground", showMacTitlebar && "mac-titlebar-overlay-layout")}>
         <div className="flex h-full min-w-0 flex-col">
           {showWindowsTitlebar ? (
             <WindowsTitleBar
               leftPanelOpen={leftPanelOpen}
               onCreateFile={createFile}
-              onToggleLeftPanel={() => setLeftPanelOpen((value) => !value)}
-              onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
+              onToggleLeftPanel={toggleFilesTool}
               onOpenFile={openFilePicker}
               onOpenFolder={openFolderPicker}
               onSaveFile={() => void saveDocument()}
               onSaveFileAs={() => void saveDocumentAs()}
-              onOpenSearch={() => setSearchOpen(true)}
+              onOpenSearch={openSearchTool}
+              onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
               rightPanelOpen={rightPanelOpen}
               searchOpen={searchOpen}
-              onCloseSearch={() => setSearchOpen(false)}
+              onCloseSearch={closeSearchTool}
             />
           ) : null}
           {showMacTitlebar ? (
             <MacTitlebar
               leftPanelOpen={leftPanelOpen}
-              onCloseSearch={() => setSearchOpen(false)}
-              onOpenSearch={() => setSearchOpen(true)}
-              onToggleLeftPanel={() => setLeftPanelOpen((value) => !value)}
+              onCloseSearch={closeSearchTool}
+              onOpenSearch={openSearchTool}
               onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
               rightPanelOpen={rightPanelOpen}
+              onToggleLeftPanel={toggleFilesTool}
               searchOpen={searchOpen}
             />
           ) : null}
           <main
-            className="workbench-layout grid min-h-0 flex-1 bg-background"
+            className={cn("workbench-layout grid min-h-0 flex-1 bg-transparent", resizingPanel && "workbench-layout-resizing")}
             style={{
-              gridTemplateColumns: `${leftPanelOpen ? "260px" : "0px"} ${leftPanelOpen ? "1px" : "0px"} minmax(0,1fr) ${
+              gridTemplateColumns: `${leftPanelOpen ? `${leftPanelWidth}px` : "0px"} ${leftPanelOpen ? "1px" : "0px"} minmax(0,1fr) ${
                 rightPanelOpen ? "1px" : "0px"
-              } ${rightPanelOpen ? "360px" : "0px"}`,
+              } ${rightPanelOpen ? `${rightPanelWidth}px` : "0px"}`,
             }}
           >
             <div
@@ -1095,11 +1268,22 @@ export function WorkbenchPage() {
                 activePath={document.path}
                 folderView={folderView}
                 onOpenFolder={openFolderPicker}
+                onOpenSettings={openSettingsTool}
+                onOpenRecentFolder={(path) => void openFolderView(path, "open-folder")}
                 onOpenTreeFile={openTreeFile}
+                recentFolders={recentFolders}
                 onToggleDirectory={toggleDirectory}
               />
             </div>
-            <div className={cn("workbench-panel-separator bg-border", !leftPanelOpen && "opacity-0")} />
+            <PanelResizeHandle
+              max={leftPanelMaxWidth}
+              min={leftPanelMinWidth}
+              onKeyDown={(event) => resizePanelWithKeyboard("left", event)}
+              onPointerDown={(event) => startPanelResize("left", event)}
+              open={leftPanelOpen}
+              side="left"
+              value={leftPanelWidth}
+            />
             <EditorSurface
               document={document}
               error={fileError}
@@ -1107,7 +1291,15 @@ export function WorkbenchPage() {
               onChange={updateDocumentContent}
               onCreateFile={createFile}
             />
-            <div className={cn("workbench-panel-separator bg-border", !rightPanelOpen && "opacity-0")} />
+            <PanelResizeHandle
+              max={rightPanelMaxWidth}
+              min={rightPanelMinWidth}
+              onKeyDown={(event) => resizePanelWithKeyboard("right", event)}
+              onPointerDown={(event) => startPanelResize("right", event)}
+              open={rightPanelOpen}
+              side="right"
+              value={rightPanelWidth}
+            />
             <div
               className={cn("workbench-side-panel workbench-right-panel", !rightPanelOpen && "workbench-side-panel-closed")}
               aria-hidden={!rightPanelOpen}
@@ -1115,7 +1307,13 @@ export function WorkbenchPage() {
               <GitPanel />
             </div>
           </main>
-          <StatusBar document={document} isDirty={isDirty} saveState={saveState} />
+          <StatusBar
+            document={document}
+            isDirty={isDirty}
+            onOpenSettings={openSettingsTool}
+            saveState={saveState}
+          />
+          <SettingsDialog open={settingsOpen} onOpenChange={updateSettingsOpen} />
           <DiscardChangesDialog
             open={Boolean(pendingFileOpen)}
             onCancel={() => setPendingFileOpen(null)}
@@ -1325,7 +1523,7 @@ function WindowsTitleBar({
   };
 
   return (
-    <header className="windows-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
+    <header className="windows-titlebar frosted-surface frosted-surface-raised" onDoubleClick={handleTitlebarDoubleClick}>
       <div className="windows-titlebar-left" ref={menuRef}>
         {!menuExpanded ? (
           <>
@@ -1340,6 +1538,7 @@ function WindowsTitleBar({
             </button>
             <PanelToggleButton
               className="titlebar-panel-button"
+              label={leftPanelOpen ? "Hide file tree" : "Show file tree"}
               open={leftPanelOpen}
               side="left"
               onClick={onToggleLeftPanel}
@@ -1437,6 +1636,7 @@ function WindowsTitleBar({
       <div className="windows-titlebar-right-tools">
         <PanelToggleButton
           className="titlebar-panel-button"
+          label={rightPanelOpen ? "Hide Git panel" : "Show Git panel"}
           open={rightPanelOpen}
           side="right"
           showBadge
@@ -1485,6 +1685,7 @@ function MacTitlebar({
       <div className="mac-titlebar-side mac-titlebar-side-left" data-tauri-drag-region>
         <PanelToggleButton
           className="titlebar-panel-button mac-panel-toggle-button"
+          label={leftPanelOpen ? "Hide file tree" : "Show file tree"}
           open={leftPanelOpen}
           side="left"
           useLocalSidebarIcon
@@ -1497,6 +1698,7 @@ function MacTitlebar({
       <div className="mac-titlebar-side mac-titlebar-side-right" data-tauri-drag-region>
         <PanelToggleButton
           className="titlebar-panel-button mac-panel-toggle-button"
+          label={rightPanelOpen ? "Hide Git panel" : "Show Git panel"}
           open={rightPanelOpen}
           side="right"
           showBadge
@@ -1511,6 +1713,7 @@ function MacTitlebar({
 
 function PanelToggleButton({
   className,
+  label,
   onClick,
   open,
   showBadge = false,
@@ -1518,6 +1721,7 @@ function PanelToggleButton({
   useLocalSidebarIcon = false,
 }: {
   className?: string;
+  label: string;
   onClick: () => void;
   open: boolean;
   showBadge?: boolean;
@@ -1525,14 +1729,6 @@ function PanelToggleButton({
   useLocalSidebarIcon?: boolean;
 }) {
   const Icon = side === "left" ? PanelLeft : PanelRight;
-  const label =
-    side === "left"
-      ? open
-        ? "Hide file tree"
-        : "Show file tree"
-      : open
-        ? "Hide Git panel"
-        : "Show Git panel";
 
   return (
     <button
@@ -1563,6 +1759,66 @@ function SidebarPanelIcon({ side }: { side: "left" | "right" }) {
       <rect x="4" y="4" width="16" height="16" rx="3.4" stroke="#7E847A" strokeWidth="1.4" fill="none" />
       <rect x="6.75" y="7.4" width="2.05" height="9" rx="1.02" fill="#7B8178" />
     </svg>
+  );
+}
+
+function PanelResizeHandle({
+  max,
+  min,
+  onKeyDown,
+  onPointerDown,
+  open,
+  side,
+  value,
+}: {
+  max: number;
+  min: number;
+  onKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
+  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  open: boolean;
+  side: "left" | "right";
+  value: number;
+}) {
+  return (
+    <div
+      aria-hidden={!open}
+      aria-label={`Resize ${side} panel`}
+      aria-orientation="vertical"
+      aria-valuemax={max}
+      aria-valuemin={min}
+      aria-valuenow={value}
+      className={cn(
+        "workbench-panel-resize-handle",
+        `workbench-panel-resize-handle-${side}`,
+        !open && "workbench-panel-resize-handle-hidden",
+      )}
+      onKeyDown={open ? onKeyDown : undefined}
+      onPointerDown={open ? onPointerDown : undefined}
+      role="separator"
+      tabIndex={open ? 0 : -1}
+    />
+  );
+}
+
+function TabFoldStack({ open, side, tabs }: { open: boolean; side: "left" | "right"; tabs: EditorTabPreview[] }) {
+  return (
+    <div
+      className={cn(
+        "editor-file-tabs-fold-stack",
+        `editor-file-tabs-fold-stack-${side}`,
+        tabs.length > 0 && "editor-file-tabs-fold-stack-visible",
+        open && "editor-file-tabs-fold-stack-open",
+      )}
+      aria-hidden="true"
+    >
+      {tabs.map((tab) => (
+        <span
+          className="editor-file-tabs-fold-card"
+          key={tab.id}
+          style={{ "--tab-fold-color": tab.accent } as CSSProperties}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -1616,29 +1872,124 @@ function ProjectPanel({
   activePath,
   folderView,
   onOpenFolder,
+  onOpenRecentFolder,
+  onOpenSettings,
   onOpenTreeFile,
+  recentFolders,
   onToggleDirectory,
 }: {
   activePath: string;
   folderView: FolderView | null;
   onOpenFolder: () => void;
+  onOpenRecentFolder: (path: string) => void;
+  onOpenSettings: () => void;
   onOpenTreeFile: (node: FileTreeNode) => void;
+  recentFolders: RecentFolder[];
   onToggleDirectory: (node: FileTreeNode) => void;
 }) {
   return (
-    <aside className="flex h-full min-h-0 w-[260px] min-w-0 flex-col overflow-hidden bg-card/70">
-      {folderView ? (
-        <FolderTreePanel
-          activePath={activePath}
-          folderView={folderView}
-          onOpenFile={onOpenTreeFile}
-          onOpenFolder={onOpenFolder}
-          onToggleDirectory={onToggleDirectory}
-        />
-      ) : (
-        <div className="min-h-0 flex-1" />
-      )}
+    <aside className="project-panel frosted-surface frosted-surface-subtle">
+      <ProjectPanelStart
+        folderView={folderView}
+        onOpenFolder={onOpenFolder}
+        onOpenRecentFolder={onOpenRecentFolder}
+        recentFolders={recentFolders}
+      />
+      <FolderTreePanel
+        activePath={activePath}
+        folderView={folderView}
+        onOpenFile={onOpenTreeFile}
+        onToggleDirectory={onToggleDirectory}
+      />
+      <ProjectPanelFooter onOpenSettings={onOpenSettings} />
     </aside>
+  );
+}
+
+function ProjectPanelStart({
+  folderView,
+  onOpenFolder,
+  onOpenRecentFolder,
+  recentFolders,
+}: {
+  folderView: FolderView | null;
+  onOpenFolder: () => void;
+  onOpenRecentFolder: (path: string) => void;
+  recentFolders: RecentFolder[];
+}) {
+  const activeFolderPath = folderView?.rootPath ?? null;
+  const activeRecentFolder = recentFolders.find((folder) => folder.path === activeFolderPath);
+  const recentButtonLabel = activeRecentFolder?.name ?? (folderView ? getPathName(folderView.rootPath) : "Recent folders");
+
+  return (
+    <div className="project-panel-start">
+      <button className="project-panel-action-button" type="button" onClick={onOpenFolder}>
+        <FolderOpen className="h-[18px] w-[18px] shrink-0" />
+        Open New Folder
+      </button>
+      <div className="project-panel-divider" aria-hidden="true" />
+      {folderView ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="project-panel-recent-select" type="button">
+              <span className="project-panel-recent-select-text">
+                <span className="project-panel-recent-label">Recent folders</span>
+                <span className="project-panel-recent-select-name">{recentButtonLabel}</span>
+              </span>
+              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="project-panel-recent-menu" sideOffset={6}>
+            {recentFolders.length > 0 ? (
+              recentFolders.slice(0, 8).map((project) => {
+                const selected = project.path === activeFolderPath;
+
+                return (
+                  <DropdownMenuItem
+                    className={cn("project-panel-recent-menu-item", selected && "project-panel-recent-menu-item-selected")}
+                    key={project.path}
+                    onSelect={() => onOpenRecentFolder(project.path)}
+                  >
+                    <span className="project-panel-recent-menu-check">
+                      {selected ? <Check className="h-3.5 w-3.5" /> : null}
+                    </span>
+                    <span className="project-panel-recent-text">
+                      <span className="project-panel-recent-name">{project.name}</span>
+                      <span className="project-panel-recent-path">{project.path}</span>
+                    </span>
+                  </DropdownMenuItem>
+                );
+              })
+            ) : (
+              <DropdownMenuItem className="project-panel-recent-menu-item" disabled>
+                No recent folders yet
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <div className="project-panel-recent">
+          <div className="project-panel-recent-label">Recent folders</div>
+          {recentFolders.length > 0 ? (
+            recentFolders.slice(0, 5).map((project) => (
+              <button
+                className="project-panel-recent-item"
+                key={project.path}
+                type="button"
+                onClick={() => onOpenRecentFolder(project.path)}
+              >
+                <span className="project-panel-recent-text">
+                  <span className="project-panel-recent-name">{project.name}</span>
+                  <span className="project-panel-recent-path">{project.path}</span>
+                </span>
+              </button>
+            ))
+          ) : (
+            <div className="project-panel-recent-empty">No recent folders yet</div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1646,15 +1997,17 @@ function FolderTreePanel({
   activePath,
   folderView,
   onOpenFile,
-  onOpenFolder,
   onToggleDirectory,
 }: {
   activePath: string;
-  folderView: FolderView;
+  folderView: FolderView | null;
   onOpenFile: (node: FileTreeNode) => void;
-  onOpenFolder: () => void;
   onToggleDirectory: (node: FileTreeNode) => void;
 }) {
+  if (!folderView) {
+    return <div className="min-h-0 flex-1" />;
+  }
+
   return (
     <>
       {folderView.error ? (
@@ -1683,6 +2036,21 @@ function FolderTreePanel({
         </div>
       </ScrollArea>
     </>
+  );
+}
+
+function ProjectPanelFooter({ onOpenSettings }: { onOpenSettings: () => void }) {
+  return (
+    <div className="project-panel-footer">
+      <button
+        className="project-panel-action-button"
+        type="button"
+        onClick={onOpenSettings}
+      >
+        <Settings className="h-[18px] w-[18px] shrink-0" />
+        <span className="truncate">Settings</span>
+      </button>
+    </div>
   );
 }
 
@@ -1838,6 +2206,9 @@ function EditorSurface({
   const editorElementRef = useRef<HTMLDivElement>(null);
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const tabButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const tabScrollLeftRef = useRef(0);
+  const tabScrollSettleTimerRef = useRef<number | null>(null);
+  const suppressTabBellowsUntilRef = useRef(0);
   const scrollDOMRef = useRef<HTMLElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -1854,9 +2225,12 @@ function EditorSurface({
   const [activePreviewTabId, setActivePreviewTabId] = useState(document.id);
   const [editingPreviewTabId, setEditingPreviewTabId] = useState<string | null>(null);
   const [editingPreviewTabName, setEditingPreviewTabName] = useState("");
+  const [tabBellows, setTabBellows] = useState<"left" | "right" | null>(null);
+  const [tabFoldStacks, setTabFoldStacks] = useState<TabFoldStacks>({ left: [], right: [] });
   const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
   const [previewTabs, setPreviewTabs] = useState<EditorTabPreview[]>(() =>
     editorTabPreviewNames.map((name, index) => ({
+      accent: getTabAccent(index === 0 ? document.id : `preview-tab-${index}`),
       id: index === 0 ? document.id : `preview-tab-${index}`,
       name: index === 0 ? document.name : name,
       dirty: index === 0 ? isDirty || document.isUntitled : index % 4 === 1,
@@ -1889,20 +2263,67 @@ function EditorSurface({
 
     if (!tabScroll) {
       setTabOverflow({ left: false, right: false });
+      setTabFoldStacks({ left: [], right: [] });
       return;
     }
 
     const maxScrollLeft = tabScroll.scrollWidth - tabScroll.clientWidth;
+    const viewportStart = tabScroll.scrollLeft;
+    const viewportEnd = viewportStart + tabScroll.clientWidth;
+    const leftHiddenTabs: EditorTabPreview[] = [];
+    const rightHiddenTabs: EditorTabPreview[] = [];
+
+    previewTabs.forEach((tab) => {
+      const tabButton = tabButtonRefs.current[tab.id];
+
+      if (!tabButton) {
+        return;
+      }
+
+      const tabStart = tabButton.offsetLeft;
+      const tabEnd = tabStart + tabButton.offsetWidth;
+
+      if (tabEnd < viewportStart + 6) {
+        leftHiddenTabs.push(tab);
+        return;
+      }
+
+      if (tabStart > viewportEnd - 6) {
+        rightHiddenTabs.push(tab);
+      }
+    });
 
     setTabOverflow({
       left: tabScroll.scrollLeft > 2,
       right: tabScroll.scrollLeft < maxScrollLeft - 2,
     });
+    setTabFoldStacks({
+      left: leftHiddenTabs.slice(-3),
+      right: rightHiddenTabs.slice(0, 3).reverse(),
+    });
+  };
+
+  const scrollPreviewTabIntoView = (tabId: string) => {
+    const tabButton = tabButtonRefs.current[tabId];
+
+    if (!tabButton) {
+      return;
+    }
+
+    suppressTabBellowsUntilRef.current = window.performance.now() + 420;
+
+    tabButton.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "nearest",
+    });
   };
 
   useEffect(() => {
     setPreviewTabs((currentTabs) => {
+      const existingDocumentTab = currentTabs.find((tab) => tab.id === document.id);
       const documentTab: EditorTabPreview = {
+        accent: existingDocumentTab?.accent ?? getTabAccent(document.id),
         id: document.id,
         name: document.name,
         dirty: isDirty || document.isUntitled,
@@ -1920,11 +2341,7 @@ function EditorSurface({
     setActivePreviewTabId(document.id);
 
     window.requestAnimationFrame(() => {
-      tabButtonRefs.current[document.id]?.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-        inline: "nearest",
-      });
+      scrollPreviewTabIntoView(document.id);
       updateTabOverflow();
 
       viewRef.current?.focus();
@@ -1933,11 +2350,7 @@ function EditorSurface({
 
   useEffect(() => {
     window.requestAnimationFrame(() => {
-      tabButtonRefs.current[activePreviewTabId]?.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-        inline: "nearest",
-      });
+      scrollPreviewTabIntoView(activePreviewTabId);
       updateTabOverflow();
     });
   }, [activePreviewTabId, previewTabs.length]);
@@ -1950,14 +2363,41 @@ function EditorSurface({
     }
 
     updateTabOverflow();
-    tabScroll.addEventListener("scroll", updateTabOverflow, { passive: true });
+    tabScrollLeftRef.current = tabScroll.scrollLeft;
+
+    const handleTabScroll = () => {
+      const currentScrollLeft = tabScroll.scrollLeft;
+      const scrollDelta = currentScrollLeft - tabScrollLeftRef.current;
+
+      updateTabOverflow();
+
+      if (Math.abs(scrollDelta) > 1 && window.performance.now() > suppressTabBellowsUntilRef.current) {
+        setTabBellows(scrollDelta > 0 ? "right" : "left");
+      }
+
+      tabScrollLeftRef.current = currentScrollLeft;
+
+      if (tabScrollSettleTimerRef.current) {
+        window.clearTimeout(tabScrollSettleTimerRef.current);
+      }
+
+      tabScrollSettleTimerRef.current = window.setTimeout(() => {
+        setTabBellows(null);
+      }, 180);
+    };
+
+    tabScroll.addEventListener("scroll", handleTabScroll, { passive: true });
     window.addEventListener("resize", updateTabOverflow);
 
     return () => {
-      tabScroll.removeEventListener("scroll", updateTabOverflow);
+      tabScroll.removeEventListener("scroll", handleTabScroll);
       window.removeEventListener("resize", updateTabOverflow);
+
+      if (tabScrollSettleTimerRef.current) {
+        window.clearTimeout(tabScrollSettleTimerRef.current);
+      }
     };
-  }, [previewTabs.length]);
+  }, [previewTabs]);
 
   useEffect(() => {
     if (!editingPreviewTabId) {
@@ -2188,12 +2628,17 @@ function EditorSurface({
   };
 
   return (
-    <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-[hsl(var(--editor-background))]">
+    <section className="editor-surface-panel flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-[hsl(var(--editor-background))]">
       <div
-        className={cn("editor-file-tabs", tabOverflow.left && "editor-file-tabs-has-left", tabOverflow.right && "editor-file-tabs-has-right")}
+        className={cn(
+          "editor-file-tabs",
+          tabOverflow.left && "editor-file-tabs-has-left",
+          tabOverflow.right && "editor-file-tabs-has-right",
+        )}
         role="tablist"
         aria-label="Open files"
       >
+        <TabFoldStack open={tabBellows === "left"} side="left" tabs={tabFoldStacks.left} />
         <div className="editor-file-tabs-scroll" ref={tabScrollRef}>
           {previewTabs.map((tab) => {
             const active = tab.id === activePreviewTabId;
@@ -2246,6 +2691,7 @@ function EditorSurface({
             );
           })}
         </div>
+        <TabFoldStack open={tabBellows === "right"} side="right" tabs={tabFoldStacks.right} />
         <button className="editor-file-tab-add" type="button" aria-label="Add test tab" title="Add test tab" onClick={addPreviewTab}>
           <Plus className="h-3.5 w-3.5" />
         </button>
@@ -2343,8 +2789,8 @@ function EditorScrollbar({
 
 function GitPanel() {
   return (
-    <aside className="min-h-0 min-w-0 overflow-hidden bg-card shadow-[-10px_0_18px_-18px_rgba(15,23,42,0.75)]">
-      <div className="flex h-full w-[360px] min-h-0 flex-col">
+    <aside className="git-surface-panel frosted-surface frosted-surface-raised min-h-0 min-w-0 overflow-hidden shadow-[-10px_0_18px_-18px_rgba(15,23,42,0.75)]">
+      <div className="flex h-full w-full min-h-0 flex-col">
         <div className="panel-heading">
           <div>
             <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Git</div>
@@ -2352,12 +2798,12 @@ function GitPanel() {
           </div>
           <Badge tone="warning">ahead 1</Badge>
         </div>
-        <div className="grid grid-cols-3 gap-1 border-b border-border p-2">
+        <div className="grid grid-cols-3 gap-1 border-b border-border/80 p-2">
           <Summary label="Working" value="4" />
           <Summary label="Staged" value="1" />
           <Summary label="Remote" value="+1" />
         </div>
-        <div className="border-b border-border p-2">
+        <div className="border-b border-border/80 p-2">
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
               <GitBranch className="h-4 w-4 text-primary" />
@@ -2375,7 +2821,7 @@ function GitPanel() {
           <div className="space-y-1 p-2">
             {changes.map((change) => (
               <div
-                className="grid grid-cols-[20px_minmax(0,1fr)_52px] items-center gap-2 rounded-sm border border-border bg-background/65 p-2"
+                className="grid grid-cols-[20px_minmax(0,1fr)_52px] items-center gap-2 rounded-sm border border-border/75 bg-white/20 p-2 dark:bg-black/10"
                 key={change.path}
               >
                 {change.staged ? (
@@ -2396,7 +2842,7 @@ function GitPanel() {
             ))}
           </div>
         </ScrollArea>
-        <div className="border-t border-border p-2">
+        <div className="border-t border-border/80 bg-white/14 p-2 dark:bg-black/5">
           <Textarea placeholder="Commit message, for example: wire up file open" />
           <div className="mt-2 flex items-center justify-between gap-2">
             <span className="text-[11px] text-muted-foreground">Review staged files before committing.</span>
@@ -2411,7 +2857,7 @@ function GitPanel() {
 }
 function Summary({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-sm border border-border bg-background px-2 py-1.5">
+    <div className="rounded-sm border border-border/75 bg-white/16 px-2 py-1.5 dark:bg-black/5">
       <div className="font-mono text-[11px] text-muted-foreground">{label}</div>
       <div className="font-mono text-[13px] font-semibold">{value}</div>
     </div>
@@ -2421,10 +2867,12 @@ function Summary({ label, value }: { label: string; value: string }) {
 function StatusBar({
   document,
   isDirty,
+  onOpenSettings,
   saveState,
 }: {
   document: WorkbenchDocument;
   isDirty: boolean;
+  onOpenSettings: () => void;
   saveState: SaveState;
 }) {
   const lineCount = getDocumentLines(document).length;
@@ -2440,7 +2888,7 @@ function StatusBar({
             : "Saved";
 
   return (
-    <footer className="flex h-6 shrink-0 items-center justify-between border-t border-border bg-muted/70 px-2">
+    <footer className="frosted-surface flex h-6 shrink-0 items-center justify-between border-t border-border px-2">
       <div className="flex min-w-0 items-center gap-3">
         <span className="status-token truncate">{document.path}</span>
         <span className="status-token">{lineCount} lines</span>
@@ -2460,20 +2908,17 @@ function StatusBar({
           <Terminal className="h-3 w-3" />
           Tauri 2
         </span>
-        <SettingsDialog />
+        <Button size="icon" variant="ghost" className="h-5 w-5" onClick={onOpenSettings}>
+          <Settings className="h-3.5 w-3.5" />
+        </Button>
       </div>
     </footer>
   );
 }
 
-function SettingsDialog() {
+function SettingsDialog({ onOpenChange, open }: { onOpenChange: (open: boolean) => void; open: boolean }) {
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <Button size="icon" variant="ghost" className="h-5 w-5">
-          <Settings className="h-3.5 w-3.5" />
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>设置 mock</DialogTitle>
@@ -2491,8 +2936,8 @@ function SettingsDialog() {
             <Input value="CodeMirror 6" readOnly />
           </label>
           <label className="grid gap-1">
-            <span className="text-muted-foreground">Git Provider</span>
-            <Input value="System Git CLI" readOnly />
+            <span className="text-muted-foreground">Workspace Rail</span>
+            <Input value="Light edge rail" readOnly />
           </label>
         </div>
         <DialogFooter>
