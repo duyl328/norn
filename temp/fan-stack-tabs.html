@@ -35,13 +35,15 @@
     }
 
     main {
-      width: min(1180px, calc(100vw - 38px));
+      width: min(90vw, calc(100vw - 24px));
+      min-width: 0;
       display: grid;
       gap: 20px;
     }
 
     .stage {
-      padding: 36px 20px 30px;
+      min-width: 0;
+      padding: clamp(18px, 3vw, 36px) clamp(10px, 2vw, 20px) clamp(22px, 2.5vw, 30px);
       background: rgba(255, 255, 255, 0.58);
       border: 2px solid rgba(18, 60, 70, 0.12);
       border-radius: 24px;
@@ -50,47 +52,44 @@
     }
 
     .rail {
-      position: relative;
+      --rail-pad-x: 12px;
+      display: flex;
+      align-items: center;
+      width: 100%;
+      min-width: 0;
       height: var(--rail-height);
-      overflow: hidden;
+      overflow-x: auto;
+      overflow-y: hidden;
       border: 3px solid var(--ink);
       border-radius: 26px;
       background: var(--paper);
+      padding: 0 var(--rail-pad-x);
+      scrollbar-width: thin;
+      scrollbar-color: rgba(240, 91, 104, 0.7) rgba(18, 60, 70, 0.08);
       box-shadow:
         inset 0 0 0 1px rgba(240, 91, 104, 0.08),
         0 14px 28px rgba(32, 23, 16, 0.10);
     }
 
-    .rail::before,
-    .rail::after {
-      content: "";
-      position: absolute;
-      top: 8px;
-      bottom: 8px;
-      width: 108px;
-      pointer-events: none;
-      z-index: 900;
+    .rail::-webkit-scrollbar {
+      height: 10px;
     }
 
-    .rail::before {
-      left: 0;
-      background: linear-gradient(90deg, var(--paper) 0%, rgba(255, 253, 247, 0.92) 28%, transparent 100%);
+    .rail::-webkit-scrollbar-track {
+      background: rgba(18, 60, 70, 0.08);
+      border-radius: 999px;
+      margin: 0 22px;
     }
 
-    .rail::after {
-      right: 0;
-      background: linear-gradient(270deg, var(--paper) 0%, rgba(255, 253, 247, 0.92) 28%, transparent 100%);
-    }
-
-    .rail.is-overflowing::before,
-    .rail.is-overflowing::after {
-      display: none;
+    .rail::-webkit-scrollbar-thumb {
+      background: rgba(240, 91, 104, 0.72);
+      border-radius: 999px;
+      border: 2px solid var(--paper);
     }
 
     .tab {
-      position: absolute;
-      top: 27px;
-      left: 0;
+      position: relative;
+      flex: 0 0 auto;
       width: var(--w);
       min-width: 0;
       height: var(--tab-height);
@@ -101,32 +100,14 @@
       padding: 0 22px;
       cursor: pointer;
       user-select: none;
-      transform:
-        translateX(var(--x, 0px))
-        rotate(var(--tilt, 0deg))
-        scale(var(--scale, 1));
       transform-origin: center bottom;
       transition:
-        transform 560ms cubic-bezier(.2,.84,.22,1),
+        border-color 180ms ease,
         width 560ms cubic-bezier(.2,.84,.22,1),
         box-shadow 560ms cubic-bezier(.2,.84,.22,1),
         filter 560ms cubic-bezier(.2,.84,.22,1);
       box-shadow: 0 10px 17px rgba(240, 91, 104, 0.10);
       filter: saturate(var(--sat, 0.92));
-    }
-
-    .tab.is-collapsed {
-      overflow: hidden;
-      padding: 0;
-    }
-
-    .tab.is-collapsed .label {
-      opacity: 0;
-    }
-
-    .tab.is-collapsed::before,
-    .tab.is-collapsed::after {
-      inset: 0;
     }
 
     .tab::before,
@@ -152,6 +133,11 @@
       box-shadow: 0 16px 30px var(--shadow);
     }
 
+    .tab.is-sticky {
+      position: sticky;
+      left: calc(var(--rail-pad-x) * -1);
+    }
+
     .label {
       position: relative;
       z-index: 1;
@@ -161,6 +147,18 @@
       font-size: 17px;
       font-weight: 760;
       letter-spacing: 0;
+    }
+
+    .measure-label {
+      position: fixed;
+      left: -9999px;
+      top: -9999px;
+      visibility: hidden;
+      white-space: nowrap;
+      font-size: 17px;
+      font-weight: 760;
+      letter-spacing: 0;
+      font-family: inherit;
     }
 
     .controls {
@@ -214,7 +212,6 @@
       }
 
       .tab {
-        top: 25px;
         padding: 0 16px;
       }
 
@@ -226,6 +223,7 @@
 </head>
 <body>
   <main>
+    <span class="measure-label" id="measure-label" aria-hidden="true"></span>
     <section class="stage" aria-label="手写堆叠 Tab 原型">
       <div class="rail" id="rail"></div>
     </section>
@@ -247,6 +245,7 @@
     const nextButton = document.querySelector("#next");
     const addButton = document.querySelector("#add");
     const removeButton = document.querySelector("#remove");
+    const measureLabel = document.querySelector("#measure-label");
 
     const palette = ["#b5f0c0", "#9ed2f2", "#eaded4", "#fff0a5", "#fffdf7", "#aee9ba", "#9fd0ef", "#ffe38b"];
     const names = [
@@ -268,17 +267,36 @@
       id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${index}`,
       name,
       color: palette[index % palette.length],
-      width: clamp(136 + name.length * 8, 148, 330)
+      width: 0
     }));
 
     function clamp(value, min, max) {
       return Math.min(max, Math.max(min, value));
     }
 
+    function measureTabWidths() {
+      const elements = [...rail.querySelectorAll(".tab")];
+
+      elements.forEach((element, index) => {
+        const wasCollapsed = element.classList.contains("is-collapsed");
+        element.classList.remove("is-collapsed");
+        const label = element.querySelector(".label");
+        const labelStyle = getComputedStyle(label);
+        const style = getComputedStyle(element);
+        const border = parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+        const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+        measureLabel.style.font = labelStyle.font;
+        measureLabel.style.letterSpacing = labelStyle.letterSpacing;
+        measureLabel.textContent = tabs[index].name;
+        tabs[index].width = Math.ceil(Math.max(84, measureLabel.getBoundingClientRect().width + padding + border));
+        element.classList.toggle("is-collapsed", wasCollapsed);
+      });
+    }
+
     function render() {
       rail.replaceChildren(...tabs.map((tab, index) => {
         const button = document.createElement("button");
-        button.className = `tab${index === active ? " is-active" : ""}`;
+        button.className = `tab is-sticky${index === active ? " is-active" : ""}`;
         button.type = "button";
         button.dataset.index = index;
         button.style.background = tab.color;
@@ -286,149 +304,38 @@
         button.style.setProperty("--scribble", `${index % 2 ? -0.5 : 0.4}deg`);
         button.innerHTML = `<span class="label">${tab.name}</span>`;
         button.addEventListener("click", () => {
-          active = index;
-          layout();
+          setActive(index);
         });
         return button;
       }));
+      measureTabWidths();
       layout();
     }
 
     function layout() {
       const elements = [...rail.querySelectorAll(".tab")];
-      const railWidth = rail.clientWidth;
-      const gap = 0;
-      const widths = tabs.map(tab => tab.width);
-      const totalWidth = widths.reduce((sum, width) => sum + width, 0) + gap * (widths.length - 1);
-      const isOverflowing = totalWidth > railWidth;
-      const naturalLeft = isOverflowing ? 0 : Math.max(0, (railWidth - totalWidth) / 2);
-      const starts = [];
-      let cursor = naturalLeft;
-
-      for (const width of widths) {
-        starts.push(cursor);
-        cursor += width + gap;
-      }
-
-      const activeCenter = starts[active] + widths[active] / 2;
-      const offset = isOverflowing ? activeCenter - railWidth / 2 : 0;
-      const positions = starts.map(start => start - offset);
-      rail.classList.toggle("is-overflowing", isOverflowing);
-
-      const minStrip = railWidth < 620 ? 14 : 20;
-      const leftReserve = count => count * minStrip;
-      const rightReserve = count => count * minStrip;
-      let centerStart = active;
-      let centerEnd = active;
-      let centerWidth = widths[active];
-      const displayWidths = [...widths];
-
-      const fits = (start, end, width) => (
-        leftReserve(start) + width + rightReserve(tabs.length - 1 - end) <= railWidth
-      );
-
-      if (isOverflowing) {
-        let expanding = true;
-        while (expanding) {
-          expanding = false;
-          const candidates = [];
-
-          if (centerStart > 0) {
-            const start = centerStart - 1;
-            const width = centerWidth + widths[start] + gap;
-            if (fits(start, centerEnd, width)) {
-              candidates.push({ side: "left", index: start, width });
-            }
-          }
-
-          if (centerEnd < tabs.length - 1) {
-            const end = centerEnd + 1;
-            const width = centerWidth + widths[end] + gap;
-            if (fits(centerStart, end, width)) {
-              candidates.push({ side: "right", index: end, width });
-            }
-          }
-
-          if (candidates.length > 0) {
-            candidates.sort((a, b) => Math.abs(a.index - active) - Math.abs(b.index - active) || widths[a.index] - widths[b.index]);
-            const next = candidates[0];
-            if (next.side === "left") {
-              centerStart = next.index;
-            } else {
-              centerEnd = next.index;
-            }
-            centerWidth = next.width;
-            expanding = true;
-          }
-        }
-
-        const leftCount = centerStart;
-        const rightCount = tabs.length - 1 - centerEnd;
-        const edgeSpace = Math.max(0, railWidth - centerWidth);
-        const leftMin = leftReserve(leftCount);
-        const rightMin = rightReserve(rightCount);
-        let leftSpace = 0;
-
-        if (leftCount > 0 && rightCount > 0) {
-          leftSpace = edgeSpace * (leftCount / (leftCount + rightCount));
-          leftSpace = clamp(leftSpace, leftMin, Math.max(leftMin, edgeSpace - rightMin));
-        } else if (leftCount > 0) {
-          leftSpace = edgeSpace;
-        }
-
-        const rightSpace = Math.max(0, edgeSpace - leftSpace);
-        const leftStep = leftCount > 0 ? leftSpace / leftCount : 0;
-        const rightStep = rightCount > 0 ? rightSpace / rightCount : 0;
-
-        for (let index = 0; index < centerStart; index += 1) {
-          positions[index] = index * leftStep;
-          displayWidths[index] = leftStep;
-        }
-
-        let centerCursor = leftSpace;
-        for (let index = centerStart; index <= centerEnd; index += 1) {
-          positions[index] = centerCursor;
-          displayWidths[index] = widths[index];
-          centerCursor += widths[index] + gap;
-        }
-
-        for (let index = centerEnd + 1; index < tabs.length; index += 1) {
-          positions[index] = centerCursor + (index - centerEnd - 1) * rightStep;
-          displayWidths[index] = rightStep;
-        }
-      }
+      measureTabWidths();
 
       elements.forEach((element, index) => {
-        const raw = starts[index] - offset;
-        const x = positions[index];
-
-        const distance = Math.abs(index - active);
-        const edgeStacked = Math.abs(x - raw) > 0.5;
-        const edgeLocked = isOverflowing && (index < centerStart || index > centerEnd);
-        const z =
-          index === active ? 1000 :
-          index >= centerStart && index <= centerEnd ? 800 - distance :
-          index < centerStart ? 300 + index :
-          300 + (tabs.length - index);
-
         element.classList.toggle("is-active", index === active);
-        element.classList.toggle("is-collapsed", edgeLocked);
-        element.style.zIndex = z;
-        element.style.setProperty("--w", `${displayWidths[index]}px`);
-        element.style.setProperty("--x", `${x}px`);
-        element.style.setProperty("--tilt", `${isOverflowing || edgeLocked ? 0 : (index - active) * 0.26}deg`);
-        element.style.setProperty("--scale", "1");
-        element.style.opacity = edgeStacked && distance > 4 ? 0.9 : 1;
+        element.style.zIndex = index + 1;
+        element.style.setProperty("--w", `${tabs[index].width}px`);
       });
     }
 
     function setActive(next) {
-      active = (next + tabs.length) % tabs.length;
+      active = clamp(next, 0, tabs.length - 1);
       layout();
     }
 
     prevButton.addEventListener("click", () => setActive(active - 1));
     nextButton.addEventListener("click", () => setActive(active + 1));
+    rail.addEventListener("wheel", event => {
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (delta === 0) return;
+      event.preventDefault();
+      rail.scrollLeft += delta;
+    }, { passive: false });
 
     addButton.addEventListener("click", () => {
       const index = tabs.length % names.length;
@@ -436,7 +343,7 @@
         id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${index}`,
         name: names[index],
         color: palette[index % palette.length],
-        width: clamp(136 + names[index].length * 8, 148, 330)
+        width: 0
       });
       active = tabs.length - 1;
       render();
