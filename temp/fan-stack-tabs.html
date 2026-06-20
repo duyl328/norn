@@ -135,7 +135,12 @@
 
     .tab.is-sticky {
       position: sticky;
-      left: calc(var(--rail-pad-x) * -1);
+      left: calc(var(--sticky-left, 0px) - var(--rail-pad-x));
+    }
+
+    .tab.is-left-stacked {
+      -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 46%, rgba(0, 0, 0, var(--fade-alpha, 1)) 100%);
+      mask-image: linear-gradient(90deg, #000 0%, #000 46%, rgba(0, 0, 0, var(--fade-alpha, 1)) 100%);
     }
 
     .label {
@@ -246,6 +251,9 @@
     const addButton = document.querySelector("#add");
     const removeButton = document.querySelector("#remove");
     const measureLabel = document.querySelector("#measure-label");
+    const stackStep = 20;
+    const maxVisibleStack = 6;
+    let layoutFrame = 0;
 
     const palette = ["#b5f0c0", "#9ed2f2", "#eaded4", "#fff0a5", "#fffdf7", "#aee9ba", "#9fd0ef", "#ffe38b"];
     const names = [
@@ -293,6 +301,38 @@
       });
     }
 
+    function getStackOverflow() {
+      const style = getComputedStyle(rail);
+      const railPadding = parseFloat(style.paddingLeft);
+      let cursor = railPadding;
+      let overflow = 0;
+
+      tabs.forEach((tab, index) => {
+        if (index >= maxVisibleStack) {
+          const triggerScroll = cursor - index * stackStep;
+          const rawProgress = (rail.scrollLeft - triggerScroll) / stackStep;
+
+          if (rawProgress > 0) {
+            const pushProgress = clamp(rawProgress, 0, 1);
+            overflow = Math.max(overflow, index - maxVisibleStack + pushProgress);
+          }
+        }
+
+        cursor += tab.width;
+      });
+
+      return Math.max(0, overflow);
+    }
+
+    function scheduleLayout() {
+      if (layoutFrame) return;
+
+      layoutFrame = requestAnimationFrame(() => {
+        layoutFrame = 0;
+        layout();
+      });
+    }
+
     function render() {
       rail.replaceChildren(...tabs.map((tab, index) => {
         const button = document.createElement("button");
@@ -315,10 +355,31 @@
     function layout() {
       const elements = [...rail.querySelectorAll(".tab")];
       measureTabWidths();
+      const stackOverflow = getStackOverflow();
+      const railPadding = parseFloat(getComputedStyle(rail).paddingLeft);
+      let cursor = railPadding;
+      const tabPositions = tabs.map((tab, index) => {
+        const naturalLeft = cursor - rail.scrollLeft;
+        const stickyLeft = (index - stackOverflow) * stackStep;
+        const left = Math.max(naturalLeft, stickyLeft);
+        const position = { left, naturalLeft, stickyLeft, width: tab.width };
+        cursor += tab.width;
+        return position;
+      });
 
       elements.forEach((element, index) => {
+        const position = tabPositions[index];
+        const nextPosition = tabPositions[index + 1];
+        const coveredWidth = nextPosition ? Math.max(0, position.left + position.width - nextPosition.left) : 0;
+        const coverRatio = clamp(coveredWidth / position.width, 0, 1);
+        const fadeProgress = clamp((coverRatio - 0.1) / 0.9, 0, 1);
+        const fadeAlpha = 1 - fadeProgress * 0.9;
+        const isLeftStacked = fadeProgress > 0;
         element.classList.toggle("is-active", index === active);
+        element.classList.toggle("is-left-stacked", isLeftStacked);
         element.style.zIndex = index + 1;
+        element.style.setProperty("--fade-alpha", fadeAlpha.toFixed(3));
+        element.style.setProperty("--sticky-left", `${position.stickyLeft}px`);
         element.style.setProperty("--w", `${tabs[index].width}px`);
       });
     }
@@ -335,7 +396,9 @@
       if (delta === 0) return;
       event.preventDefault();
       rail.scrollLeft += delta;
+      scheduleLayout();
     }, { passive: false });
+    rail.addEventListener("scroll", scheduleLayout);
 
     addButton.addEventListener("click", () => {
       const index = tabs.length % names.length;
