@@ -135,7 +135,16 @@
 
     .tab.is-sticky {
       position: sticky;
+    }
+
+    .tab.is-left-sticky {
       left: calc(var(--sticky-left, 0px) - var(--rail-pad-x));
+      right: auto;
+    }
+
+    .tab.is-right-sticky {
+      left: auto;
+      right: calc(var(--sticky-right, 0px) - var(--rail-pad-x));
     }
 
     .tab.is-left-stacked {
@@ -152,6 +161,22 @@
       font-size: 17px;
       font-weight: 760;
       letter-spacing: 0;
+    }
+
+    .tab-id {
+      position: absolute;
+      left: 7px;
+      top: 7px;
+      z-index: 2;
+      min-width: 18px;
+      height: 18px;
+      display: grid;
+      place-items: center;
+      border: 2px solid rgba(18, 60, 70, 0.25);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.82);
+      color: rgba(18, 60, 70, 0.78);
+      font: 800 10px/1 ui-sans-serif, system-ui, sans-serif;
     }
 
     .measure-label {
@@ -205,6 +230,13 @@
       font: 14px/1.55 ui-sans-serif, system-ui, sans-serif;
     }
 
+    .center-readout {
+      min-width: 112px;
+      color: rgba(18, 60, 70, 0.86);
+      font: 800 15px/1.4 ui-sans-serif, system-ui, sans-serif;
+      text-align: right;
+    }
+
     @media (max-width: 720px) {
       :root {
         --rail-height: 110px;
@@ -240,6 +272,7 @@
         <button id="add" type="button">增加</button>
         <button id="remove" type="button">减少</button>
       </div>
+      <output class="center-readout" id="center-readout">中心 ID: 0</output>
       <p class="note">点击任意纸片或使用方向键。中间保持展开，两侧在固定边界内按层级堆叠。</p>
     </div>
   </main>
@@ -251,6 +284,7 @@
     const addButton = document.querySelector("#add");
     const removeButton = document.querySelector("#remove");
     const measureLabel = document.querySelector("#measure-label");
+    const centerReadout = document.querySelector("#center-readout");
     const stackStep = 20;
     const maxVisibleStack = 6;
     let layoutFrame = 0;
@@ -301,16 +335,16 @@
       });
     }
 
-    function getStackOverflow() {
+    function getStackOverflow(widths, scrollOffset) {
       const style = getComputedStyle(rail);
       const railPadding = parseFloat(style.paddingLeft);
       let cursor = railPadding;
       let overflow = 0;
 
-      tabs.forEach((tab, index) => {
+      widths.forEach((width, index) => {
         if (index >= maxVisibleStack) {
           const triggerScroll = cursor - index * stackStep;
-          const rawProgress = (rail.scrollLeft - triggerScroll) / stackStep;
+          const rawProgress = (scrollOffset - triggerScroll) / stackStep;
 
           if (rawProgress > 0) {
             const pushProgress = clamp(rawProgress, 0, 1);
@@ -318,7 +352,7 @@
           }
         }
 
-        cursor += tab.width;
+        cursor += width;
       });
 
       return Math.max(0, overflow);
@@ -342,7 +376,7 @@
         button.style.background = tab.color;
         button.style.setProperty("--w", `${tab.width}px`);
         button.style.setProperty("--scribble", `${index % 2 ? -0.5 : 0.4}deg`);
-        button.innerHTML = `<span class="label">${tab.name}</span>`;
+        button.innerHTML = `<span class="tab-id">${index}</span><span class="label">${tab.name}</span>`;
         button.addEventListener("click", () => {
           setActive(index);
         });
@@ -355,16 +389,76 @@
     function layout() {
       const elements = [...rail.querySelectorAll(".tab")];
       measureTabWidths();
-      const stackOverflow = getStackOverflow();
+      const widths = tabs.map(tab => tab.width);
+      const reversedWidths = [...widths].reverse();
+      const scrollMax = Math.max(0, rail.scrollWidth - rail.clientWidth);
+      const leftStackOverflow = getStackOverflow(widths, rail.scrollLeft);
+      const rightStackOverflow = getStackOverflow(reversedWidths, scrollMax - rail.scrollLeft);
       const railPadding = parseFloat(getComputedStyle(rail).paddingLeft);
+      const viewportWidth = rail.clientWidth;
       let cursor = railPadding;
+      let reverseCursor = railPadding;
+      const rightSlots = [];
+
+      reversedWidths.forEach((width, reversedIndex) => {
+        const originalIndex = tabs.length - 1 - reversedIndex;
+        const naturalLeft = reverseCursor - (scrollMax - rail.scrollLeft);
+        const stickyRight = (reversedIndex - rightStackOverflow) * stackStep;
+        rightSlots[originalIndex] = {
+          stickyRight,
+          right: Math.max(naturalLeft, stickyRight)
+        };
+        reverseCursor += width;
+      });
+
       const tabPositions = tabs.map((tab, index) => {
         const naturalLeft = cursor - rail.scrollLeft;
-        const stickyLeft = (index - stackOverflow) * stackStep;
-        const left = Math.max(naturalLeft, stickyLeft);
-        const position = { left, naturalLeft, stickyLeft, width: tab.width };
+        const naturalRight = naturalLeft + tab.width;
+        const stickyLeft = (index - leftStackOverflow) * stackStep;
+        const rightSlot = rightSlots[index];
+        const isLeftPinned = naturalLeft <= stickyLeft;
+        const isRightPinned = naturalRight >= viewportWidth - rightSlot.stickyRight;
+        let side = "normal";
+        let left = naturalLeft;
+
+        if (isLeftPinned && isRightPinned) {
+          side = naturalLeft + tab.width / 2 < viewportWidth / 2 ? "left" : "right";
+        } else if (isLeftPinned) {
+          side = "left";
+        } else if (isRightPinned) {
+          side = "right";
+        }
+
+        if (side === "left") {
+          left = Math.max(naturalLeft, stickyLeft);
+        } else if (side === "right") {
+          left = viewportWidth - tab.width - rightSlot.right;
+        }
+
+        const position = { left, naturalLeft, stickyLeft, stickyRight: rightSlot.stickyRight, side, width: tab.width };
         cursor += tab.width;
         return position;
+      });
+
+      const centerLine = viewportWidth / 2;
+      const crossingIndex = tabPositions.findIndex(position => (
+        position.left <= centerLine && position.left + position.width >= centerLine
+      ));
+      const visualCenterIndex = crossingIndex >= 0
+        ? crossingIndex
+        : tabPositions.reduce((bestIndex, position, index) => {
+            const center = position.left + position.width / 2;
+            const best = tabPositions[bestIndex];
+            const bestCenter = best.left + best.width / 2;
+
+            return Math.abs(center - centerLine) < Math.abs(bestCenter - centerLine)
+              ? index
+              : bestIndex;
+          }, 0);
+      const zIndexes = tabPositions.map((position, index) => {
+        if (index === visualCenterIndex) return 10000;
+        if (index < visualCenterIndex) return 1000 + index;
+        return 1000 + tabs.length - index;
       });
 
       elements.forEach((element, index) => {
@@ -373,15 +467,19 @@
         const coveredWidth = nextPosition ? Math.max(0, position.left + position.width - nextPosition.left) : 0;
         const coverRatio = clamp(coveredWidth / position.width, 0, 1);
         const fadeProgress = clamp((coverRatio - 0.1) / 0.9, 0, 1);
-        const fadeAlpha = 1 - fadeProgress * 0.9;
-        const isLeftStacked = fadeProgress > 0;
+        const isLeftStacked = position.side === "left" && fadeProgress > 0;
+        const fadeAlpha = isLeftStacked ? 1 - fadeProgress * 0.9 : 1;
         element.classList.toggle("is-active", index === active);
+        element.classList.toggle("is-left-sticky", position.side !== "right");
+        element.classList.toggle("is-right-sticky", position.side === "right");
         element.classList.toggle("is-left-stacked", isLeftStacked);
-        element.style.zIndex = index + 1;
+        element.style.zIndex = zIndexes[index];
         element.style.setProperty("--fade-alpha", fadeAlpha.toFixed(3));
         element.style.setProperty("--sticky-left", `${position.stickyLeft}px`);
+        element.style.setProperty("--sticky-right", `${position.stickyRight}px`);
         element.style.setProperty("--w", `${tabs[index].width}px`);
       });
+      centerReadout.textContent = `中心 ID: ${visualCenterIndex}`;
     }
 
     function setActive(next) {
