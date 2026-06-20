@@ -115,7 +115,6 @@
       content: "";
       position: absolute;
       inset: -5px -4px;
-      border: 2px solid rgba(240, 91, 104, 0.62);
       border-radius: calc(var(--radius) + 6px);
       pointer-events: none;
       transform: rotate(var(--scribble, .45deg));
@@ -147,9 +146,10 @@
       right: calc(var(--sticky-right, 0px) - var(--rail-pad-x));
     }
 
-    .tab.is-left-stacked {
-      -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 46%, rgba(0, 0, 0, var(--fade-alpha, 1)) 100%);
-      mask-image: linear-gradient(90deg, #000 0%, #000 46%, rgba(0, 0, 0, var(--fade-alpha, 1)) 100%);
+    .tab.is-left-stacked,
+    .tab.is-right-stacked {
+      -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, var(--left-alpha, 1)) 0%, #000 50%, rgba(0, 0, 0, var(--right-alpha, 1)) 100%);
+      mask-image: linear-gradient(90deg, rgba(0, 0, 0, var(--left-alpha, 1)) 0%, #000 50%, rgba(0, 0, 0, var(--right-alpha, 1)) 100%);
     }
 
     .label {
@@ -176,6 +176,22 @@
       border-radius: 999px;
       background: rgba(255, 255, 255, 0.82);
       color: rgba(18, 60, 70, 0.78);
+      font: 800 10px/1 ui-sans-serif, system-ui, sans-serif;
+    }
+
+    .tab-z {
+      position: absolute;
+      right: 7px;
+      top: 7px;
+      z-index: 2;
+      min-width: 42px;
+      height: 18px;
+      display: grid;
+      place-items: center;
+      border: 2px solid rgba(240, 91, 104, 0.28);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.82);
+      color: rgba(18, 60, 70, 0.72);
       font: 800 10px/1 ui-sans-serif, system-ui, sans-serif;
     }
 
@@ -376,7 +392,7 @@
         button.style.background = tab.color;
         button.style.setProperty("--w", `${tab.width}px`);
         button.style.setProperty("--scribble", `${index % 2 ? -0.5 : 0.4}deg`);
-        button.innerHTML = `<span class="tab-id">${index}</span><span class="label">${tab.name}</span>`;
+        button.innerHTML = `<span class="tab-id">${index}</span><span class="tab-z">z:0</span><span class="label">${tab.name}</span>`;
         button.addEventListener("click", () => {
           setActive(index);
         });
@@ -464,17 +480,24 @@
       elements.forEach((element, index) => {
         const position = tabPositions[index];
         const nextPosition = tabPositions[index + 1];
+        const previousPosition = tabPositions[index - 1];
         const coveredWidth = nextPosition ? Math.max(0, position.left + position.width - nextPosition.left) : 0;
+        const rightCoveredWidth = previousPosition ? Math.max(0, previousPosition.left + previousPosition.width - position.left) : 0;
         const coverRatio = clamp(coveredWidth / position.width, 0, 1);
-        const fadeProgress = clamp((coverRatio - 0.1) / 0.9, 0, 1);
-        const isLeftStacked = position.side === "left" && fadeProgress > 0;
-        const fadeAlpha = isLeftStacked ? 1 - fadeProgress * 0.9 : 1;
+        const rightCoverRatio = clamp(rightCoveredWidth / position.width, 0, 1);
+        const rightAlpha = position.side === "left" ? 1 - clamp(coverRatio * 2, 0, 1) : 1;
+        const leftAlpha = position.side === "right" ? 1 - clamp(rightCoverRatio * 2, 0, 1) : 1;
+        const isLeftStacked = rightAlpha < 1;
+        const isRightStacked = leftAlpha < 1;
         element.classList.toggle("is-active", index === active);
         element.classList.toggle("is-left-sticky", position.side !== "right");
         element.classList.toggle("is-right-sticky", position.side === "right");
         element.classList.toggle("is-left-stacked", isLeftStacked);
+        element.classList.toggle("is-right-stacked", isRightStacked);
         element.style.zIndex = zIndexes[index];
-        element.style.setProperty("--fade-alpha", fadeAlpha.toFixed(3));
+        element.querySelector(".tab-z").textContent = `z:${zIndexes[index]}`;
+        element.style.setProperty("--left-alpha", leftAlpha.toFixed(3));
+        element.style.setProperty("--right-alpha", rightAlpha.toFixed(3));
         element.style.setProperty("--sticky-left", `${position.stickyLeft}px`);
         element.style.setProperty("--sticky-right", `${position.stickyRight}px`);
         element.style.setProperty("--w", `${tabs[index].width}px`);
