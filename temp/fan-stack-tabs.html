@@ -52,7 +52,7 @@
     }
 
     .rail {
-      --rail-pad-x: 12px;
+      --rail-pad-x: 0px;
       display: flex;
       align-items: center;
       width: 100%;
@@ -240,6 +240,25 @@
       background: white;
     }
 
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 38px;
+      padding: 0 10px;
+      border: 2px solid rgba(18, 60, 70, 0.18);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.68);
+      color: rgba(18, 60, 70, 0.84);
+      font: 800 13px/1 ui-sans-serif, system-ui, sans-serif;
+      cursor: pointer;
+    }
+
+    .toggle input {
+      margin: 0;
+      accent-color: #f05b68;
+    }
+
     .note {
       margin: 0;
       color: rgba(18, 60, 70, 0.74);
@@ -250,6 +269,13 @@
       min-width: 112px;
       color: rgba(18, 60, 70, 0.86);
       font: 800 15px/1.4 ui-sans-serif, system-ui, sans-serif;
+      text-align: right;
+    }
+
+    .debug-readout {
+      flex-basis: 100%;
+      color: rgba(18, 60, 70, 0.78);
+      font: 700 13px/1.45 ui-sans-serif, system-ui, sans-serif;
       text-align: right;
     }
 
@@ -288,7 +314,10 @@
         <button id="add" type="button">增加</button>
         <button id="remove" type="button">减少</button>
       </div>
+      <label class="toggle"><input id="auto-move" type="checkbox" checked>自动移动</label>
+      <output class="center-readout" id="active-readout">选中 ID: 4</output>
       <output class="center-readout" id="center-readout">中心 ID: 0</output>
+      <output class="debug-readout" id="debug-readout">滚动: 0 / 0 | 左距: 0 | 右距: 0</output>
       <p class="note">点击任意纸片或使用方向键。中间保持展开，两侧在固定边界内按层级堆叠。</p>
     </div>
   </main>
@@ -299,11 +328,16 @@
     const nextButton = document.querySelector("#next");
     const addButton = document.querySelector("#add");
     const removeButton = document.querySelector("#remove");
+    const autoMoveInput = document.querySelector("#auto-move");
     const measureLabel = document.querySelector("#measure-label");
+    const activeReadout = document.querySelector("#active-readout");
     const centerReadout = document.querySelector("#center-readout");
+    const debugReadout = document.querySelector("#debug-readout");
     const stackStep = 20;
     const maxVisibleStack = 6;
     let layoutFrame = 0;
+    let scrollAnimationFrame = 0;
+    let pendingActiveCleanup = null;
 
     const palette = ["#b5f0c0", "#9ed2f2", "#eaded4", "#fff0a5", "#fffdf7", "#aee9ba", "#9fd0ef", "#ffe38b"];
     const names = [
@@ -383,6 +417,235 @@
       });
     }
 
+    function cancelScrollAnimation() {
+      if (!scrollAnimationFrame) return;
+      cancelAnimationFrame(scrollAnimationFrame);
+      scrollAnimationFrame = 0;
+    }
+
+    function animateScrollTo(target) {
+      cancelScrollAnimation();
+      const start = rail.scrollLeft;
+      const distance = target - start;
+      const duration = 520;
+      const startedAt = performance.now();
+
+      if (Math.abs(distance) < 1) {
+        rail.scrollLeft = target;
+        layout();
+        return;
+      }
+
+      function tick(now) {
+        const progress = clamp((now - startedAt) / duration, 0, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        rail.scrollLeft = start + distance * eased;
+        layout();
+
+        if (progress < 1) {
+          scrollAnimationFrame = requestAnimationFrame(tick);
+        } else {
+          scrollAnimationFrame = 0;
+        }
+      }
+
+      scrollAnimationFrame = requestAnimationFrame(tick);
+    }
+
+    function getTabPositions(widths, scrollLeft) {
+      const style = getComputedStyle(rail);
+      const railPadding = parseFloat(style.paddingLeft);
+      const reversedWidths = [...widths].reverse();
+      const scrollMax = Math.max(0, rail.scrollWidth - rail.clientWidth);
+      const leftStackOverflow = getStackOverflow(widths, scrollLeft);
+      const rightStackOverflow = getStackOverflow(reversedWidths, scrollMax - scrollLeft);
+      const viewportWidth = rail.clientWidth;
+      let cursor = railPadding;
+      let reverseCursor = railPadding;
+      const rightSlots = [];
+
+      reversedWidths.forEach((width, reversedIndex) => {
+        const originalIndex = tabs.length - 1 - reversedIndex;
+        const naturalLeft = reverseCursor - (scrollMax - scrollLeft);
+        const stickyRight = (reversedIndex - rightStackOverflow) * stackStep;
+        rightSlots[originalIndex] = {
+          stickyRight,
+          right: Math.max(naturalLeft, stickyRight)
+        };
+        reverseCursor += width;
+      });
+
+      return widths.map((width, index) => {
+        const naturalLeft = cursor - scrollLeft;
+        const naturalRight = naturalLeft + width;
+        const stickyLeft = (index - leftStackOverflow) * stackStep;
+        const rightSlot = rightSlots[index];
+        const isLeftPinned = naturalLeft <= stickyLeft;
+        const isRightPinned = naturalRight >= viewportWidth - rightSlot.stickyRight;
+        let side = "normal";
+        let left = naturalLeft;
+
+        if (isLeftPinned && isRightPinned) {
+          side = naturalLeft + width / 2 < viewportWidth / 2 ? "left" : "right";
+        } else if (isLeftPinned) {
+          side = "left";
+        } else if (isRightPinned) {
+          side = "right";
+        }
+
+        if (side === "left") {
+          left = Math.max(naturalLeft, stickyLeft);
+        } else if (side === "right") {
+          left = viewportWidth - width - rightSlot.right;
+        }
+
+        cursor += width;
+        return { left, naturalLeft, stickyLeft, stickyRight: rightSlot.stickyRight, side, width };
+      });
+    }
+
+    function getTabVisibility(index, positions, railPadding) {
+      const position = positions[index];
+      const previous = positions[index - 1];
+      const next = positions[index + 1];
+      const tolerance = 2;
+      const left = position.left;
+      const right = position.left + position.width;
+      const visibleStart = railPadding;
+      const visibleEnd = rail.clientWidth - railPadding;
+      const previousOverlap = previous ? Math.max(0, previous.left + previous.width - left) : 0;
+      const nextOverlap = next ? Math.max(0, right - next.left) : 0;
+      const coveredByPrevious = position.side === "right" ? previousOverlap : 0;
+      const coveredByNext = position.side === "left" ? nextOverlap : 0;
+      const insideContainer = left >= visibleStart - tolerance && right <= visibleEnd + tolerance;
+      const fullyExpanded = coveredByPrevious <= tolerance && coveredByNext <= tolerance;
+
+      return {
+        insideContainer,
+        fullyExpanded,
+        previousOverlap,
+        nextOverlap,
+        coveredByPrevious,
+        coveredByNext,
+        position
+      };
+    }
+
+    function focusActiveWindow(placement = "center", animated = true) {
+      measureTabWidths();
+      const style = getComputedStyle(rail);
+      const railPadding = parseFloat(style.paddingLeft);
+      const widths = tabs.map(tab => tab.width);
+      const scrollMax = Math.max(0, rail.scrollWidth - rail.clientWidth);
+      let cursor = railPadding;
+      let activeStart = railPadding;
+      let activeEnd = railPadding;
+      let target = 0;
+
+      widths.forEach((width, index) => {
+        if (index === active) activeStart = cursor;
+        cursor += width;
+        if (index === active) activeEnd = cursor;
+      });
+
+      function getFocusStepTarget(scrollLeft) {
+        const positions = getTabPositions(widths, scrollLeft);
+        const visibility = getTabVisibility(active, positions, railPadding);
+
+        if (visibility.insideContainer && visibility.fullyExpanded) {
+          return scrollLeft;
+        }
+
+        if (activeStart < scrollLeft + railPadding) {
+          return activeStart - railPadding;
+        }
+
+        if (activeEnd > scrollLeft + rail.clientWidth - railPadding) {
+          return activeEnd - rail.clientWidth + railPadding;
+        }
+
+        if (visibility.coveredByNext > 2 || visibility.position.side === "left") {
+          return scrollLeft - Math.max(stackStep, visibility.coveredByNext);
+        }
+
+        if (visibility.coveredByPrevious > 2 || visibility.position.side === "right") {
+          return scrollLeft + Math.max(stackStep, visibility.coveredByPrevious);
+        }
+
+        return scrollLeft;
+      }
+
+      if (placement === "end") {
+        target = scrollMax;
+      } else {
+        target = rail.scrollLeft;
+
+        for (let index = 0; index < 24; index += 1) {
+          const nextTarget = clamp(getFocusStepTarget(target), 0, scrollMax);
+          if (Math.abs(nextTarget - target) < 0.5) break;
+          target = nextTarget;
+
+          const nextPositions = getTabPositions(widths, target);
+          const nextVisibility = getTabVisibility(active, nextPositions, railPadding);
+          if (nextVisibility.insideContainer && nextVisibility.fullyExpanded) break;
+        }
+      }
+
+      if (animated) {
+        animateScrollTo(target);
+      } else {
+        cancelScrollAnimation();
+        rail.scrollLeft = target;
+        layout();
+      }
+    }
+
+    function cancelPendingActivation() {
+      if (!pendingActiveCleanup) return;
+      pendingActiveCleanup();
+      pendingActiveCleanup = null;
+    }
+
+    function activateTabAfterWidthSettles(tabId) {
+      cancelPendingActivation();
+      const element = [...rail.querySelectorAll(".tab")].find(tab => {
+        const tabIndex = Number(tab.dataset.index);
+        return tabs[tabIndex]?.id === tabId;
+      });
+
+      if (!element) return;
+
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        pendingActiveCleanup = null;
+        element.removeEventListener("transitionend", handleTransitionEnd);
+        clearTimeout(fallbackTimer);
+
+        const nextIndex = tabs.findIndex(tab => tab.id === tabId);
+        if (nextIndex < 0) return;
+        active = nextIndex;
+        if (autoMoveInput.checked) {
+          focusActiveWindow();
+        } else {
+          layout();
+        }
+      };
+      const handleTransitionEnd = event => {
+        if (event.target !== element || event.propertyName !== "width") return;
+        finish();
+      };
+      const fallbackTimer = setTimeout(finish, 700);
+
+      element.addEventListener("transitionend", handleTransitionEnd);
+      pendingActiveCleanup = () => {
+        done = true;
+        element.removeEventListener("transitionend", handleTransitionEnd);
+        clearTimeout(fallbackTimer);
+      };
+    }
+
     function render() {
       rail.replaceChildren(...tabs.map((tab, index) => {
         const button = document.createElement("button");
@@ -406,55 +669,8 @@
       const elements = [...rail.querySelectorAll(".tab")];
       measureTabWidths();
       const widths = tabs.map(tab => tab.width);
-      const reversedWidths = [...widths].reverse();
-      const scrollMax = Math.max(0, rail.scrollWidth - rail.clientWidth);
-      const leftStackOverflow = getStackOverflow(widths, rail.scrollLeft);
-      const rightStackOverflow = getStackOverflow(reversedWidths, scrollMax - rail.scrollLeft);
-      const railPadding = parseFloat(getComputedStyle(rail).paddingLeft);
       const viewportWidth = rail.clientWidth;
-      let cursor = railPadding;
-      let reverseCursor = railPadding;
-      const rightSlots = [];
-
-      reversedWidths.forEach((width, reversedIndex) => {
-        const originalIndex = tabs.length - 1 - reversedIndex;
-        const naturalLeft = reverseCursor - (scrollMax - rail.scrollLeft);
-        const stickyRight = (reversedIndex - rightStackOverflow) * stackStep;
-        rightSlots[originalIndex] = {
-          stickyRight,
-          right: Math.max(naturalLeft, stickyRight)
-        };
-        reverseCursor += width;
-      });
-
-      const tabPositions = tabs.map((tab, index) => {
-        const naturalLeft = cursor - rail.scrollLeft;
-        const naturalRight = naturalLeft + tab.width;
-        const stickyLeft = (index - leftStackOverflow) * stackStep;
-        const rightSlot = rightSlots[index];
-        const isLeftPinned = naturalLeft <= stickyLeft;
-        const isRightPinned = naturalRight >= viewportWidth - rightSlot.stickyRight;
-        let side = "normal";
-        let left = naturalLeft;
-
-        if (isLeftPinned && isRightPinned) {
-          side = naturalLeft + tab.width / 2 < viewportWidth / 2 ? "left" : "right";
-        } else if (isLeftPinned) {
-          side = "left";
-        } else if (isRightPinned) {
-          side = "right";
-        }
-
-        if (side === "left") {
-          left = Math.max(naturalLeft, stickyLeft);
-        } else if (side === "right") {
-          left = viewportWidth - tab.width - rightSlot.right;
-        }
-
-        const position = { left, naturalLeft, stickyLeft, stickyRight: rightSlot.stickyRight, side, width: tab.width };
-        cursor += tab.width;
-        return position;
-      });
+      const tabPositions = getTabPositions(widths, rail.scrollLeft);
 
       const centerLine = viewportWidth / 2;
       const crossingIndex = tabPositions.findIndex(position => (
@@ -502,12 +718,37 @@
         element.style.setProperty("--sticky-right", `${position.stickyRight}px`);
         element.style.setProperty("--w", `${tabs[index].width}px`);
       });
+      activeReadout.textContent = `选中 ID: ${active}`;
       centerReadout.textContent = `中心 ID: ${visualCenterIndex}`;
+      const activePosition = tabPositions[active];
+      const scrollMax = Math.max(0, rail.scrollWidth - rail.clientWidth);
+      const railPadding = parseFloat(getComputedStyle(rail).paddingLeft);
+      const activeVisibility = getTabVisibility(active, tabPositions, railPadding);
+      const leftDistance = activePosition.left - railPadding;
+      const rightDistance = rail.clientWidth - railPadding - (activePosition.left + activePosition.width);
+      const scrollProgress = scrollMax > 0 ? rail.scrollLeft / scrollMax * 100 : 0;
+      debugReadout.textContent = [
+        `滚动: ${rail.scrollLeft.toFixed(1)} / ${scrollMax.toFixed(1)} (${scrollProgress.toFixed(1)}%)`,
+        `左距: ${leftDistance.toFixed(1)}`,
+        `右距: ${rightDistance.toFixed(1)}`,
+        `区域: ${activePosition.side}`,
+        `前遮盖: ${activeVisibility.previousOverlap.toFixed(1)}`,
+        `后遮盖: ${activeVisibility.nextOverlap.toFixed(1)}`,
+        `被前遮盖: ${activeVisibility.coveredByPrevious.toFixed(1)}`,
+        `被后遮盖: ${activeVisibility.coveredByNext.toFixed(1)}`,
+        `容器内: ${activeVisibility.insideContainer ? "是" : "否"}`,
+        `完全展开: ${activeVisibility.fullyExpanded ? "是" : "否"}`
+      ].join(" | ");
     }
 
     function setActive(next) {
       active = clamp(next, 0, tabs.length - 1);
-      layout();
+      if (autoMoveInput.checked) {
+        focusActiveWindow();
+      } else {
+        cancelScrollAnimation();
+        layout();
+      }
     }
 
     prevButton.addEventListener("click", () => setActive(active - 1));
@@ -516,6 +757,7 @@
       const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
       if (delta === 0) return;
       event.preventDefault();
+      cancelScrollAnimation();
       rail.scrollLeft += delta;
       scheduleLayout();
     }, { passive: false });
@@ -523,21 +765,31 @@
 
     addButton.addEventListener("click", () => {
       const index = tabs.length % names.length;
-      tabs.push({
+      const nextTab = {
         id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${index}`,
         name: names[index],
         color: palette[index % palette.length],
         width: 0
-      });
-      active = tabs.length - 1;
+      };
+      tabs.push(nextTab);
       render();
+      activateTabAfterWidthSettles(nextTab.id);
     });
 
     removeButton.addEventListener("click", () => {
       if (tabs.length <= 3) return;
+      cancelPendingActivation();
       tabs.splice(active, 1);
       active = clamp(active, 0, tabs.length - 1);
       render();
+      if (autoMoveInput.checked) {
+        focusActiveWindow();
+      }
+    });
+
+    autoMoveInput.addEventListener("change", () => {
+      if (!autoMoveInput.checked) cancelScrollAnimation();
+      layout();
     });
 
     window.addEventListener("resize", layout);
