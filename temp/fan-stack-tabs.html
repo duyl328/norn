@@ -82,11 +82,17 @@
       background: linear-gradient(270deg, var(--paper) 0%, rgba(255, 253, 247, 0.92) 28%, transparent 100%);
     }
 
+    .rail.is-overflowing::before,
+    .rail.is-overflowing::after {
+      display: none;
+    }
+
     .tab {
       position: absolute;
       top: 27px;
       left: 0;
       width: var(--w);
+      min-width: 0;
       height: var(--tab-height);
       border: 3px solid var(--line);
       border-radius: var(--radius);
@@ -107,6 +113,20 @@
         filter 560ms cubic-bezier(.2,.84,.22,1);
       box-shadow: 0 10px 17px rgba(240, 91, 104, 0.10);
       filter: saturate(var(--sat, 0.92));
+    }
+
+    .tab.is-collapsed {
+      overflow: hidden;
+      padding: 0;
+    }
+
+    .tab.is-collapsed .label {
+      opacity: 0;
+    }
+
+    .tab.is-collapsed::before,
+    .tab.is-collapsed::after {
+      inset: 0;
     }
 
     .tab::before,
@@ -277,12 +297,13 @@
     function layout() {
       const elements = [...rail.querySelectorAll(".tab")];
       const railWidth = rail.clientWidth;
-      const gap = -3;
-      const edge = railWidth < 620 ? 14 : 26;
-      const stackStep = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--stack-step")) || 26;
+      const gap = 0;
       const widths = tabs.map(tab => tab.width);
+      const totalWidth = widths.reduce((sum, width) => sum + width, 0) + gap * (widths.length - 1);
+      const isOverflowing = totalWidth > railWidth;
+      const naturalLeft = isOverflowing ? 0 : Math.max(0, (railWidth - totalWidth) / 2);
       const starts = [];
-      let cursor = edge;
+      let cursor = naturalLeft;
 
       for (const width of widths) {
         starts.push(cursor);
@@ -290,38 +311,113 @@
       }
 
       const activeCenter = starts[active] + widths[active] / 2;
-      const offset = activeCenter - railWidth / 2;
-      const leftLock = edge;
-      const rightLock = railWidth - edge;
+      const offset = isOverflowing ? activeCenter - railWidth / 2 : 0;
+      const positions = starts.map(start => start - offset);
+      rail.classList.toggle("is-overflowing", isOverflowing);
+
+      const minStrip = railWidth < 620 ? 14 : 20;
+      const leftReserve = count => count * minStrip;
+      const rightReserve = count => count * minStrip;
+      let centerStart = active;
+      let centerEnd = active;
+      let centerWidth = widths[active];
+      const displayWidths = [...widths];
+
+      const fits = (start, end, width) => (
+        leftReserve(start) + width + rightReserve(tabs.length - 1 - end) <= railWidth
+      );
+
+      if (isOverflowing) {
+        let expanding = true;
+        while (expanding) {
+          expanding = false;
+          const candidates = [];
+
+          if (centerStart > 0) {
+            const start = centerStart - 1;
+            const width = centerWidth + widths[start] + gap;
+            if (fits(start, centerEnd, width)) {
+              candidates.push({ side: "left", index: start, width });
+            }
+          }
+
+          if (centerEnd < tabs.length - 1) {
+            const end = centerEnd + 1;
+            const width = centerWidth + widths[end] + gap;
+            if (fits(centerStart, end, width)) {
+              candidates.push({ side: "right", index: end, width });
+            }
+          }
+
+          if (candidates.length > 0) {
+            candidates.sort((a, b) => Math.abs(a.index - active) - Math.abs(b.index - active) || widths[a.index] - widths[b.index]);
+            const next = candidates[0];
+            if (next.side === "left") {
+              centerStart = next.index;
+            } else {
+              centerEnd = next.index;
+            }
+            centerWidth = next.width;
+            expanding = true;
+          }
+        }
+
+        const leftCount = centerStart;
+        const rightCount = tabs.length - 1 - centerEnd;
+        const edgeSpace = Math.max(0, railWidth - centerWidth);
+        const leftMin = leftReserve(leftCount);
+        const rightMin = rightReserve(rightCount);
+        let leftSpace = 0;
+
+        if (leftCount > 0 && rightCount > 0) {
+          leftSpace = edgeSpace * (leftCount / (leftCount + rightCount));
+          leftSpace = clamp(leftSpace, leftMin, Math.max(leftMin, edgeSpace - rightMin));
+        } else if (leftCount > 0) {
+          leftSpace = edgeSpace;
+        }
+
+        const rightSpace = Math.max(0, edgeSpace - leftSpace);
+        const leftStep = leftCount > 0 ? leftSpace / leftCount : 0;
+        const rightStep = rightCount > 0 ? rightSpace / rightCount : 0;
+
+        for (let index = 0; index < centerStart; index += 1) {
+          positions[index] = index * leftStep;
+          displayWidths[index] = leftStep;
+        }
+
+        let centerCursor = leftSpace;
+        for (let index = centerStart; index <= centerEnd; index += 1) {
+          positions[index] = centerCursor;
+          displayWidths[index] = widths[index];
+          centerCursor += widths[index] + gap;
+        }
+
+        for (let index = centerEnd + 1; index < tabs.length; index += 1) {
+          positions[index] = centerCursor + (index - centerEnd - 1) * rightStep;
+          displayWidths[index] = rightStep;
+        }
+      }
 
       elements.forEach((element, index) => {
-        const width = widths[index];
         const raw = starts[index] - offset;
-        let x = raw;
-        let sideDepth = 0;
-
-        if (index < active) {
-          sideDepth = active - index;
-          const stacked = leftLock + index * stackStep;
-          x = Math.max(raw, stacked);
-        } else if (index > active) {
-          sideDepth = index - active;
-          const stacked = rightLock - width - (tabs.length - 1 - index) * stackStep;
-          x = Math.min(raw, stacked);
-        }
+        const x = positions[index];
 
         const distance = Math.abs(index - active);
         const edgeStacked = Math.abs(x - raw) > 0.5;
+        const edgeLocked = isOverflowing && (index < centerStart || index > centerEnd);
         const z =
           index === active ? 1000 :
-          index < active ? 500 + index :
-          500 + (tabs.length - index);
+          index >= centerStart && index <= centerEnd ? 800 - distance :
+          index < centerStart ? 300 + index :
+          300 + (tabs.length - index);
 
         element.classList.toggle("is-active", index === active);
+        element.classList.toggle("is-collapsed", edgeLocked);
         element.style.zIndex = z;
+        element.style.setProperty("--w", `${displayWidths[index]}px`);
         element.style.setProperty("--x", `${x}px`);
-        element.style.setProperty("--tilt", `${(index - active) * 0.26}deg`);
-        element.style.setProperty("--scale", `${edgeStacked ? clamp(1 - sideDepth * 0.018, 0.9, 1) : 1}`);
+        element.style.setProperty("--tilt", `${isOverflowing || edgeLocked ? 0 : (index - active) * 0.26}deg`);
+        element.style.setProperty("--scale", "1");
         element.style.opacity = edgeStacked && distance > 4 ? 0.9 : 1;
       });
     }
