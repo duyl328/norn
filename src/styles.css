@@ -542,12 +542,27 @@
     background: hsl(var(--border) / 0.52);
   }
 
+  .project-panel-tree-divider {
+    height: 1px;
+    width: 64%;
+    margin: -6px auto 3px;
+    background: hsl(var(--border) / 0.2);
+  }
+
   .project-panel-recent {
     @apply grid gap-0.5;
   }
 
   .project-panel-recent-label {
     @apply px-1 pb-1 text-[10px] font-medium text-muted-foreground;
+  }
+
+  .project-panel-recent-switcher {
+    @apply grid min-w-0 gap-1;
+  }
+
+  .project-panel-recent-heading {
+    @apply px-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground;
   }
 
   .project-panel-recent-item {
@@ -561,7 +576,7 @@
   }
 
   .project-panel-recent-text {
-    @apply grid min-w-0 gap-0.5;
+    @apply grid min-w-0 gap-0.5 overflow-hidden;
   }
 
   .project-panel-recent-name {
@@ -569,7 +584,9 @@
   }
 
   .project-panel-recent-path {
-    @apply truncate text-[11px] text-muted-foreground;
+    @apply block overflow-hidden truncate whitespace-nowrap text-[11px] text-muted-foreground;
+    direction: ltr;
+    text-align: left;
   }
 
   .project-panel-recent-empty {
@@ -577,40 +594,118 @@
   }
 
   .project-panel-recent-select {
-    @apply flex h-11 w-full items-center justify-between gap-2 rounded-[0.65rem] border-0 bg-transparent px-3 text-left outline-none transition-colors;
+    @apply grid min-h-[58px] w-full min-w-0 grid-cols-[32px_minmax(0,1fr)_24px] items-center gap-2 overflow-hidden rounded-[0.75rem] border-0 bg-transparent px-2.5 py-2 text-left outline-none transition-colors;
   }
 
   .project-panel-recent-select:hover,
   .project-panel-recent-select:focus-visible {
     background: rgb(211 216 224 / 0.72);
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.68),
+      0 1px 2px rgb(15 23 42 / 0.06);
+  }
+
+  .project-panel-recent-select-avatar {
+    @apply grid h-8 w-8 place-items-center rounded-[0.6rem] text-[12px] font-bold leading-none;
+    background: var(--project-color);
+    color: var(--project-color-foreground);
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.32),
+      0 1px 2px rgb(15 23 42 / 0.08);
   }
 
   .project-panel-recent-select-text {
-    @apply grid min-w-0 gap-0.5;
+    @apply grid min-w-0 gap-[1px] overflow-hidden;
   }
 
   .project-panel-recent-select-name {
-    @apply truncate text-[13px] font-medium text-foreground/[0.86];
+    @apply truncate text-[13px] font-semibold text-foreground/[0.9];
+  }
+
+  .project-panel-recent-select-path {
+    @apply block overflow-hidden truncate whitespace-nowrap text-[11px] text-muted-foreground;
+    direction: ltr;
+    text-align: left;
+  }
+
+  .project-panel-recent-select-chevron {
+    @apply grid h-6 w-6 place-items-center rounded-[0.45rem] text-muted-foreground;
+    background: rgb(255 255 255 / 0.18);
   }
 
   .project-panel-recent-menu {
-    @apply w-[236px] rounded-[0.65rem] border-border/70 p-1.5;
-    background: rgb(247 248 250 / 0.72);
-    -webkit-backdrop-filter: saturate(1.1) blur(16px);
-    backdrop-filter: saturate(1.1) blur(16px);
+    @apply w-[294px] border-border/70 p-2;
+    border-radius: 14px !important;
+    background: rgb(247 248 250 / 0.86);
+    -webkit-backdrop-filter: saturate(1.14) blur(18px);
+    backdrop-filter: saturate(1.14) blur(18px);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.72),
+      0 16px 40px rgb(15 23 42 / 0.16),
+      0 2px 8px rgb(15 23 42 / 0.08);
   }
 
   .project-panel-recent-menu-item {
-    @apply grid min-h-11 grid-cols-[18px_minmax(0,1fr)] gap-2 rounded-[0.55rem] px-2 py-1.5;
+    display: grid !important;
+    grid-template-columns: 20px minmax(0, 1fr) !important;
+    min-height: 43px;
+    gap: 0.5rem;
+    border-radius: 9px !important;
+    padding: 0.4rem 0.55rem !important;
+    color: hsl(var(--foreground) / 0.82);
+    transition:
+      background-color 130ms ease,
+      box-shadow 130ms ease,
+      color 130ms ease;
+  }
+
+  .project-panel-recent-menu-item:hover,
+  .project-panel-recent-menu-item[data-highlighted],
+  .project-panel-recent-menu-item:focus {
+    @apply outline-none;
+    border-radius: 9px !important;
+    background: rgb(211 216 224 / 0.68) !important;
+    color: hsl(var(--foreground)) !important;
+    box-shadow:
+      inset 0 0 0 1px rgb(255 255 255 / 0.38),
+      0 1px 1px rgb(15 23 42 / 0.025);
   }
 
   .project-panel-recent-menu-item-selected {
-    background: rgb(211 216 224 / 0.88);
-    color: hsl(var(--foreground));
+    border-radius: 9px !important;
+    background: rgb(211 216 224 / 0.48) !important;
+    color: hsl(var(--foreground)) !important;
   }
 
-  .project-panel-recent-menu-check {
-    @apply flex h-full items-center justify-center text-foreground;
+  .project-panel-recent-menu-separator {
+    position: relative;
+    display: block;
+    width: 100% !important;
+    height: 1px !important;
+    margin: 6px auto !important;
+    background: transparent !important;
+  }
+
+  .project-panel-recent-menu-separator::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: 64%;
+    height: 1px;
+    transform: translateX(-50%);
+    background: hsl(var(--border) / 0.21);
+  }
+
+  .project-panel-recent-menu [role="menuitem"] + [role="menuitem"] {
+    margin-top: 4px;
+  }
+
+  .project-panel-recent-menu-avatar {
+    @apply mt-0.5 grid h-5 w-5 place-items-center rounded-[0.4rem] text-[9px] font-bold leading-none;
+    background: var(--project-color);
+    color: var(--project-color-foreground);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.28);
   }
 
   .project-panel-footer {
@@ -640,14 +735,29 @@
   .dark .project-panel-recent-select:hover,
   .dark .project-panel-recent-select:focus-visible {
     background: rgb(255 255 255 / 0.18);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12);
+  }
+
+  .dark .project-panel-recent-select-chevron {
+    background: rgb(255 255 255 / 0.08);
   }
 
   .dark .project-panel-recent-menu {
-    background: rgb(24 26 30 / 0.72);
+    background: rgb(24 26 30 / 0.88);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.09),
+      0 18px 42px rgb(0 0 0 / 0.32),
+      0 2px 8px rgb(0 0 0 / 0.24);
+  }
+
+  .dark .project-panel-recent-menu-item:hover,
+  .dark .project-panel-recent-menu-item:focus {
+    background: rgb(255 255 255 / 0.18);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07);
   }
 
   .dark .project-panel-recent-menu-item-selected {
-    background: rgb(255 255 255 / 0.2);
+    background: rgb(255 255 255 / 0.1);
   }
 
   .dark .project-panel-footer {
@@ -870,8 +980,135 @@
     @apply z-20;
   }
 
+  .file-tree-scroll [data-radix-scroll-area-scrollbar] {
+    opacity: 0;
+  }
+
+  .file-tree-scroll [data-radix-scroll-area-scrollbar][data-orientation="horizontal"] {
+    display: none;
+  }
+
+  .file-tree-scroll:hover [data-radix-scroll-area-scrollbar],
+  .file-tree-scroll.is-scroll-active [data-radix-scroll-area-scrollbar] {
+    opacity: 0.8;
+  }
+
+  .file-tree-list {
+    @apply grid min-w-0 content-start gap-0.5 overflow-x-hidden;
+    padding: 0.375rem;
+  }
+
+  .file-tree-list-scroll-overflowing {
+    padding-right: 18px !important;
+  }
+
+  .file-tree-list-flat .tree-row {
+    --tree-indent: 0px;
+    grid-template-columns: 0 minmax(0, 1fr) 44px;
+    padding-left: 0.125rem;
+    padding-right: 0.25rem;
+  }
+
+  .file-tree-list-flat .tree-row-toggle {
+    width: 0;
+    overflow: hidden;
+  }
+
+  .file-tree-node {
+    @apply grid min-w-0 gap-0.5;
+  }
+
+  .file-tree-children {
+    @apply grid min-w-0 gap-0.5;
+    position: relative;
+  }
+
+  .file-tree-children::before {
+    content: "";
+    position: absolute;
+    inset-block: 1px 3px;
+    left: calc(var(--tree-depth-line, 0px) + 8px);
+    width: 1px;
+    background: hsl(var(--border) / 0.54);
+  }
+
   .tree-row {
-    @apply grid h-6 grid-cols-[18px_minmax(0,1fr)_24px] items-center gap-1 rounded-sm px-1.5 text-[12px] leading-none text-foreground;
+    --tree-depth: 0;
+    --tree-indent: calc(var(--tree-depth) * 14px);
+    @apply grid h-6 grid-cols-[16px_minmax(0,1fr)_52px] items-center gap-1 rounded-sm pr-1.5 text-[12px] leading-none text-foreground;
+    padding-left: calc(0.125rem + var(--tree-indent));
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+  }
+
+  .tree-row:hover,
+  .tree-row:focus-visible {
+    @apply outline-none;
+    background: hsl(var(--accent) / 0.62);
+    color: hsl(var(--accent-foreground));
+  }
+
+  .tree-row-toggle {
+    @apply flex h-full items-center justify-center text-muted-foreground;
+  }
+
+  .tree-row-main {
+    @apply flex min-w-0 items-center gap-1.5 overflow-hidden;
+  }
+
+  .tree-row-icon {
+    @apply h-3.5 w-3.5 shrink-0;
+  }
+
+  .tree-row-icon-directory {
+    color: #d19720;
+  }
+
+  .tree-row-icon-code {
+    color: #2563eb;
+  }
+
+  .tree-row-icon-json,
+  .tree-row-icon-data {
+    color: #7c3aed;
+  }
+
+  .tree-row-icon-markup,
+  .tree-row-icon-component {
+    color: #0f766e;
+  }
+
+  .tree-row-icon-config {
+    color: #64748b;
+  }
+
+  .tree-row-icon-image {
+    color: #c2410c;
+  }
+
+  .tree-row-icon-archive {
+    color: #a16207;
+  }
+
+  .tree-row-icon-sheet {
+    color: #047857;
+  }
+
+  .tree-row-icon-terminal {
+    color: #475569;
+  }
+
+  .tree-row-icon-file {
+    @apply text-muted-foreground;
+  }
+
+  .tree-row-name {
+    @apply min-w-0 truncate;
+  }
+
+  .tree-row-size {
+    @apply justify-self-end whitespace-nowrap text-right font-mono text-[10px] leading-none text-muted-foreground;
   }
 
   .tree-row-muted {

@@ -20,14 +20,23 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import {
+  Braces,
   CheckCircle2,
-  Check,
   ChevronDown,
   ChevronRight,
   CircleDot,
+  Database,
+  FileArchive,
+  FileCode,
+  FileCog,
+  FileJson,
+  FileSpreadsheet,
+  FileTerminal,
   FileText,
+  FileType,
   Folder,
   FolderOpen,
+  Image,
   Menu,
   Minus,
   Square,
@@ -56,6 +65,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { invoke } from "@tauri-apps/api/core";
@@ -247,6 +257,94 @@ const getPathName = (path: string) => {
   const name = normalizedPath.split("/").filter(Boolean).pop();
 
   return name || path;
+};
+
+const getCompactPath = (path: string, visibleSegments = 4) => {
+  const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  const segments = normalizedPath.split("/").filter(Boolean);
+
+  if (segments.length <= visibleSegments) {
+    return normalizedPath || path;
+  }
+
+  return `.../${segments.slice(-visibleSegments).join("/")}`;
+};
+
+const getTailPath = (path: string, maxLength: number) => {
+  const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
+
+  if (normalizedPath.length <= maxLength) {
+    return normalizedPath || path;
+  }
+
+  const prefix = ".../";
+  const tailLength = Math.max(8, maxLength - prefix.length);
+
+  return `${prefix}${normalizedPath.slice(-tailLength).replace(/^[/\\]+/, "")}`;
+};
+
+const getFileExtension = (name: string) => {
+  const normalizedName = name.toLowerCase();
+  const extensionIndex = normalizedName.lastIndexOf(".");
+
+  if (extensionIndex <= 0 || extensionIndex === normalizedName.length - 1) {
+    return "";
+  }
+
+  return normalizedName.slice(extensionIndex + 1);
+};
+
+const getFileTreeIcon = (node: FileTreeNode) => {
+  if (node.kind === "directory") {
+    return {
+      className: "tree-row-icon-directory",
+      Icon: node.expanded ? FolderOpen : Folder,
+    };
+  }
+
+  const extension = getFileExtension(node.name);
+
+  if (["ts", "tsx", "js", "jsx", "rs", "py", "go", "java", "c", "cpp", "cs", "swift"].includes(extension)) {
+    return { className: "tree-row-icon-code", Icon: FileCode };
+  }
+
+  if (["json", "jsonc"].includes(extension)) {
+    return { className: "tree-row-icon-json", Icon: FileJson };
+  }
+
+  if (["css", "scss", "less", "html", "xml", "md", "mdx"].includes(extension)) {
+    return { className: "tree-row-icon-markup", Icon: FileType };
+  }
+
+  if (["toml", "yaml", "yml", "env", "ini", "conf", "config", "lock"].includes(extension)) {
+    return { className: "tree-row-icon-config", Icon: FileCog };
+  }
+
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "ico"].includes(extension)) {
+    return { className: "tree-row-icon-image", Icon: Image };
+  }
+
+  if (["zip", "tar", "gz", "rar", "7z"].includes(extension)) {
+    return { className: "tree-row-icon-archive", Icon: FileArchive };
+  }
+
+  if (["csv", "xls", "xlsx"].includes(extension)) {
+    return { className: "tree-row-icon-sheet", Icon: FileSpreadsheet };
+  }
+
+  if (["sql", "sqlite", "db"].includes(extension)) {
+    return { className: "tree-row-icon-data", Icon: Database };
+  }
+
+  if (["sh", "bash", "zsh", "ps1", "bat"].includes(extension)) {
+    return { className: "tree-row-icon-terminal", Icon: FileTerminal };
+  }
+
+  if (["vue", "svelte"].includes(extension)) {
+    return { className: "tree-row-icon-component", Icon: Braces };
+  }
+
+  return { className: "tree-row-icon-file", Icon: FileText };
 };
 
 const getParentPath = (path: string) => {
@@ -548,12 +646,15 @@ const saveRecentFolders = (folders: RecentFolder[]) => {
 };
 
 const getProjectInitials = (name: string) => {
-  const explicitWords = name
+  const explicitWords = name.split(/[\s._-]+/).filter(Boolean);
+  const camelParts = name
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .split(/[\s._-]+/)
     .filter(Boolean);
+  const words = explicitWords.length > 1 ? explicitWords : camelParts;
 
-  const initials = explicitWords
+  const initials = words
     .slice(0, 2)
     .map((word) => word[0])
     .join("");
@@ -1267,6 +1368,7 @@ export function WorkbenchPage() {
               <ProjectPanel
                 activePath={document.path}
                 folderView={folderView}
+                leftPanelWidth={leftPanelWidth}
                 onOpenFolder={openFolderPicker}
                 onOpenSettings={openSettingsTool}
                 onOpenRecentFolder={(path) => void openFolderView(path, "open-folder")}
@@ -1871,6 +1973,7 @@ function QuickSearch({ onClose, open }: { onClose: () => void; open: boolean }) 
 function ProjectPanel({
   activePath,
   folderView,
+  leftPanelWidth,
   onOpenFolder,
   onOpenRecentFolder,
   onOpenSettings,
@@ -1880,6 +1983,7 @@ function ProjectPanel({
 }: {
   activePath: string;
   folderView: FolderView | null;
+  leftPanelWidth: number;
   onOpenFolder: () => void;
   onOpenRecentFolder: (path: string) => void;
   onOpenSettings: () => void;
@@ -1891,10 +1995,12 @@ function ProjectPanel({
     <aside className="project-panel frosted-surface frosted-surface-subtle">
       <ProjectPanelStart
         folderView={folderView}
+        leftPanelWidth={leftPanelWidth}
         onOpenFolder={onOpenFolder}
         onOpenRecentFolder={onOpenRecentFolder}
         recentFolders={recentFolders}
       />
+      {folderView ? <div className="project-panel-tree-divider" aria-hidden="true" /> : null}
       <FolderTreePanel
         activePath={activePath}
         folderView={folderView}
@@ -1908,18 +2014,44 @@ function ProjectPanel({
 
 function ProjectPanelStart({
   folderView,
+  leftPanelWidth,
   onOpenFolder,
   onOpenRecentFolder,
   recentFolders,
 }: {
   folderView: FolderView | null;
+  leftPanelWidth: number;
   onOpenFolder: () => void;
   onOpenRecentFolder: (path: string) => void;
   recentFolders: RecentFolder[];
 }) {
   const activeFolderPath = folderView?.rootPath ?? null;
   const activeRecentFolder = recentFolders.find((folder) => folder.path === activeFolderPath);
-  const recentButtonLabel = activeRecentFolder?.name ?? (folderView ? getPathName(folderView.rootPath) : "Recent folders");
+  const activeFolderName = activeRecentFolder?.name ?? (folderView ? getPathName(folderView.rootPath) : "Recent folders");
+  const activePathMaxLength = Math.max(18, Math.floor((leftPanelWidth - 96) / 6.2));
+  const activeFolderPathLabel = folderView ? getTailPath(folderView.rootPath, activePathMaxLength) : "";
+  const activeFolderAccentStyle = getProjectAccentStyle(activeFolderName);
+  const currentFolder = folderView ? { name: activeFolderName, path: folderView.rootPath } : null;
+  const inactiveRecentFolders = recentFolders.filter((folder) => folder.path !== activeFolderPath);
+
+  const renderRecentFolderItem = (project: RecentFolder, selected: boolean) => (
+    <DropdownMenuItem
+      aria-selected={selected}
+      className={cn("project-panel-recent-menu-item", selected && "project-panel-recent-menu-item-selected")}
+      key={project.path}
+      onSelect={() => onOpenRecentFolder(project.path)}
+    >
+      <span className="project-panel-recent-menu-avatar" style={getProjectAccentStyle(project.name)}>
+        {getProjectInitials(project.name)}
+      </span>
+      <span className="project-panel-recent-text">
+        <span className="project-panel-recent-name">{project.name}</span>
+        <span className="project-panel-recent-path" title={project.path}>
+          {getCompactPath(project.path, 5)}
+        </span>
+      </span>
+    </DropdownMenuItem>
+  );
 
   return (
     <div className="project-panel-start">
@@ -1929,44 +2061,42 @@ function ProjectPanelStart({
       </button>
       <div className="project-panel-divider" aria-hidden="true" />
       {folderView ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="project-panel-recent-select" type="button">
-              <span className="project-panel-recent-select-text">
-                <span className="project-panel-recent-label">Recent folders</span>
-                <span className="project-panel-recent-select-name">{recentButtonLabel}</span>
-              </span>
-              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="project-panel-recent-menu" sideOffset={6}>
-            {recentFolders.length > 0 ? (
-              recentFolders.slice(0, 8).map((project) => {
-                const selected = project.path === activeFolderPath;
-
-                return (
-                  <DropdownMenuItem
-                    className={cn("project-panel-recent-menu-item", selected && "project-panel-recent-menu-item-selected")}
-                    key={project.path}
-                    onSelect={() => onOpenRecentFolder(project.path)}
-                  >
-                    <span className="project-panel-recent-menu-check">
-                      {selected ? <Check className="h-3.5 w-3.5" /> : null}
+        <div className="project-panel-recent-switcher">
+          <div className="project-panel-recent-heading">Recent folders</div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="project-panel-recent-select" type="button">
+                <span className="project-panel-recent-select-avatar" style={activeFolderAccentStyle}>
+                  {getProjectInitials(activeFolderName)}
+                </span>
+                <span className="project-panel-recent-select-text">
+                  <span className="project-panel-recent-select-name">{activeFolderName}</span>
+                  {activeFolderPathLabel ? (
+                    <span className="project-panel-recent-select-path" title={folderView?.rootPath}>
+                      {activeFolderPathLabel}
                     </span>
-                    <span className="project-panel-recent-text">
-                      <span className="project-panel-recent-name">{project.name}</span>
-                      <span className="project-panel-recent-path">{project.path}</span>
-                    </span>
-                  </DropdownMenuItem>
-                );
-              })
-            ) : (
-              <DropdownMenuItem className="project-panel-recent-menu-item" disabled>
-                No recent folders yet
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+                  ) : null}
+                </span>
+                <span className="project-panel-recent-select-chevron">
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="project-panel-recent-menu" sideOffset={6}>
+              {currentFolder ? renderRecentFolderItem(currentFolder, true) : null}
+              {currentFolder && inactiveRecentFolders.length > 0 ? (
+                <DropdownMenuSeparator className="project-panel-recent-menu-separator" />
+              ) : null}
+              {inactiveRecentFolders.length > 0 ? (
+                inactiveRecentFolders.slice(0, currentFolder ? 7 : 8).map((project) => renderRecentFolderItem(project, false))
+              ) : currentFolder ? null : (
+                <DropdownMenuItem className="project-panel-recent-menu-item" disabled>
+                  No recent folders yet
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       ) : (
         <div className="project-panel-recent">
           <div className="project-panel-recent-label">Recent folders</div>
@@ -2004,9 +2134,50 @@ function FolderTreePanel({
   onOpenFile: (node: FileTreeNode) => void;
   onToggleDirectory: (node: FileTreeNode) => void;
 }) {
+  const treeScrollContentRef = useRef<HTMLDivElement>(null);
+  const [treeScrollOverflowing, setTreeScrollOverflowing] = useState(false);
+
+  useEffect(() => {
+    const content = treeScrollContentRef.current;
+
+    if (!content) {
+      setTreeScrollOverflowing(false);
+      return;
+    }
+
+    const viewport = content.closest("[data-radix-scroll-area-viewport]");
+
+    if (!viewport) {
+      setTreeScrollOverflowing(false);
+      return;
+    }
+
+    const updateOverflow = () => {
+      setTreeScrollOverflowing(viewport.scrollHeight > viewport.clientHeight + 1);
+    };
+
+    const scheduleUpdateOverflow = () => {
+      window.requestAnimationFrame(updateOverflow);
+    };
+
+    scheduleUpdateOverflow();
+
+    const resizeObserver = new ResizeObserver(updateOverflow);
+    resizeObserver.observe(viewport);
+    resizeObserver.observe(content);
+    window.addEventListener("resize", scheduleUpdateOverflow);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", scheduleUpdateOverflow);
+    };
+  }, [folderView?.rootPath, folderView?.nodes, folderView?.loadingPath]);
+
   if (!folderView) {
     return <div className="min-h-0 flex-1" />;
   }
+
+  const hasRootDirectories = folderView.nodes.some((node) => node.kind === "directory");
 
   return (
     <>
@@ -2015,8 +2186,17 @@ function FolderTreePanel({
           {folderView.error}
         </div>
       ) : null}
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-0.5 p-1.5">
+      <ScrollArea className="file-tree-scroll min-h-0 flex-1" type="auto">
+        <div
+          className={cn(
+            "file-tree-list",
+            !hasRootDirectories && "file-tree-list-flat",
+            treeScrollOverflowing && "file-tree-list-scroll-overflowing",
+          )}
+          ref={treeScrollContentRef}
+          role="tree"
+          aria-label={folderView.rootName}
+        >
           {folderView.loadingPath === folderView.rootPath && folderView.nodes.length === 0 ? (
             <div className="px-2 py-2 text-[12px] text-muted-foreground">Loading folder...</div>
           ) : null}
@@ -2072,17 +2252,21 @@ function FileTreeRow({
   const isDirectory = node.kind === "directory";
   const isActive = node.path === activePath;
   const isLoading = loadingPath === node.path;
-  const Icon = isDirectory ? (node.expanded ? FolderOpen : Folder) : FileText;
+  const { className: iconClassName, Icon } = getFileTreeIcon(node);
 
   return (
-    <>
+    <div className="file-tree-node" role="none">
       <button
+        aria-expanded={isDirectory ? Boolean(node.expanded) : undefined}
+        aria-selected={isActive}
         className={cn("tree-row w-full text-left", isActive && "tree-row-active", node.error && "tree-row-muted")}
+        role="treeitem"
+        style={{ "--tree-depth": depth } as CSSProperties}
         type="button"
         title={node.path}
         onClick={() => (isDirectory ? onToggleDirectory(node) : onOpenFile(node))}
       >
-        <span style={{ paddingLeft: `${depth * 12}px` }} className="flex items-center">
+        <span className="tree-row-toggle">
           {isDirectory ? (
             node.expanded ? (
               <ChevronDown className="h-3 w-3" />
@@ -2091,27 +2275,35 @@ function FileTreeRow({
             )
           ) : null}
         </span>
-        <span className="flex min-w-0 items-center gap-1.5">
-          <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <span className="truncate">{node.name}</span>
+        <span className="tree-row-main">
+          <Icon className={cn("tree-row-icon", iconClassName)} />
+          <span className="tree-row-name">{node.name}</span>
         </span>
-        <span className="justify-self-end font-mono text-[11px] text-muted-foreground">
+        <span className="tree-row-size">
           {isLoading ? "..." : isDirectory ? "" : formatFileSize(node.size)}
         </span>
       </button>
       {node.error ? <div className="px-2 py-1 text-[11px] text-destructive">{node.error}</div> : null}
-      {node.expanded && node.children?.map((child) => (
-        <FileTreeRow
-          activePath={activePath}
-          depth={depth + 1}
-          key={child.path}
-          loadingPath={loadingPath}
-          node={child}
-          onOpenFile={onOpenFile}
-          onToggleDirectory={onToggleDirectory}
-        />
-      ))}
-    </>
+      {node.expanded && node.children ? (
+        <div
+          className="file-tree-children"
+          role="group"
+          style={{ "--tree-depth-line": `${(depth + 1) * 14}px` } as CSSProperties}
+        >
+          {node.children.map((child) => (
+            <FileTreeRow
+              activePath={activePath}
+              depth={depth + 1}
+              key={child.path}
+              loadingPath={loadingPath}
+              node={child}
+              onOpenFile={onOpenFile}
+              onToggleDirectory={onToggleDirectory}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
