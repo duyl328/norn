@@ -148,8 +148,20 @@
 
     .tab.is-left-stacked,
     .tab.is-right-stacked {
-      -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, var(--left-alpha, 1)) 0%, #000 50%, rgba(0, 0, 0, var(--right-alpha, 1)) 100%);
-      mask-image: linear-gradient(90deg, rgba(0, 0, 0, var(--left-alpha, 1)) 0%, #000 50%, rgba(0, 0, 0, var(--right-alpha, 1)) 100%);
+      -webkit-mask-image: linear-gradient(90deg,
+        transparent 0%,
+        transparent var(--hide-left, 0%),
+        #000 var(--hide-left, 0%),
+        #000 calc(100% - var(--hide-right, 0%)),
+        transparent calc(100% - var(--hide-right, 0%)),
+        transparent 100%);
+      mask-image: linear-gradient(90deg,
+        transparent 0%,
+        transparent var(--hide-left, 0%),
+        #000 var(--hide-left, 0%),
+        #000 calc(100% - var(--hide-right, 0%)),
+        transparent calc(100% - var(--hide-right, 0%)),
+        transparent 100%);
     }
 
     .label {
@@ -259,6 +271,29 @@
       accent-color: #f05b68;
     }
 
+    .number-control {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 38px;
+      padding: 0 10px;
+      border: 2px solid rgba(18, 60, 70, 0.18);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.68);
+      color: rgba(18, 60, 70, 0.84);
+      font: 800 13px/1 ui-sans-serif, system-ui, sans-serif;
+    }
+
+    .number-control input {
+      width: 46px;
+      height: 24px;
+      border: 1px solid rgba(18, 60, 70, 0.24);
+      border-radius: 6px;
+      color: var(--ink);
+      font: 800 13px/1 ui-sans-serif, system-ui, sans-serif;
+      text-align: center;
+    }
+
     .note {
       margin: 0;
       color: rgba(18, 60, 70, 0.74);
@@ -315,6 +350,7 @@
         <button id="remove" type="button">减少</button>
       </div>
       <label class="toggle"><input id="auto-move" type="checkbox" checked>自动移动</label>
+      <label class="number-control">堆叠数 <input id="stack-limit" type="number" min="1" max="12" step="1" value="6"></label>
       <output class="center-readout" id="active-readout">选中 ID: 4</output>
       <output class="center-readout" id="center-readout">中心 ID: 0</output>
       <output class="debug-readout" id="debug-readout">滚动: 0 / 0 | 左距: 0 | 右距: 0</output>
@@ -329,12 +365,13 @@
     const addButton = document.querySelector("#add");
     const removeButton = document.querySelector("#remove");
     const autoMoveInput = document.querySelector("#auto-move");
+    const stackLimitInput = document.querySelector("#stack-limit");
     const measureLabel = document.querySelector("#measure-label");
     const activeReadout = document.querySelector("#active-readout");
     const centerReadout = document.querySelector("#center-readout");
     const debugReadout = document.querySelector("#debug-readout");
     const stackStep = 20;
-    const maxVisibleStack = 6;
+    let maxVisibleStack = Number(stackLimitInput.value);
     let layoutFrame = 0;
     let scrollAnimationFrame = 0;
     let pendingActiveCleanup = null;
@@ -504,7 +541,7 @@
       });
     }
 
-    function getTabVisibility(index, positions, railPadding) {
+    function getTabVisibility(index, positions, railPadding, zIndexes = null) {
       const position = positions[index];
       const previous = positions[index - 1];
       const next = positions[index + 1];
@@ -517,8 +554,11 @@
       const nextOverlap = next ? Math.max(0, right - next.left) : 0;
       const coveredByPrevious = position.side === "right" ? previousOverlap : 0;
       const coveredByNext = position.side === "left" ? nextOverlap : 0;
+      const coveredEdges = zIndexes ? getCoveredEdges(index, positions, zIndexes) : null;
       const insideContainer = left >= visibleStart - tolerance && right <= visibleEnd + tolerance;
-      const fullyExpanded = coveredByPrevious <= tolerance && coveredByNext <= tolerance;
+      const fullyExpanded = coveredEdges
+        ? coveredEdges.left <= tolerance && coveredEdges.right <= tolerance
+        : coveredByPrevious <= tolerance && coveredByNext <= tolerance;
 
       return {
         insideContainer,
@@ -527,8 +567,91 @@
         nextOverlap,
         coveredByPrevious,
         coveredByNext,
+        coveredEdges,
         position
       };
+    }
+
+    function getCoveredEdges(index, positions, zIndexes) {
+      const position = positions[index];
+      const left = position.left;
+      const right = position.left + position.width;
+      const coveredRanges = [];
+
+      positions.forEach((other, otherIndex) => {
+        if (otherIndex === index || zIndexes[otherIndex] <= zIndexes[index]) return;
+        const overlapLeft = Math.max(left, other.left);
+        const overlapRight = Math.min(right, other.left + other.width);
+        if (overlapRight - overlapLeft <= 0) return;
+        coveredRanges.push([overlapLeft - left, overlapRight - left]);
+      });
+
+      if (!coveredRanges.length) return { left: 0, right: 0 };
+
+      coveredRanges.sort((a, b) => a[0] - b[0]);
+      const merged = [];
+      coveredRanges.forEach(range => {
+        const last = merged[merged.length - 1];
+        if (!last || range[0] > last[1]) {
+          merged.push([...range]);
+        } else {
+          last[1] = Math.max(last[1], range[1]);
+        }
+      });
+
+      let coveredLeft = 0;
+      let coveredRight = 0;
+      let cursor = 0;
+
+      merged.forEach(range => {
+        if (range[0] <= cursor) {
+          coveredLeft = Math.max(coveredLeft, range[1]);
+          cursor = coveredLeft;
+        }
+      });
+
+      cursor = position.width;
+      for (let index = merged.length - 1; index >= 0; index -= 1) {
+        const range = merged[index];
+        if (range[1] >= cursor) {
+          coveredRight = Math.max(coveredRight, cursor - range[0]);
+          cursor = range[0];
+        }
+      }
+
+      return {
+        left: clamp(coveredLeft, 0, position.width),
+        right: clamp(coveredRight, 0, position.width)
+      };
+    }
+
+    function getVisualCenterIndex(positions) {
+      const centerLine = rail.clientWidth / 2;
+      const crossingIndex = positions.findIndex(position => (
+        position.left <= centerLine && position.left + position.width >= centerLine
+      ));
+
+      if (crossingIndex >= 0) return crossingIndex;
+
+      return positions.reduce((bestIndex, position, index) => {
+        const center = position.left + position.width / 2;
+        const best = positions[bestIndex];
+        const bestCenter = best.left + best.width / 2;
+
+        return Math.abs(center - centerLine) < Math.abs(bestCenter - centerLine)
+          ? index
+          : bestIndex;
+      }, 0);
+    }
+
+    function getZIndexes(positions) {
+      const visualCenterIndex = getVisualCenterIndex(positions);
+
+      return positions.map((position, index) => {
+        if (index === visualCenterIndex) return 10000;
+        if (index < visualCenterIndex) return 1000 + index;
+        return 1000 + tabs.length - index;
+      });
     }
 
     function focusActiveWindow(placement = "center", animated = true) {
@@ -550,7 +673,8 @@
 
       function getFocusStepTarget(scrollLeft) {
         const positions = getTabPositions(widths, scrollLeft);
-        const visibility = getTabVisibility(active, positions, railPadding);
+        const zIndexes = getZIndexes(positions);
+        const visibility = getTabVisibility(active, positions, railPadding, zIndexes);
 
         if (visibility.insideContainer && visibility.fullyExpanded) {
           return scrollLeft;
@@ -586,7 +710,8 @@
           target = nextTarget;
 
           const nextPositions = getTabPositions(widths, target);
-          const nextVisibility = getTabVisibility(active, nextPositions, railPadding);
+          const nextZIndexes = getZIndexes(nextPositions);
+          const nextVisibility = getTabVisibility(active, nextPositions, railPadding, nextZIndexes);
           if (nextVisibility.insideContainer && nextVisibility.fullyExpanded) break;
         }
       }
@@ -669,42 +794,24 @@
       const elements = [...rail.querySelectorAll(".tab")];
       measureTabWidths();
       const widths = tabs.map(tab => tab.width);
-      const viewportWidth = rail.clientWidth;
       const tabPositions = getTabPositions(widths, rail.scrollLeft);
-
-      const centerLine = viewportWidth / 2;
-      const crossingIndex = tabPositions.findIndex(position => (
-        position.left <= centerLine && position.left + position.width >= centerLine
-      ));
-      const visualCenterIndex = crossingIndex >= 0
-        ? crossingIndex
-        : tabPositions.reduce((bestIndex, position, index) => {
-            const center = position.left + position.width / 2;
-            const best = tabPositions[bestIndex];
-            const bestCenter = best.left + best.width / 2;
-
-            return Math.abs(center - centerLine) < Math.abs(bestCenter - centerLine)
-              ? index
-              : bestIndex;
-          }, 0);
-      const zIndexes = tabPositions.map((position, index) => {
-        if (index === visualCenterIndex) return 10000;
-        if (index < visualCenterIndex) return 1000 + index;
-        return 1000 + tabs.length - index;
-      });
+      const visualCenterIndex = getVisualCenterIndex(tabPositions);
+      const zIndexes = getZIndexes(tabPositions);
 
       elements.forEach((element, index) => {
         const position = tabPositions[index];
         const nextPosition = tabPositions[index + 1];
         const previousPosition = tabPositions[index - 1];
+        const coveredEdges = getCoveredEdges(index, tabPositions, zIndexes);
         const coveredWidth = nextPosition ? Math.max(0, position.left + position.width - nextPosition.left) : 0;
         const rightCoveredWidth = previousPosition ? Math.max(0, previousPosition.left + previousPosition.width - position.left) : 0;
         const coverRatio = clamp(coveredWidth / position.width, 0, 1);
         const rightCoverRatio = clamp(rightCoveredWidth / position.width, 0, 1);
-        const rightAlpha = position.side === "left" ? 1 - clamp(coverRatio * 2, 0, 1) : 1;
-        const leftAlpha = position.side === "right" ? 1 - clamp(rightCoverRatio * 2, 0, 1) : 1;
-        const isLeftStacked = rightAlpha < 1;
-        const isRightStacked = leftAlpha < 1;
+        const hideBuffer = 50;
+        const hideLeft = clamp(Math.max(0, coveredEdges.left - hideBuffer) / position.width * 100, 0, 100);
+        const hideRight = clamp(Math.max(0, coveredEdges.right - hideBuffer) / position.width * 100, 0, 100);
+        const isLeftStacked = hideRight > 0;
+        const isRightStacked = hideLeft > 0;
         element.classList.toggle("is-active", index === active);
         element.classList.toggle("is-left-sticky", position.side !== "right");
         element.classList.toggle("is-right-sticky", position.side === "right");
@@ -712,8 +819,8 @@
         element.classList.toggle("is-right-stacked", isRightStacked);
         element.style.zIndex = zIndexes[index];
         element.querySelector(".tab-z").textContent = `z:${zIndexes[index]}`;
-        element.style.setProperty("--left-alpha", leftAlpha.toFixed(3));
-        element.style.setProperty("--right-alpha", rightAlpha.toFixed(3));
+        element.style.setProperty("--hide-left", `${hideLeft.toFixed(3)}%`);
+        element.style.setProperty("--hide-right", `${hideRight.toFixed(3)}%`);
         element.style.setProperty("--sticky-left", `${position.stickyLeft}px`);
         element.style.setProperty("--sticky-right", `${position.stickyRight}px`);
         element.style.setProperty("--w", `${tabs[index].width}px`);
@@ -723,7 +830,8 @@
       const activePosition = tabPositions[active];
       const scrollMax = Math.max(0, rail.scrollWidth - rail.clientWidth);
       const railPadding = parseFloat(getComputedStyle(rail).paddingLeft);
-      const activeVisibility = getTabVisibility(active, tabPositions, railPadding);
+      const activeVisibility = getTabVisibility(active, tabPositions, railPadding, zIndexes);
+      const activeCoveredEdges = getCoveredEdges(active, tabPositions, zIndexes);
       const leftDistance = activePosition.left - railPadding;
       const rightDistance = rail.clientWidth - railPadding - (activePosition.left + activePosition.width);
       const scrollProgress = scrollMax > 0 ? rail.scrollLeft / scrollMax * 100 : 0;
@@ -736,6 +844,8 @@
         `后遮盖: ${activeVisibility.nextOverlap.toFixed(1)}`,
         `被前遮盖: ${activeVisibility.coveredByPrevious.toFixed(1)}`,
         `被后遮盖: ${activeVisibility.coveredByNext.toFixed(1)}`,
+        `左侧被盖: ${activeCoveredEdges.left.toFixed(1)}`,
+        `右侧被盖: ${activeCoveredEdges.right.toFixed(1)}`,
         `容器内: ${activeVisibility.insideContainer ? "是" : "否"}`,
         `完全展开: ${activeVisibility.fullyExpanded ? "是" : "否"}`
       ].join(" | ");
@@ -789,6 +899,12 @@
 
     autoMoveInput.addEventListener("change", () => {
       if (!autoMoveInput.checked) cancelScrollAnimation();
+      layout();
+    });
+
+    stackLimitInput.addEventListener("input", () => {
+      maxVisibleStack = clamp(Number(stackLimitInput.value) || 1, 1, 12);
+      stackLimitInput.value = maxVisibleStack;
       layout();
     });
 
