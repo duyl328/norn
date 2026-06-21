@@ -8,7 +8,7 @@
     "tauri:dev": "node scripts/tauri-dev-instance.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "node scripts/tauri-runner.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.0",
