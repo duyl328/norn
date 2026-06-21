@@ -3,6 +3,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   useEffect,
   useMemo,
   useRef,
@@ -21,10 +22,9 @@ import {
 } from "@codemirror/view";
 import {
   Braces,
-  CheckCircle2,
+  ArrowLeft,
   ChevronDown,
   ChevronRight,
-  CircleDot,
   Database,
   FileArchive,
   FileCode,
@@ -36,9 +36,14 @@ import {
   FileType,
   Folder,
   FolderOpen,
+  Gauge,
   Image,
+  Keyboard,
   Menu,
   Minus,
+  MonitorCog,
+  Palette,
+  ShieldCheck,
   Square,
   X,
   GitBranch,
@@ -82,7 +87,14 @@ import {
   loadHighlightExtensions,
   resolveHighlightMode,
 } from "./editor-highlighting";
-import { changes, editorLines } from "./mock-data";
+import {
+  editorLines,
+  gitChangeSections,
+  gitRepositoryMock,
+  type GitChangeItem,
+  type GitChangeSection,
+  type GitChangeStatus,
+} from "./mock-data";
 
 type ProjectAccentStyle = {
   "--project-color": string;
@@ -167,6 +179,23 @@ type NativeDirectoryEntry = {
   size?: number | null;
   lastModified?: number | null;
 };
+
+type GitWorkspaceInspection = {
+  workspacePath: string;
+  gitAvailable: boolean;
+  gitVersion?: string | null;
+  isRepository: boolean;
+  gitRoot?: string | null;
+  hasDotGit: boolean;
+  branch?: string | null;
+  message: string;
+};
+
+type GitWorkspaceState =
+  | { kind: "idle" }
+  | { kind: "loading"; workspacePath: string }
+  | { kind: "ready"; inspection: GitWorkspaceInspection }
+  | { kind: "error"; message: string; workspacePath: string };
 
 type FolderView = {
   rootPath: string;
@@ -699,6 +728,7 @@ export function WorkbenchPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [folderView, setFolderView] = useState<FolderView | null>(null);
+  const [gitWorkspace, setGitWorkspace] = useState<GitWorkspaceState>({ kind: "idle" });
   const [recentFolders, setRecentFolders] = useState<RecentFolder[]>(() => loadRecentFolders());
   const [pendingFileOpen, setPendingFileOpen] = useState<PendingFileOpen | null>(null);
   const [saveConflict, setSaveConflict] = useState<SaveConflict | null>(null);
@@ -712,6 +742,7 @@ export function WorkbenchPage() {
     setFileError(null);
     setLeftPanelOpen(false);
     setFolderView(null);
+    setGitWorkspace({ kind: "idle" });
     setSaveConflict(null);
     setSaveState("idle");
     setDocument({
@@ -858,6 +889,30 @@ export function WorkbenchPage() {
     const entries = await invoke<NativeDirectoryEntry[]>("list_directory", { path });
 
     return entries.map(toFileTreeNode);
+  };
+
+  const inspectGitWorkspace = async (path: string) => {
+    setGitWorkspace({ kind: "loading", workspacePath: path });
+
+    if (!isTauriRuntime()) {
+      setGitWorkspace({
+        kind: "error",
+        workspacePath: path,
+        message: "Git 检测仅在 Tauri 桌面应用中可用。",
+      });
+      return;
+    }
+
+    try {
+      const inspection = await invoke<GitWorkspaceInspection>("inspect_git_workspace", { path });
+      setGitWorkspace({ kind: "ready", inspection });
+    } catch (error) {
+      setGitWorkspace({
+        kind: "error",
+        workspacePath: path,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   };
 
   const openNativeFile = async (path: string, options: { clearFolderView?: boolean; size?: number } = {}) => {
@@ -1113,6 +1168,7 @@ export function WorkbenchPage() {
         error: null,
       });
       rememberRecentFolder(rootPath);
+      void inspectGitWorkspace(rootPath);
     } catch (error) {
       setFolderView({
         rootPath,
@@ -1122,6 +1178,7 @@ export function WorkbenchPage() {
         loadingPath: null,
         error: error instanceof Error ? error.message : String(error),
       });
+      setGitWorkspace({ kind: "idle" });
     }
   };
 
@@ -1325,7 +1382,14 @@ export function WorkbenchPage() {
   return (
     <TooltipProvider delayDuration={250}>
       <div className={cn("h-full bg-transparent text-[12px] text-foreground", showMacTitlebar && "mac-titlebar-overlay-layout")}>
-        <div className="flex h-full min-w-0 flex-col">
+        {settingsOpen ? (
+          <SettingsPage
+            gitWorkspace={gitWorkspace}
+            onBack={() => setSettingsOpen(false)}
+            showMacTitlebar={showMacTitlebar}
+          />
+        ) : (
+        <div className="workspace-view flex h-full min-w-0 flex-col">
           {showWindowsTitlebar ? (
             <WindowsTitleBar
               leftPanelOpen={leftPanelOpen}
@@ -1354,12 +1418,18 @@ export function WorkbenchPage() {
             />
           ) : null}
           <main
-            className={cn("workbench-layout grid min-h-0 flex-1 bg-transparent", resizingPanel && "workbench-layout-resizing")}
+            className={cn(
+              "workbench-layout grid h-full min-h-0 flex-1 bg-transparent",
+              leftPanelOpen && "workbench-layout-left-open",
+              rightPanelOpen && "workbench-layout-right-open",
+              resizingPanel && "workbench-layout-resizing",
+            )}
             style={{
-              gridTemplateColumns: `${leftPanelOpen ? `${leftPanelWidth}px` : "0px"} ${leftPanelOpen ? "1px" : "0px"} minmax(0,1fr) ${
+              "--workbench-left-panel-width": leftPanelOpen ? `${leftPanelWidth}px` : "0px",
+              gridTemplateColumns: `${leftPanelOpen ? `${leftPanelWidth}px` : "0px"} minmax(0,1fr) ${
                 rightPanelOpen ? "1px" : "0px"
               } ${rightPanelOpen ? `${rightPanelWidth}px` : "0px"}`,
-            }}
+            } as CSSProperties}
           >
             <div
               className={cn("workbench-side-panel workbench-left-panel", !leftPanelOpen && "workbench-side-panel-closed")}
@@ -1406,7 +1476,7 @@ export function WorkbenchPage() {
               className={cn("workbench-side-panel workbench-right-panel", !rightPanelOpen && "workbench-side-panel-closed")}
               aria-hidden={!rightPanelOpen}
             >
-              <GitPanel />
+              <GitPanel folderView={folderView} gitWorkspace={gitWorkspace} />
             </div>
           </main>
           <StatusBar
@@ -1414,8 +1484,8 @@ export function WorkbenchPage() {
             isDirty={isDirty}
             onOpenSettings={openSettingsTool}
             saveState={saveState}
+            gitWorkspace={gitWorkspace}
           />
-          <SettingsDialog open={settingsOpen} onOpenChange={updateSettingsOpen} />
           <DiscardChangesDialog
             open={Boolean(pendingFileOpen)}
             onCancel={() => setPendingFileOpen(null)}
@@ -1446,6 +1516,7 @@ export function WorkbenchPage() {
             }}
           />
         </div>
+        )}
       </div>
     </TooltipProvider>
   );
@@ -1625,7 +1696,7 @@ function WindowsTitleBar({
   };
 
   return (
-    <header className="windows-titlebar frosted-surface frosted-surface-raised" onDoubleClick={handleTitlebarDoubleClick}>
+    <header className="windows-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
       <div className="windows-titlebar-left" ref={menuRef}>
         {!menuExpanded ? (
           <>
@@ -2820,7 +2891,7 @@ function EditorSurface({
   };
 
   return (
-    <section className="editor-surface-panel flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-border bg-[hsl(var(--editor-background))]">
+    <section className="editor-surface-panel flex min-h-0 min-w-0 flex-col overflow-hidden bg-[hsl(var(--editor-background))]">
       <div
         className={cn(
           "editor-file-tabs",
@@ -2979,95 +3050,342 @@ function EditorScrollbar({
   );
 }
 
-function GitPanel() {
+function GitPanel({ folderView, gitWorkspace }: { folderView: FolderView | null; gitWorkspace: GitWorkspaceState }) {
+  const firstChangeId = gitChangeSections.flatMap((section) => section.items)[0]?.id ?? null;
+  const [selectedChangeId, setSelectedChangeId] = useState<string | null>(firstChangeId);
+  const inspection = gitWorkspace.kind === "ready" ? gitWorkspace.inspection : null;
+  const hasWorkspace = Boolean(folderView);
+  const isRepository = Boolean(inspection?.isRepository);
+  const hasStagedChanges = isRepository && gitRepositoryMock.stagedCount > 0;
+  const branchLabel = inspection?.branch ?? gitRepositoryMock.branch;
+  const workspaceName = folderView?.rootName ?? "未打开工作区";
+  const workspacePath = folderView?.rootPath ?? "";
+  const badgeLabel =
+    gitWorkspace.kind === "loading"
+      ? "检测中"
+      : isRepository
+        ? gitRepositoryMock.remoteState
+        : hasWorkspace
+          ? "未初始化"
+          : "未打开";
+
   return (
-    <aside className="git-surface-panel frosted-surface frosted-surface-raised min-h-0 min-w-0 overflow-hidden shadow-[-10px_0_18px_-18px_rgba(15,23,42,0.75)]">
-      <div className="flex h-full w-full min-h-0 flex-col">
-        <div className="panel-heading">
-          <div>
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Git</div>
-            <div className="font-semibold">Changes</div>
-          </div>
-          <Badge tone="warning">ahead 1</Badge>
-        </div>
-        <div className="grid grid-cols-3 gap-1 border-b border-border/80 p-2">
-          <Summary label="Working" value="4" />
-          <Summary label="Staged" value="1" />
-          <Summary label="Remote" value="+1" />
-        </div>
-        <div className="border-b border-border/80 p-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <GitBranch className="h-4 w-4 text-primary" />
-              <div className="min-w-0">
-                <div className="truncate font-medium">main</div>
-                <div className="truncate text-[11px] text-muted-foreground">origin/main - 1 commit ready to push</div>
+    <RightTaskPanel
+      eyebrow="Git"
+      title="变更"
+      badge={<Badge tone={isRepository ? "warning" : "muted"}>{badgeLabel}</Badge>}
+      toolbar={
+        <>
+          <Button size="sm" variant="ghost">
+            刷新
+          </Button>
+          <Button size="sm" variant="ghost">
+            更多
+          </Button>
+        </>
+      }
+      footer={<GitCommitBox disabled={!hasStagedChanges} />}
+    >
+      <div className="git-panel-body">
+        <div className="git-repository-card">
+          <div className="git-repository-main">
+            <span className="git-repository-icon">
+              <GitBranch className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <div className="git-repository-name">{workspaceName}</div>
+              <div className="git-repository-meta">
+                {getGitWorkspaceDescription(gitWorkspace, workspacePath)}
               </div>
             </div>
-            <Button size="sm" variant="ghost">
-              Switch
-            </Button>
           </div>
+          <Button size="sm" variant="ghost" disabled={!hasWorkspace || isRepository}>
+            创建仓库
+          </Button>
         </div>
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="space-y-1 p-2">
-            {changes.map((change) => (
-              <div
-                className="grid grid-cols-[20px_minmax(0,1fr)_52px] items-center gap-2 rounded-sm border border-border/75 bg-white/20 p-2 dark:bg-black/10"
-                key={change.path}
-              >
-                {change.staged ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                ) : (
-                  <CircleDot className="h-4 w-4 text-muted-foreground" />
-                )}
-                <div className="min-w-0">
-                  <div className="truncate font-mono text-[11px]">{change.path}</div>
-                  <div className="truncate text-[11px] text-muted-foreground">
-                    {change.status} - {change.description}
-                  </div>
+
+        {isRepository ? (
+          <>
+            <div className="git-summary-grid">
+              <Summary label="工作区" value={String(gitRepositoryMock.workingCount)} />
+              <Summary label="已暂存" value={String(gitRepositoryMock.stagedCount)} />
+              <Summary label="未跟踪" value={String(gitRepositoryMock.untrackedCount)} />
+            </div>
+
+            <div className="git-state-preview-grid" aria-label="Git 面板状态预览">
+              <div className="git-state-preview">
+                <div className="git-state-preview-title">当前分支</div>
+                <div className="git-state-preview-description">
+                  {branchLabel} - {gitRepositoryMock.remoteHint}
                 </div>
-                <Button size="sm" variant={change.staged ? "ghost" : "default"}>
-                  {change.staged ? "Unstage" : "Stage"}
-                </Button>
               </div>
+            </div>
+
+            {gitChangeSections.map((section) => (
+              <GitChangeSectionView
+                key={section.id}
+                section={section}
+                selectedChangeId={selectedChangeId}
+                onSelectChange={setSelectedChangeId}
+              />
             ))}
-          </div>
-        </ScrollArea>
-        <div className="border-t border-border/80 bg-white/14 p-2 dark:bg-black/5">
-          <Textarea placeholder="Commit message, for example: wire up file open" />
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <span className="text-[11px] text-muted-foreground">Review staged files before committing.</span>
-            <Button size="sm" variant="primary">
-              Commit staged
-            </Button>
-          </div>
-        </div>
+          </>
+        ) : (
+          <GitWorkspaceNotice gitWorkspace={gitWorkspace} hasWorkspace={hasWorkspace} />
+        )}
       </div>
-    </aside>
+    </RightTaskPanel>
   );
 }
-function Summary({ label, value }: { label: string; value: string }) {
+
+function GitWorkspaceNotice({
+  gitWorkspace,
+  hasWorkspace,
+}: {
+  gitWorkspace: GitWorkspaceState;
+  hasWorkspace: boolean;
+}) {
+  const title =
+    gitWorkspace.kind === "loading"
+      ? "正在检测 Git 状态"
+      : !hasWorkspace
+        ? "尚未打开工作区"
+        : gitWorkspace.kind === "error"
+          ? "无法检测 Git 状态"
+          : "当前文件夹不是 Git 仓库";
+  const description =
+    gitWorkspace.kind === "loading"
+      ? "正在读取 Git 命令和当前文件夹状态。"
+      : !hasWorkspace
+        ? "请先从左侧打开一个文件夹，然后再查看 Git 变更。"
+        : gitWorkspace.kind === "ready"
+          ? gitWorkspace.inspection.message
+          : gitWorkspace.kind === "error"
+            ? gitWorkspace.message
+            : "打开文件夹后即可检测 Git 仓库。";
+
   return (
-    <div className="rounded-sm border border-border/75 bg-white/16 px-2 py-1.5 dark:bg-black/5">
-      <div className="font-mono text-[11px] text-muted-foreground">{label}</div>
-      <div className="font-mono text-[13px] font-semibold">{value}</div>
+    <div className="git-workspace-notice">
+      <div className="git-workspace-notice-title">{title}</div>
+      <div className="git-workspace-notice-description">{description}</div>
+      <Button size="sm" variant="default" disabled={!hasWorkspace || gitWorkspace.kind === "loading"}>
+        创建 Git 仓库
+      </Button>
     </div>
   );
 }
 
+function getGitWorkspaceDescription(gitWorkspace: GitWorkspaceState, workspacePath: string) {
+  if (gitWorkspace.kind === "loading") {
+    return "正在检测 Git 命令与仓库状态";
+  }
+
+  if (gitWorkspace.kind === "ready") {
+    if (gitWorkspace.inspection.isRepository) {
+      return `${gitWorkspace.inspection.branch ?? "未命名分支"} - ${gitWorkspace.inspection.gitRoot ?? workspacePath}`;
+    }
+
+    return gitWorkspace.inspection.message;
+  }
+
+  if (gitWorkspace.kind === "error") {
+    return gitWorkspace.message;
+  }
+
+  return "请先从左侧打开文件夹";
+}
+
+function RightTaskPanel({
+  badge,
+  children,
+  eyebrow,
+  footer,
+  title,
+  toolbar,
+}: {
+  badge?: ReactNode;
+  children: ReactNode;
+  eyebrow: string;
+  footer?: ReactNode;
+  title: string;
+  toolbar?: ReactNode;
+}) {
+  return (
+    <aside className="right-task-panel">
+      <div className="right-task-panel-header">
+        <div className="min-w-0">
+          <div className="right-task-panel-eyebrow">{eyebrow}</div>
+          <div className="right-task-panel-title">{title}</div>
+        </div>
+        {badge ? <div className="right-task-panel-badge">{badge}</div> : null}
+      </div>
+      {toolbar ? <div className="right-task-panel-toolbar">{toolbar}</div> : null}
+      <ScrollArea className="right-task-panel-content">{children}</ScrollArea>
+      {footer ? <div className="right-task-panel-footer">{footer}</div> : null}
+    </aside>
+  );
+}
+
+function Summary({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="git-summary-tile">
+      <div className="git-summary-label">{label}</div>
+      <div className="git-summary-value">{value}</div>
+    </div>
+  );
+}
+
+function GitChangeSectionView({
+  onSelectChange,
+  section,
+  selectedChangeId,
+}: {
+  onSelectChange: (id: string) => void;
+  section: GitChangeSection;
+  selectedChangeId: string | null;
+}) {
+  return (
+    <section className={cn("git-panel-section", section.tone && `git-panel-section-${section.tone}`)}>
+      <div className="git-panel-section-heading">
+        <div className="git-panel-section-title">
+          <span>{section.title}</span>
+          <Badge tone={getSectionBadgeTone(section)}>{section.count}</Badge>
+        </div>
+        {section.actionLabel ? (
+          <Button size="sm" variant="ghost" disabled={section.items.length === 0}>
+            {section.actionLabel}
+          </Button>
+        ) : null}
+      </div>
+      <div className="git-change-list">
+        {section.items.length > 0 ? (
+          section.items.map((change) => (
+            <GitChangeRow
+              key={change.id}
+              change={change}
+              selected={change.id === selectedChangeId}
+              staged={section.id === "staged"}
+              onSelect={() => onSelectChange(change.id)}
+            />
+          ))
+        ) : (
+          <div className="git-panel-section-empty">{section.emptyLabel}</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function GitChangeRow({
+  change,
+  onSelect,
+  selected,
+  staged,
+}: {
+  change: GitChangeItem;
+  onSelect: () => void;
+  selected: boolean;
+  staged: boolean;
+}) {
+  return (
+    <button
+      className={cn("git-change-row", selected && "git-change-row-selected")}
+      type="button"
+      onClick={onSelect}
+    >
+      <span className={cn("git-change-status", `git-change-status-${change.status}`)}>
+        {getChangeStatusLabel(change.status)}
+      </span>
+      <span className="git-change-main">
+        <span className="git-change-path" title={change.path}>
+          {change.path}
+        </span>
+        <span className="git-change-description">
+          {change.description}
+          {change.previousPath ? `，来自 ${change.previousPath}` : ""}
+        </span>
+      </span>
+      <span className="git-change-diff" aria-label={`新增 ${change.additions} 行，删除 ${change.deletions} 行`}>
+        <span className="git-change-additions">+{change.additions}</span>
+        <span className="git-change-deletions">-{change.deletions}</span>
+      </span>
+      <span className="git-change-action" aria-hidden="true">
+        {staged ? "取消" : "暂存"}
+      </span>
+    </button>
+  );
+}
+
+function GitCommitBox({ disabled }: { disabled: boolean }) {
+  return (
+    <div className="git-commit-box">
+      <Input className="git-commit-summary" placeholder="提交摘要" disabled={disabled} />
+      <Textarea className="git-commit-body" placeholder="提交说明" disabled={disabled} />
+      <div className="git-commit-actions">
+        <span className="git-commit-hint">
+          {disabled ? "请先暂存文件再提交。" : "将提交 2 个已暂存文件。"}
+        </span>
+        <Button size="sm" variant="primary" disabled={disabled}>
+          提交已暂存
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function getSectionBadgeTone(section: GitChangeSection): "default" | "success" | "warning" | "info" | "muted" {
+  if (section.tone === "success") {
+    return "success";
+  }
+
+  if (section.tone === "warning") {
+    return "warning";
+  }
+
+  if (section.tone === "danger") {
+    return "warning";
+  }
+
+  return section.count > 0 ? "info" : "muted";
+}
+
+function getChangeStatusLabel(status: GitChangeStatus) {
+  const labels: Record<GitChangeStatus, string> = {
+    added: "A",
+    conflict: "!",
+    deleted: "D",
+    modified: "M",
+    renamed: "R",
+    untracked: "?",
+  };
+
+  return labels[status];
+}
+
 function StatusBar({
   document,
+  gitWorkspace,
   isDirty,
   onOpenSettings,
   saveState,
 }: {
   document: WorkbenchDocument;
+  gitWorkspace: GitWorkspaceState;
   isDirty: boolean;
   onOpenSettings: () => void;
   saveState: SaveState;
 }) {
   const lineCount = getDocumentLines(document).length;
+  const gitStatusLabel =
+    gitWorkspace.kind === "ready" && gitWorkspace.inspection.isRepository
+      ? (gitWorkspace.inspection.branch ?? "Git 仓库")
+      : gitWorkspace.kind === "loading"
+        ? "检测 Git"
+        : "未打开 Git";
+  const gitChangeLabel =
+    gitWorkspace.kind === "ready" && gitWorkspace.inspection.isRepository
+      ? `${gitRepositoryMock.workingCount} 项变更`
+      : "无变更数据";
   const saveLabel =
     document.mode === "large-readonly"
       ? "Read-only"
@@ -3080,7 +3398,7 @@ function StatusBar({
             : "Saved";
 
   return (
-    <footer className="frosted-surface flex h-6 shrink-0 items-center justify-between border-t border-border px-2">
+    <footer className="status-bar">
       <div className="flex min-w-0 items-center gap-3">
         <span className="status-token truncate">{document.path}</span>
         <span className="status-token">{lineCount} lines</span>
@@ -3093,9 +3411,9 @@ function StatusBar({
       <div className="flex items-center gap-3">
         <span className="status-token">
           <GitPullRequest className="h-3 w-3" />
-          main
+          {gitStatusLabel}
         </span>
-        <span className="status-token">4 modified</span>
+        <span className="status-token">{gitChangeLabel}</span>
         <span className="status-token">
           <Terminal className="h-3 w-3" />
           Tauri 2
@@ -3108,34 +3426,246 @@ function StatusBar({
   );
 }
 
-function SettingsDialog({ onOpenChange, open }: { onOpenChange: (open: boolean) => void; open: boolean }) {
+type SettingsTabId = "general" | "permissions" | "git" | "appearance" | "shortcuts" | "advanced";
+
+const settingsGroups: Array<{
+  title: string;
+  items: Array<{ id: SettingsTabId; icon: typeof Settings; label: string }>;
+}> = [
+  {
+    title: "基础",
+    items: [
+      { id: "general", icon: Gauge, label: "通用设置" },
+      { id: "appearance", icon: Palette, label: "外观设置" },
+      { id: "shortcuts", icon: Keyboard, label: "快捷键" },
+    ],
+  },
+  {
+    title: "安全",
+    items: [
+      { id: "permissions", icon: ShieldCheck, label: "权限设置" },
+      { id: "git", icon: GitBranch, label: "Git 设置" },
+    ],
+  },
+  {
+    title: "其他",
+    items: [{ id: "advanced", icon: MonitorCog, label: "高级选项" }],
+  },
+];
+
+function SettingsPage({
+  gitWorkspace,
+  onBack,
+  showMacTitlebar,
+}: {
+  gitWorkspace: GitWorkspaceState;
+  onBack: () => void;
+  showMacTitlebar: boolean;
+}) {
+  const [activeTab, setActiveTab] = useState<SettingsTabId>("general");
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>设置 mock</DialogTitle>
-          <DialogDescription>
-            这里先固定技术栈与 UI 约束，后续再接入真实配置读写。
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-2 text-[12px]">
-          <label className="grid gap-1">
-            <span className="text-muted-foreground">Keymap</span>
-            <Input value="JetBrains compatible" readOnly />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-muted-foreground">Editor</span>
-            <Input value="CodeMirror 6" readOnly />
-          </label>
-          <label className="grid gap-1">
-            <span className="text-muted-foreground">Workspace Rail</span>
-            <Input value="Light edge rail" readOnly />
-          </label>
-        </div>
-        <DialogFooter>
-          <Button variant="primary">完成</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <div className={cn("settings-page", showMacTitlebar && "settings-page-mac")}>
+      <div className="settings-drag-region" data-tauri-drag-region />
+      <div className="settings-shell">
+        <aside className="settings-sidebar">
+          <button className="settings-back-button" type="button" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4" />
+            回到软件
+          </button>
+          <div className="settings-search">
+            <Search className="h-4 w-4" />
+            <span>搜索设置...</span>
+          </div>
+          <nav className="settings-nav" aria-label="设置分类">
+            {settingsGroups.map((group) => (
+              <div className="settings-nav-group" key={group.title}>
+                <div className="settings-nav-heading">{group.title}</div>
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+
+                  return (
+                    <button
+                      className={cn("settings-nav-item", activeTab === item.id && "settings-nav-item-active")}
+                      key={item.id}
+                      type="button"
+                      onClick={() => setActiveTab(item.id)}
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </nav>
+        </aside>
+        <main className="settings-main">
+          <SettingsContent activeTab={activeTab} gitWorkspace={gitWorkspace} />
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function SettingsContent({
+  activeTab,
+  gitWorkspace,
+}: {
+  activeTab: SettingsTabId;
+  gitWorkspace: GitWorkspaceState;
+}) {
+  const gitInspection = gitWorkspace.kind === "ready" ? gitWorkspace.inspection : null;
+  const gitCommandLabel =
+    gitWorkspace.kind === "loading"
+      ? "检测中"
+      : gitInspection?.gitAvailable
+        ? (gitInspection.gitVersion ?? "可用")
+        : gitWorkspace.kind === "ready"
+          ? "不可用"
+          : "尚未检测";
+  const repositoryLabel =
+    gitWorkspace.kind === "loading"
+      ? "检测中"
+      : gitInspection?.isRepository
+        ? "已检测到 Git 仓库"
+        : gitInspection
+          ? "当前文件夹不是 Git 仓库"
+          : "请先从左侧打开文件夹";
+  const gitRootLabel = gitInspection?.gitRoot ?? "无";
+  const dotGitLabel = gitInspection ? (gitInspection.hasDotGit ? "当前文件夹存在 .git" : "当前文件夹没有 .git") : "尚未检测";
+  const branchLabel = gitInspection?.branch ?? "无";
+  const messageLabel =
+    gitWorkspace.kind === "error"
+      ? gitWorkspace.message
+      : gitInspection?.message ?? "打开文件夹后会自动检测 Git 状态。";
+
+  if (activeTab === "permissions") {
+    return (
+      <SettingsPanel title="权限设置" description="管理 Norn 对文件、命令和系统能力的访问方式。">
+        <SettingsList>
+          <SettingsListRow title="默认工作区权限" description="允许读取和编辑当前打开工作区内的文件。" enabled />
+          <SettingsListRow title="Git 命令权限" description="允许在当前工作区内读取 Git 状态和分支信息。" enabled />
+          <SettingsListRow title="跨目录写入" description="需要单独确认后才允许写入工作区外的路径。" />
+        </SettingsList>
+      </SettingsPanel>
+    );
+  }
+
+  if (activeTab === "git") {
+    return (
+      <SettingsPanel title="Git 设置" description="Git 检测以左侧当前打开的文件夹为准。">
+        <SettingsList>
+          <SettingsInfoRow title="Git 命令" value={gitCommandLabel} />
+          <SettingsInfoRow title="仓库状态" value={repositoryLabel} />
+          <SettingsInfoRow title=".git 检测" value={dotGitLabel} />
+          <SettingsInfoRow title="Git 根目录" value={gitRootLabel} />
+          <SettingsInfoRow title="当前分支" value={branchLabel} />
+        </SettingsList>
+        <div className="settings-note">{messageLabel}</div>
+      </SettingsPanel>
+    );
+  }
+
+  if (activeTab === "appearance") {
+    return (
+      <SettingsPanel title="外观设置" description="控制界面密度、主题和左右面板的显示方式。">
+        <SettingsList>
+          <SettingsInfoRow title="界面密度" value="紧凑" />
+          <SettingsInfoRow title="主题" value="跟随系统" />
+          <SettingsListRow title="轻量化面板" description="减少阴影和装饰，让编辑区域保持优先。" enabled />
+        </SettingsList>
+      </SettingsPanel>
+    );
+  }
+
+  if (activeTab === "shortcuts") {
+    return (
+      <SettingsPanel title="快捷键" description="当前采用接近 JetBrains 的默认快捷键方案。">
+        <SettingsList>
+          <SettingsInfoRow title="保存文件" value="Cmd / Ctrl + S" />
+          <SettingsInfoRow title="另存为" value="Cmd / Ctrl + Shift + S" />
+          <SettingsInfoRow title="打开搜索" value="Cmd / Ctrl + F" />
+        </SettingsList>
+      </SettingsPanel>
+    );
+  }
+
+  if (activeTab === "advanced") {
+    return (
+      <SettingsPanel title="高级选项" description="这里预留后续工作区、缓存和诊断配置。">
+        <SettingsList>
+          <SettingsInfoRow title="配置存储" value="本地 JSON，待接入" />
+          <SettingsInfoRow title="诊断日志" value="待接入" />
+          <SettingsInfoRow title="最近项目" value="浏览器本地存储" />
+        </SettingsList>
+      </SettingsPanel>
+    );
+  }
+
+  return (
+    <SettingsPanel title="通用设置" description="调整 Norn 的基础行为和默认工作方式。">
+      <div className="settings-choice-grid">
+        <button className="settings-choice settings-choice-active" type="button">
+          <Terminal className="h-4 w-4" />
+          <span>
+            <strong>代码工作</strong>
+            <small>显示更完整的技术细节和控制项</small>
+          </span>
+        </button>
+        <button className="settings-choice" type="button">
+          <MonitorCog className="h-4 w-4" />
+          <span>
+            <strong>日常轻量</strong>
+            <small>减少次要信息，保持界面安静</small>
+          </span>
+        </button>
+      </div>
+      <SettingsList>
+        <SettingsInfoRow title="快捷键方案" value="JetBrains 兼容" />
+        <SettingsInfoRow title="编辑器内核" value="CodeMirror 6" />
+        <SettingsListRow title="启动后恢复上次工作区" description="下次打开时自动恢复最近使用的文件夹。" />
+        <SettingsListRow title="显示底部状态栏" description="展示当前文件、编码和 Git 状态。" enabled />
+      </SettingsList>
+    </SettingsPanel>
+  );
+}
+
+function SettingsPanel({ children, description, title }: { children: ReactNode; description: string; title: string }) {
+  return (
+    <div className="settings-panel">
+      <div className="settings-panel-header">
+        <h1>{title}</h1>
+        <p>{description}</p>
+      </div>
+      <div className="settings-panel-body">{children}</div>
+    </div>
+  );
+}
+
+function SettingsList({ children }: { children: ReactNode }) {
+  return <div className="settings-list">{children}</div>;
+}
+
+function SettingsInfoRow({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="settings-row">
+      <div className="settings-row-copy">
+        <div className="settings-row-title">{title}</div>
+      </div>
+      <div className="settings-row-value">{value}</div>
+    </div>
+  );
+}
+
+function SettingsListRow({ description, enabled = false, title }: { description: string; enabled?: boolean; title: string }) {
+  return (
+    <div className="settings-row">
+      <div className="settings-row-copy">
+        <div className="settings-row-title">{title}</div>
+        <div className="settings-row-description">{description}</div>
+      </div>
+      <span className={cn("settings-toggle", enabled && "settings-toggle-on")} aria-hidden="true" />
+    </div>
   );
 }

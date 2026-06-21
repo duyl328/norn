@@ -9,6 +9,7 @@ use std::{
     fs::{self, File},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -121,9 +122,124 @@ enum DirectoryEntryKind {
     Directory,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GitWorkspaceInspection {
+    workspace_path: String,
+    git_available: bool,
+    git_version: Option<String>,
+    is_repository: bool,
+    git_root: Option<String>,
+    has_dot_git: bool,
+    branch: Option<String>,
+    message: String,
+}
+
 #[tauri::command]
 fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
+}
+
+#[tauri::command]
+fn inspect_git_workspace(path: String) -> Result<GitWorkspaceInspection, String> {
+    let workspace = PathBuf::from(path);
+    let metadata = fs::metadata(&workspace)
+        .map_err(|error| format_file_error("Unable to read workspace metadata", &workspace, error))?;
+
+    if !metadata.is_dir() {
+        return Err(format!("{} is not a directory", workspace.display()));
+    }
+
+    let git_version_output = Command::new("git").arg("--version").output();
+    let git_version_output = match git_version_output {
+        Ok(output) => output,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(GitWorkspaceInspection {
+                workspace_path: workspace.to_string_lossy().into_owned(),
+                git_available: false,
+                git_version: None,
+                is_repository: false,
+                git_root: None,
+                has_dot_git: workspace.join(".git").exists(),
+                branch: None,
+                message: "未检测到 Git 命令，请先安装 Git。".to_string(),
+            });
+        }
+        Err(error) => {
+            return Err(format_file_error("Unable to check git version", &workspace, error));
+        }
+    };
+
+    let git_version = String::from_utf8_lossy(&git_version_output.stdout)
+        .trim()
+        .to_string();
+    let git_version = (!git_version.is_empty()).then_some(git_version);
+
+    if !git_version_output.status.success() {
+        return Ok(GitWorkspaceInspection {
+            workspace_path: workspace.to_string_lossy().into_owned(),
+            git_available: false,
+            git_version,
+            is_repository: false,
+            git_root: None,
+            has_dot_git: workspace.join(".git").exists(),
+            branch: None,
+            message: "Git 命令不可用，请检查安装状态。".to_string(),
+        });
+    }
+
+    let git_root_output = Command::new("git")
+        .args(["-C"])
+        .arg(&workspace)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .map_err(|error| format_file_error("Unable to inspect git repository", &workspace, error))?;
+
+    let has_dot_git = workspace.join(".git").exists();
+
+    if !git_root_output.status.success() {
+        return Ok(GitWorkspaceInspection {
+            workspace_path: workspace.to_string_lossy().into_owned(),
+            git_available: true,
+            git_version,
+            is_repository: false,
+            git_root: None,
+            has_dot_git,
+            branch: None,
+            message: "当前文件夹不是 Git 仓库，可创建仓库后再查看变更。".to_string(),
+        });
+    }
+
+    let git_root = String::from_utf8_lossy(&git_root_output.stdout)
+        .trim()
+        .to_string();
+    let git_root = if git_root.is_empty() {
+        None
+    } else {
+        Some(git_root)
+    };
+
+    let branch_output = Command::new("git")
+        .args(["-C"])
+        .arg(&workspace)
+        .args(["branch", "--show-current"])
+        .output()
+        .map_err(|error| format_file_error("Unable to inspect git branch", &workspace, error))?;
+    let branch = String::from_utf8_lossy(&branch_output.stdout)
+        .trim()
+        .to_string();
+    let branch = branch_output.status.success().then_some(branch).filter(|value| !value.is_empty());
+
+    Ok(GitWorkspaceInspection {
+        workspace_path: workspace.to_string_lossy().into_owned(),
+        git_available: true,
+        git_version,
+        is_repository: true,
+        git_root,
+        has_dot_git,
+        branch,
+        message: "已检测到 Git 仓库。".to_string(),
+    })
 }
 
 #[tauri::command]
@@ -845,6 +961,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_version,
+            inspect_git_workspace,
             open_file_dialog,
             open_folder_dialog,
             open_save_dialog,
