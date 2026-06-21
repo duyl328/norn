@@ -429,6 +429,7 @@
   .workbench-layout {
     position: relative;
     --workbench-main-corner-radius: 0px;
+    --workspace-panel-border: 0.5px solid hsl(var(--border) / 0.72);
     --workbench-main-top-padding: var(--mac-titlebar-content-offset, 0px);
     grid-template-rows: minmax(0, 1fr);
     transition: grid-template-columns 520ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -491,7 +492,7 @@
   }
 
   .workbench-right-panel {
-    grid-column: 4;
+    grid-column: 5;
     grid-row: 1;
   }
 
@@ -502,27 +503,25 @@
   .workbench-panel-resize-handle {
     position: relative;
     align-self: stretch;
-    z-index: 20;
-    min-width: 1px;
+    z-index: 80;
+    min-width: 12px;
     cursor: col-resize;
     background: transparent;
     opacity: 1;
-    transition: opacity 140ms ease;
+    transition:
+      background-color 140ms ease,
+      opacity 140ms ease;
     touch-action: none;
   }
 
   .workbench-panel-resize-handle-left {
-    position: absolute;
-    left: var(--workbench-left-panel-width, 0px);
-    top: var(--workbench-main-top-padding);
-    bottom: 0;
-    align-self: end;
-    width: 1px;
-    height: auto;
+    grid-column: 2;
+    grid-row: 1;
+    transform: translateX(3px);
   }
 
   .workbench-panel-resize-handle-right {
-    grid-column: 3;
+    grid-column: 4;
     grid-row: 1;
   }
 
@@ -530,42 +529,39 @@
     content: "";
     position: absolute;
     inset-block: 0;
-    width: 10px;
+    inset-inline: 0;
   }
 
   .workbench-panel-resize-handle::after {
     content: "";
     position: absolute;
     inset-block: 0;
-    left: 0;
+    left: calc(50% - 0.5px);
     width: 1px;
-    background: hsl(var(--border) / 0.5);
+    background: transparent;
     pointer-events: none;
     transition: background-color 140ms ease;
-  }
-
-  .workbench-panel-resize-handle-left::after {
-    content: none;
-  }
-
-  .workbench-panel-resize-handle-left::before {
-    left: -5px;
-  }
-
-  .workbench-panel-resize-handle-right::before {
-    right: -5px;
   }
 
   .workbench-panel-resize-handle:hover,
   .workbench-panel-resize-handle:focus-visible,
   .workbench-layout-resizing .workbench-panel-resize-handle {
+    background: transparent;
     outline: none;
+  }
+
+  .workbench-layout-resize-hints-visible .workbench-panel-resize-handle {
+    background: hsl(var(--primary) / 0.14);
   }
 
   .workbench-panel-resize-handle:hover::after,
   .workbench-panel-resize-handle:focus-visible::after,
   .workbench-layout-resizing .workbench-panel-resize-handle::after {
-    background: hsl(var(--primary) / 0.58);
+    background: transparent;
+  }
+
+  .workbench-layout-resize-hints-visible .workbench-panel-resize-handle::after {
+    background: hsl(var(--primary) / 0.72);
   }
 
   .workbench-panel-resize-handle-hidden {
@@ -586,13 +582,13 @@
   }
 
   .editor-surface-panel {
-    grid-column: 2;
+    grid-column: 3;
     grid-row: 1;
     position: relative;
     height: 100%;
-    border-left: 1px solid hsl(var(--border));
-    border-right: 1px solid hsl(var(--border));
-    border-top: 1px solid hsl(var(--border));
+    border-left: var(--workspace-panel-border);
+    border-right: var(--workspace-panel-border);
+    border-top: var(--workspace-panel-border);
     border-top-left-radius: var(--workbench-main-corner-radius);
     background-clip: padding-box;
     transition: border-top-left-radius 520ms cubic-bezier(0.16, 1, 0.3, 1);
@@ -1021,6 +1017,7 @@
     .workbench-layout,
     .workbench-side-panel,
     .editor-surface-panel,
+    .settings-shell,
     .workbench-panel-separator,
     .workspace-view,
     .settings-page,
@@ -1198,7 +1195,8 @@
   }
 
   .right-task-panel {
-    @apply flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden border-l border-border bg-card text-card-foreground;
+    @apply flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-card text-card-foreground;
+    border-left: 0.5px solid hsl(var(--border) / 0.72);
   }
 
   .right-task-panel-header {
@@ -1415,14 +1413,16 @@
     @apply relative h-full min-h-0 overflow-hidden text-foreground;
     --settings-drag-height: 42px;
     --settings-main-corner-radius: 18px;
-    --settings-sidebar-top-padding: 52px;
+    --settings-panel-border: 0.5px solid hsl(var(--border) / 0.72);
+    --settings-sidebar-width: 280px;
+    --settings-sidebar-top-padding: 42px;
     --settings-main-top-padding: 58px;
     background: #fbfbfa;
   }
 
   .settings-page-mac {
     --settings-drag-height: 50px;
-    --settings-sidebar-top-padding: 58px;
+    --settings-sidebar-top-padding: 48px;
     --settings-main-top-padding: 64px;
   }
 
@@ -1433,18 +1433,50 @@
   }
 
   .settings-shell {
-    @apply grid h-full min-h-0 grid-cols-[280px_minmax(0,1fr)] overflow-hidden;
+    @apply grid h-full min-h-0 overflow-hidden;
+    grid-template-columns: var(--settings-sidebar-width) 12px minmax(0, 1fr);
     background: transparent;
+    transition: grid-template-columns 520ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .settings-shell-resizing {
+    cursor: col-resize;
+    transition: none;
   }
 
   .settings-sidebar {
     @apply flex min-h-0 min-w-0 flex-col px-3 pb-4;
+    grid-column: 1;
     background: transparent;
     padding-top: var(--settings-sidebar-top-padding);
   }
 
+  .settings-resize-handle {
+    position: relative;
+    z-index: 20;
+    grid-column: 2;
+    min-width: 12px;
+    cursor: col-resize;
+    background: transparent;
+    touch-action: none;
+  }
+
+  .settings-resize-handle::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: calc(50% - 0.5px);
+    width: 1px;
+    background: transparent;
+    pointer-events: none;
+  }
+
+  .settings-resize-handle:focus-visible {
+    @apply outline-none;
+  }
+
   .settings-back-button {
-    @apply mb-4 flex h-8 w-fit items-center gap-2 rounded-[5px] border-0 bg-transparent px-2 text-[13px] font-medium text-muted-foreground transition-colors;
+    @apply mb-4 flex h-8 w-full items-center gap-2 rounded-[6px] border-0 bg-transparent px-2 text-left text-[13px] font-medium text-muted-foreground transition-colors;
   }
 
   .settings-back-button:hover,
@@ -1485,7 +1517,10 @@
   }
 
   .settings-main {
-    @apply min-h-0 min-w-0 overflow-y-auto border-l border-t border-border;
+    @apply min-h-0 min-w-0 overflow-y-auto;
+    grid-column: 3;
+    border-left: var(--settings-panel-border);
+    border-top: var(--settings-panel-border);
     border-top-left-radius: var(--settings-main-corner-radius);
     background: #ffffff;
     padding: var(--settings-main-top-padding) clamp(36px, 7vw, 120px) 72px;
@@ -1551,6 +1586,15 @@
 
   .settings-row:last-child {
     @apply border-b-0;
+  }
+
+  .settings-row-button {
+    @apply w-full bg-transparent text-left transition-colors;
+  }
+
+  .settings-row-button:hover,
+  .settings-row-button:focus-visible {
+    @apply bg-muted/35 outline-none;
   }
 
   .settings-row-copy {

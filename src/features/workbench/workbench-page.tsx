@@ -266,6 +266,9 @@ const leftPanelDefaultWidth = 260;
 const rightPanelMinWidth = 300;
 const rightPanelMaxWidth = 520;
 const rightPanelDefaultWidth = 360;
+const settingsSidebarMinWidth = 240;
+const settingsSidebarMaxWidth = 360;
+const settingsSidebarDefaultWidth = 280;
 
 const emptyEditorScrollMetrics: EditorScrollMetrics = {
   clientHeight: 0,
@@ -646,6 +649,7 @@ const recentProjects = [
 ] as const;
 
 const recentFoldersStorageKey = "norn.recentFolders";
+const resizeHandleHintsStorageKey = "norn.resizeHandleHints";
 const maxRecentFolders = 8;
 
 const loadRecentFolders = (): RecentFolder[] => {
@@ -672,6 +676,18 @@ const loadRecentFolders = (): RecentFolder[] => {
 
 const saveRecentFolders = (folders: RecentFolder[]) => {
   window.localStorage.setItem(recentFoldersStorageKey, JSON.stringify(folders.slice(0, maxRecentFolders)));
+};
+
+const loadResizeHandleHints = () => {
+  try {
+    return window.localStorage.getItem(resizeHandleHintsStorageKey) === "true";
+  } catch {
+    return false;
+  }
+};
+
+const saveResizeHandleHints = (visible: boolean) => {
+  window.localStorage.setItem(resizeHandleHintsStorageKey, String(visible));
 };
 
 const getProjectInitials = (name: string) => {
@@ -725,6 +741,7 @@ export function WorkbenchPage() {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelWidth, setRightPanelWidth] = useState(rightPanelDefaultWidth);
   const [resizingPanel, setResizingPanel] = useState<"left" | "right" | null>(null);
+  const [resizeHandleHintsVisible, setResizeHandleHintsVisible] = useState(() => loadResizeHandleHints());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [folderView, setFolderView] = useState<FolderView | null>(null);
@@ -737,6 +754,11 @@ export function WorkbenchPage() {
   const showWindowsTitlebar = useMemo(() => navigator.userAgent.includes("Windows") && isTauriRuntime(), []);
   const showMacTitlebar = useMemo(() => navigator.userAgent.includes("Mac") && isTauriRuntime(), []);
   const isDirty = document.content !== document.savedContent;
+
+  const updateResizeHandleHintsVisible = (visible: boolean) => {
+    setResizeHandleHintsVisible(visible);
+    saveResizeHandleHints(visible);
+  };
 
   const createFile = () => {
     setFileError(null);
@@ -1386,6 +1408,8 @@ export function WorkbenchPage() {
           <SettingsPage
             gitWorkspace={gitWorkspace}
             onBack={() => setSettingsOpen(false)}
+            onToggleResizeHandleHints={() => updateResizeHandleHintsVisible(!resizeHandleHintsVisible)}
+            resizeHandleHintsVisible={resizeHandleHintsVisible}
             showMacTitlebar={showMacTitlebar}
           />
         ) : (
@@ -1422,12 +1446,14 @@ export function WorkbenchPage() {
               "workbench-layout grid h-full min-h-0 flex-1 bg-transparent",
               leftPanelOpen && "workbench-layout-left-open",
               rightPanelOpen && "workbench-layout-right-open",
+              resizeHandleHintsVisible && "workbench-layout-resize-hints-visible",
               resizingPanel && "workbench-layout-resizing",
             )}
             style={{
               "--workbench-left-panel-width": leftPanelOpen ? `${leftPanelWidth}px` : "0px",
-              gridTemplateColumns: `${leftPanelOpen ? `${leftPanelWidth}px` : "0px"} minmax(0,1fr) ${
-                rightPanelOpen ? "1px" : "0px"
+              "--workbench-right-panel-width": rightPanelOpen ? `${rightPanelWidth}px` : "0px",
+              gridTemplateColumns: `${leftPanelOpen ? `${leftPanelWidth}px` : "0px"} ${leftPanelOpen ? "12px" : "0px"} minmax(0,1fr) ${
+                rightPanelOpen ? "12px" : "0px"
               } ${rightPanelOpen ? `${rightPanelWidth}px` : "0px"}`,
             } as CSSProperties}
           >
@@ -1447,6 +1473,19 @@ export function WorkbenchPage() {
                 onToggleDirectory={toggleDirectory}
               />
             </div>
+            <EditorSurface
+              document={document}
+              error={fileError}
+              isDirty={isDirty}
+              onChange={updateDocumentContent}
+              onCreateFile={createFile}
+            />
+            <div
+              className={cn("workbench-side-panel workbench-right-panel", !rightPanelOpen && "workbench-side-panel-closed")}
+              aria-hidden={!rightPanelOpen}
+            >
+              <GitPanel folderView={folderView} gitWorkspace={gitWorkspace} />
+            </div>
             <PanelResizeHandle
               max={leftPanelMaxWidth}
               min={leftPanelMinWidth}
@@ -1455,13 +1494,6 @@ export function WorkbenchPage() {
               open={leftPanelOpen}
               side="left"
               value={leftPanelWidth}
-            />
-            <EditorSurface
-              document={document}
-              error={fileError}
-              isDirty={isDirty}
-              onChange={updateDocumentContent}
-              onCreateFile={createFile}
             />
             <PanelResizeHandle
               max={rightPanelMaxWidth}
@@ -1472,12 +1504,6 @@ export function WorkbenchPage() {
               side="right"
               value={rightPanelWidth}
             />
-            <div
-              className={cn("workbench-side-panel workbench-right-panel", !rightPanelOpen && "workbench-side-panel-closed")}
-              aria-hidden={!rightPanelOpen}
-            >
-              <GitPanel folderView={folderView} gitWorkspace={gitWorkspace} />
-            </div>
           </main>
           <StatusBar
             document={document}
@@ -3456,18 +3482,88 @@ const settingsGroups: Array<{
 function SettingsPage({
   gitWorkspace,
   onBack,
+  onToggleResizeHandleHints,
+  resizeHandleHintsVisible,
   showMacTitlebar,
 }: {
   gitWorkspace: GitWorkspaceState;
   onBack: () => void;
+  onToggleResizeHandleHints: () => void;
+  resizeHandleHintsVisible: boolean;
   showMacTitlebar: boolean;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>("general");
+  const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(settingsSidebarDefaultWidth);
+  const [settingsResizing, setSettingsResizing] = useState(false);
+
+  const resizeSettingsSidebarWithKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const keyDeltas: Record<string, number> = {
+      ArrowLeft: -16,
+      ArrowRight: 16,
+    };
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      setSettingsSidebarWidth(settingsSidebarMinWidth);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      setSettingsSidebarWidth(settingsSidebarMaxWidth);
+      return;
+    }
+
+    const delta = keyDeltas[event.key];
+
+    if (!delta) {
+      return;
+    }
+
+    event.preventDefault();
+    setSettingsSidebarWidth((width) => clamp(width + delta, settingsSidebarMinWidth, settingsSidebarMaxWidth));
+  };
+
+  const startSettingsSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const pointerStart = event.clientX;
+    const widthStart = settingsSidebarWidth;
+
+    event.preventDefault();
+    setSettingsResizing(true);
+
+    const previousCursor = globalThis.document.body.style.cursor;
+    const previousUserSelect = globalThis.document.body.style.userSelect;
+    globalThis.document.body.style.cursor = "col-resize";
+    globalThis.document.body.style.userSelect = "none";
+
+    const handlePointerMove = (pointerEvent: globalThis.PointerEvent) => {
+      const delta = pointerEvent.clientX - pointerStart;
+      setSettingsSidebarWidth(clamp(widthStart + delta, settingsSidebarMinWidth, settingsSidebarMaxWidth));
+    };
+
+    const handlePointerUp = () => {
+      setSettingsResizing(false);
+      globalThis.document.body.style.cursor = previousCursor;
+      globalThis.document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
 
   return (
     <div className={cn("settings-page", showMacTitlebar && "settings-page-mac")}>
       <div className="settings-drag-region" data-tauri-drag-region />
-      <div className="settings-shell">
+      <div
+        className={cn("settings-shell", settingsResizing && "settings-shell-resizing")}
+        style={
+          {
+            "--settings-sidebar-width": `${settingsSidebarWidth}px`,
+          } as CSSProperties
+        }
+      >
         <aside className="settings-sidebar">
           <button className="settings-back-button" type="button" onClick={onBack}>
             <ArrowLeft className="h-4 w-4" />
@@ -3500,8 +3596,25 @@ function SettingsPage({
             ))}
           </nav>
         </aside>
+        <div
+          aria-label="调整设置侧栏宽度"
+          aria-orientation="vertical"
+          aria-valuemax={settingsSidebarMaxWidth}
+          aria-valuemin={settingsSidebarMinWidth}
+          aria-valuenow={settingsSidebarWidth}
+          className="settings-resize-handle"
+          onKeyDown={resizeSettingsSidebarWithKeyboard}
+          onPointerDown={startSettingsSidebarResize}
+          role="separator"
+          tabIndex={0}
+        />
         <main className="settings-main">
-          <SettingsContent activeTab={activeTab} gitWorkspace={gitWorkspace} />
+          <SettingsContent
+            activeTab={activeTab}
+            gitWorkspace={gitWorkspace}
+            onToggleResizeHandleHints={onToggleResizeHandleHints}
+            resizeHandleHintsVisible={resizeHandleHintsVisible}
+          />
         </main>
       </div>
     </div>
@@ -3511,9 +3624,13 @@ function SettingsPage({
 function SettingsContent({
   activeTab,
   gitWorkspace,
+  onToggleResizeHandleHints,
+  resizeHandleHintsVisible,
 }: {
   activeTab: SettingsTabId;
   gitWorkspace: GitWorkspaceState;
+  onToggleResizeHandleHints: () => void;
+  resizeHandleHintsVisible: boolean;
 }) {
   const gitInspection = gitWorkspace.kind === "ready" ? gitWorkspace.inspection : null;
   const gitCommandLabel =
@@ -3574,6 +3691,12 @@ function SettingsContent({
           <SettingsInfoRow title="界面密度" value="紧凑" />
           <SettingsInfoRow title="主题" value="跟随系统" />
           <SettingsListRow title="轻量化面板" description="减少阴影和装饰，让编辑区域保持优先。" enabled />
+          <SettingsListRow
+            title="显示面板调节提示"
+            description="常驻显示左右面板之间的淡色拖拽区域。关闭后仍可拖动，鼠标移入时显示反馈。"
+            enabled={resizeHandleHintsVisible}
+            onClick={onToggleResizeHandleHints}
+          />
         </SettingsList>
       </SettingsPanel>
     );
@@ -3658,14 +3781,38 @@ function SettingsInfoRow({ title, value }: { title: string; value: string }) {
   );
 }
 
-function SettingsListRow({ description, enabled = false, title }: { description: string; enabled?: boolean; title: string }) {
-  return (
-    <div className="settings-row">
+function SettingsListRow({
+  description,
+  enabled = false,
+  onClick,
+  title,
+}: {
+  description: string;
+  enabled?: boolean;
+  onClick?: () => void;
+  title: string;
+}) {
+  const content = (
+    <>
       <div className="settings-row-copy">
         <div className="settings-row-title">{title}</div>
         <div className="settings-row-description">{description}</div>
       </div>
       <span className={cn("settings-toggle", enabled && "settings-toggle-on")} aria-hidden="true" />
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button className="settings-row settings-row-button" type="button" onClick={onClick}>
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className="settings-row">
+      {content}
     </div>
   );
 }
