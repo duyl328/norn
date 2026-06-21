@@ -893,13 +893,42 @@
   }
 
   .editor-file-tabs {
-    @apply relative flex h-8 min-w-0 items-end overflow-hidden text-muted-foreground;
+    @apply relative flex h-9 min-w-0 items-end overflow-hidden text-muted-foreground;
     background: hsl(var(--editor-background));
   }
 
+  .editor-file-tabs::before,
+  .editor-file-tabs::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    z-index: 30000;
+    width: 22px;
+    height: 100%;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .editor-file-tabs::before {
+    left: 0;
+    background: linear-gradient(90deg, hsl(var(--editor-background)) 0%, hsl(var(--editor-background) / 0) 100%);
+  }
+
+  .editor-file-tabs::after {
+    right: 32px;
+    background: linear-gradient(270deg, hsl(var(--editor-background)) 0%, hsl(var(--editor-background) / 0) 100%);
+  }
+
+  .editor-file-tabs-has-left::before,
+  .editor-file-tabs-has-right::after {
+    opacity: 1;
+  }
+
   .editor-file-tabs-scroll {
+    --tab-left-stack-step: 22px;
+    --tab-stack-step: 14px;
     @apply flex min-w-0 flex-1 items-end overflow-x-auto overflow-y-hidden;
-    scroll-behavior: smooth;
     scrollbar-width: none;
   }
 
@@ -908,30 +937,113 @@
   }
 
   .editor-file-tab {
-    @apply inline-flex h-7 max-w-[220px] shrink-0 items-center gap-2 rounded-t-[0.45rem] border-0 bg-transparent px-2.5 text-[12px] font-medium text-muted-foreground shadow-none transition-colors;
+    @apply inline-flex h-8 max-w-[220px] shrink-0 items-center gap-2 rounded-t-[0.45rem] border px-2.5 text-[12px] font-medium text-muted-foreground shadow-none;
+    position: sticky;
+    min-width: 92px;
+    background: hsl(var(--editor-background));
+    border-color: hsl(var(--editor-background));
+    transform-origin: center bottom;
+    transition:
+      background-color 150ms ease,
+      border-color 150ms ease,
+      box-shadow 220ms cubic-bezier(0.2, 0.84, 0.22, 1),
+      color 150ms ease,
+      filter 220ms cubic-bezier(0.2, 0.84, 0.22, 1);
+    -webkit-mask-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      transparent var(--hide-left, 0%),
+      #000 var(--hide-left, 0%),
+      #000 calc(100% - var(--hide-right, 0%)),
+      transparent calc(100% - var(--hide-right, 0%)),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      transparent var(--hide-left, 0%),
+      #000 var(--hide-left, 0%),
+      #000 calc(100% - var(--hide-right, 0%)),
+      transparent calc(100% - var(--hide-right, 0%)),
+      transparent 100%
+    );
   }
 
   .editor-file-tab:first-child {
     border-top-left-radius: 0;
   }
 
-  .editor-file-tab-dot {
-    @apply h-2 w-2 shrink-0 rounded-full;
+  .editor-file-tab-left-sticky {
+    left: var(--sticky-left, 0px);
+    right: auto;
+  }
+
+  .editor-file-tab-right-sticky {
+    left: auto;
+    right: var(--sticky-right, 0px);
+  }
+
+  .editor-file-tab-trailing {
+    display: inline-flex;
+    width: 30px;
+    min-width: 30px;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    transition:
+      opacity 240ms ease,
+      transform 240ms cubic-bezier(0.2, 0.84, 0.22, 1);
+  }
+
+  .editor-file-tab-trailing-hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(2px) scale(0.92);
+  }
+
+  .editor-file-tab:hover .editor-file-tab-trailing-hidden {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  .editor-file-tab-dirty {
+    display: inline-grid;
+    width: 8px;
+    place-items: center;
+    color: hsl(var(--muted-foreground));
   }
 
   .editor-file-tab:hover {
-    background: hsl(var(--muted) / 0.42);
+    background: hsl(var(--muted));
+    border-color: hsl(var(--border) / 0.54);
     color: hsl(var(--foreground));
+  }
+
+  .editor-file-tab-left-stacked,
+  .editor-file-tab-right-stacked {
+    border-top-color: var(--editor-tab-border-accent, hsl(var(--border)));
+    border-bottom-color: transparent;
+    border-left-width: 2px;
+    border-right-width: 2px;
+    border-left-color: var(--editor-tab-border-accent, hsl(var(--border)));
+    border-right-color: var(--editor-tab-border-accent, hsl(var(--border)));
+    box-shadow: 0 1px 3px hsl(var(--foreground) / 0.12);
+    transform: scaleY(var(--tab-stack-scale, 1));
+    transform-origin: center bottom;
   }
 
   .editor-file-tab-active {
     background: hsl(var(--background));
+    border-top-color: hsl(var(--border) / 0.62);
+    border-bottom-color: hsl(var(--border) / 0.62);
     color: hsl(var(--foreground));
     box-shadow:
-      inset 0 2px 0 hsl(var(--primary) / 0.82),
-      inset 1px 0 0 hsl(var(--border) / 0.42),
-      inset -1px 0 0 hsl(var(--border) / 0.42),
-      0 -1px 0 hsl(var(--border) / 0.28);
+      inset 0 2px 0 var(--editor-tab-border-accent, hsl(var(--primary) / 0.82)),
+      inset 1px 0 0 var(--editor-tab-border-accent, hsl(var(--border) / 0.6)),
+      inset -1px 0 0 var(--editor-tab-border-accent, hsl(var(--border) / 0.6)),
+      0 -1px 0 hsl(var(--border) / 0.28),
+      0 5px 12px hsl(var(--foreground) / 0.07);
   }
 
   .editor-file-tab-input {
@@ -939,20 +1051,59 @@
   }
 
   .editor-file-tab-close {
-    @apply -mr-1 grid h-4 w-4 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors;
+    @apply grid h-5 w-5 shrink-0 place-items-center rounded-[0.25rem] text-muted-foreground;
+    animation: editor-tab-control-in 260ms cubic-bezier(0.2, 0.84, 0.22, 1) both;
+    opacity: 0.62;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease,
+      opacity 120ms ease;
   }
 
   .editor-file-tab-close:hover {
-    background: hsl(var(--muted) / 0.72);
+    background: hsl(var(--muted));
     color: hsl(var(--foreground));
+    opacity: 1;
+  }
+
+  .editor-file-tab-active .editor-file-tab-close,
+  .editor-file-tab:hover .editor-file-tab-close {
+    opacity: 1;
+  }
+
+  @keyframes editor-tab-control-in {
+    from {
+      opacity: 0;
+      transform: translateY(2px) scale(0.86);
+    }
+
+    to {
+      opacity: 0.62;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .editor-file-tab-icon {
+    @apply h-3.5 w-3.5 shrink-0;
+    transition:
+      opacity 240ms ease,
+      transform 240ms cubic-bezier(0.2, 0.84, 0.22, 1);
+  }
+
+  .editor-file-tab-tooltip {
+    @apply max-w-[380px] font-mono text-[11px];
+  }
+
+  .editor-file-tab-tooltip-path {
+    @apply truncate text-muted-foreground;
   }
 
   .editor-file-tab-add {
-    @apply grid h-7 w-8 shrink-0 place-items-center rounded-t-[0.45rem] border-0 bg-transparent p-0 text-muted-foreground transition-colors;
+    @apply relative z-[30001] grid h-8 w-8 shrink-0 place-items-center rounded-t-[0.45rem] border-0 bg-transparent p-0 text-muted-foreground transition-colors;
   }
 
   .editor-file-tab-add:hover {
-    background: hsl(var(--muted) / 0.42);
+    background: hsl(var(--muted));
     color: hsl(var(--foreground));
   }
 
