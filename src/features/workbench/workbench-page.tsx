@@ -723,6 +723,26 @@ type EditorTabPreview = {
   dirty?: boolean;
 };
 
+type EditorTabLayout = {
+  coveredLeft: number;
+  coveredRight: number;
+  hideLeft: number;
+  hideRight: number;
+  side: "left" | "normal" | "right";
+  stickyLeft: number;
+  stickyRight: number;
+  zIndex: number;
+};
+
+type EditorTabPosition = {
+  left: number;
+  naturalLeft: number;
+  side: EditorTabLayout["side"];
+  stickyLeft: number;
+  stickyRight: number;
+  width: number;
+};
+
 type TabFoldStacks = {
   left: EditorTabPreview[];
   right: EditorTabPreview[];
@@ -4131,6 +4151,7 @@ function EditorSurface({
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const tabButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const tabScrollLeftRef = useRef(0);
+  const tabLayoutFrameRef = useRef<number | null>(null);
   const tabScrollSettleTimerRef = useRef<number | null>(null);
   const suppressTabBellowsUntilRef = useRef(0);
   const scrollDOMRef = useRef<HTMLElement | null>(null);
@@ -4151,6 +4172,8 @@ function EditorSurface({
   const [editingPreviewTabName, setEditingPreviewTabName] = useState("");
   const [tabBellows, setTabBellows] = useState<"left" | "right" | null>(null);
   const [tabFoldStacks, setTabFoldStacks] = useState<TabFoldStacks>({ left: [], right: [] });
+  const [tabLayouts, setTabLayouts] = useState<Record<string, EditorTabLayout>>({});
+  const [hiddenCloseTabIds, setHiddenCloseTabIds] = useState<Set<string>>(() => new Set());
   const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
   const previewTabs = useMemo<EditorTabPreview[]>(
     () =>
@@ -4183,30 +4206,228 @@ function EditorSurface({
     onCreateFile();
   };
 
-  const updateTabOverflow = () => {
+  const updateTabLayout = () => {
     const tabScroll = tabScrollRef.current;
 
     if (!tabScroll) {
       setTabOverflow({ left: false, right: false });
+      setTabLayouts({});
       setTabFoldStacks({ left: [], right: [] });
       return;
     }
 
-    const maxScrollLeft = tabScroll.scrollWidth - tabScroll.clientWidth;
-    const viewportStart = tabScroll.scrollLeft;
+    const tabElements = previewTabs.map((tab) => tabButtonRefs.current[tab.id]).filter(Boolean) as HTMLButtonElement[];
+
+    if (tabElements.length !== previewTabs.length) {
+      return;
+    }
+
+    const style = window.getComputedStyle(tabScroll);
+    const railPadding = Number.parseFloat(style.paddingLeft) || 0;
+    const leftStackStep = Number.parseFloat(style.getPropertyValue("--tab-left-stack-step")) || 30;
+    const rightStackStep = Number.parseFloat(style.getPropertyValue("--tab-stack-step")) || 20;
+    const leftVisibleStackLimit = 4;
+    const rightVisibleStackLimit = 6;
+    const hideBuffer = 50;
+    const widths = tabElements.map((element) => element.offsetWidth);
+    const scrollLeft = tabScroll.scrollLeft;
+    const scrollMax = Math.max(0, tabScroll.scrollWidth - tabScroll.clientWidth);
+
+    const getStackOverflow = (orderedWidths: number[], scrollOffset: number, stackStep: number, visibleStackLimit: number) => {
+      let cursor = railPadding;
+      let overflow = 0;
+
+      orderedWidths.forEach((width, index) => {
+        if (index >= visibleStackLimit) {
+          const triggerScroll = cursor - index * stackStep;
+          const rawProgress = (scrollOffset - triggerScroll) / stackStep;
+
+          if (rawProgress > 0) {
+            overflow = Math.max(overflow, index - visibleStackLimit + clamp(rawProgress, 0, 1));
+          }
+        }
+
+        cursor += width;
+      });
+
+      return Math.max(0, overflow);
+    };
+
+    const leftStackOverflow = getStackOverflow(widths, scrollLeft, leftStackStep, leftVisibleStackLimit);
+    const reversedWidths = [...widths].reverse();
+    const rightStackOverflow = getStackOverflow(reversedWidths, scrollMax - scrollLeft, rightStackStep, rightVisibleStackLimit);
+    const viewportWidth = tabScroll.clientWidth;
+    let reverseCursor = railPadding;
+    const rightSlots: Array<{ right: number; stickyRight: number }> = [];
+
+    reversedWidths.forEach((width, reversedIndex) => {
+      const originalIndex = widths.length - 1 - reversedIndex;
+      const naturalLeft = reverseCursor - (scrollMax - scrollLeft);
+      const stickyRight = (reversedIndex - rightStackOverflow) * rightStackStep;
+
+      rightSlots[originalIndex] = {
+        right: Math.max(naturalLeft, stickyRight),
+        stickyRight,
+      };
+      reverseCursor += width;
+    });
+
+    let cursor = railPadding;
+    const positions = widths.map((width, index) => {
+      const naturalLeft = cursor - scrollLeft;
+      const naturalRight = naturalLeft + width;
+      const stickyLeft = (index - leftStackOverflow) * leftStackStep;
+      const rightSlot = rightSlots[index];
+      const isLeftPinned = naturalLeft <= stickyLeft;
+      const isRightPinned = naturalRight >= viewportWidth - rightSlot.stickyRight;
+      let side: EditorTabLayout["side"] = "normal";
+      let left = naturalLeft;
+
+      if (isLeftPinned && isRightPinned) {
+        side = naturalLeft + width / 2 < viewportWidth / 2 ? "left" : "right";
+      } else if (isLeftPinned) {
+        side = "left";
+      } else if (isRightPinned) {
+        side = "right";
+      }
+
+      if (side === "left") {
+        left = Math.max(naturalLeft, stickyLeft);
+      } else if (side === "right") {
+        left = viewportWidth - width - rightSlot.right;
+      }
+
+      cursor += width;
+
+      return {
+        left,
+        side,
+        stickyLeft,
+        stickyRight: rightSlot.stickyRight,
+        width,
+      };
+    });
+
+    const centerLine = viewportWidth / 2;
+    const crossingCenterIndex = positions.findIndex(
+      (position) => position.left <= centerLine && position.left + position.width >= centerLine,
+    );
+    const visualCenterIndex =
+      crossingCenterIndex >= 0
+        ? crossingCenterIndex
+        : positions.reduce((bestIndex, position, index) => {
+            const currentCenter = position.left + position.width / 2;
+            const best = positions[bestIndex];
+            const bestCenter = best.left + best.width / 2;
+
+            return Math.abs(currentCenter - centerLine) < Math.abs(bestCenter - centerLine) ? index : bestIndex;
+          }, 0);
+    const zIndexes = positions.map((_, index) => {
+      if (index === visualCenterIndex) {
+        return 10000;
+      }
+
+      return index < visualCenterIndex ? 1000 + index : 1000 + positions.length - index;
+    });
+
+    const getCoveredEdges = (index: number) => {
+      const position = positions[index];
+      const left = position.left;
+      const right = position.left + position.width;
+      const coveredRanges: Array<[number, number]> = [];
+
+      positions.forEach((other, otherIndex) => {
+        if (otherIndex === index || zIndexes[otherIndex] <= zIndexes[index]) {
+          return;
+        }
+
+        const overlapLeft = Math.max(left, other.left);
+        const overlapRight = Math.min(right, other.left + other.width);
+
+        if (overlapRight - overlapLeft > 0) {
+          coveredRanges.push([overlapLeft - left, overlapRight - left]);
+        }
+      });
+
+      if (!coveredRanges.length) {
+        return { left: 0, right: 0 };
+      }
+
+      coveredRanges.sort((a, b) => a[0] - b[0]);
+
+      const merged: Array<[number, number]> = [];
+
+      coveredRanges.forEach((range) => {
+        const last = merged[merged.length - 1];
+
+        if (!last || range[0] > last[1]) {
+          merged.push([...range]);
+          return;
+        }
+
+        last[1] = Math.max(last[1], range[1]);
+      });
+
+      let coveredLeft = 0;
+      let cursorLeft = 0;
+
+      merged.forEach((range) => {
+        if (range[0] <= cursorLeft) {
+          coveredLeft = Math.max(coveredLeft, range[1]);
+          cursorLeft = coveredLeft;
+        }
+      });
+
+      let coveredRight = 0;
+      let cursorRight = position.width;
+
+      for (let index = merged.length - 1; index >= 0; index -= 1) {
+        const range = merged[index];
+
+        if (range[1] >= cursorRight) {
+          coveredRight = Math.max(coveredRight, cursorRight - range[0]);
+          cursorRight = range[0];
+        }
+      }
+
+      return {
+        left: clamp(coveredLeft, 0, position.width),
+        right: clamp(coveredRight, 0, position.width),
+      };
+    };
+
+    const nextLayouts = previewTabs.reduce<Record<string, EditorTabLayout>>((layouts, tab, index) => {
+      const position = positions[index];
+      const coveredEdges = getCoveredEdges(index);
+
+      layouts[tab.id] = {
+        coveredLeft: clamp((coveredEdges.left / position.width) * 100, 0, 100),
+        coveredRight: clamp((coveredEdges.right / position.width) * 100, 0, 100),
+        hideLeft: clamp(((coveredEdges.left - hideBuffer) / position.width) * 100, 0, 100),
+        hideRight: clamp(((coveredEdges.right - hideBuffer) / position.width) * 100, 0, 100),
+        side: position.side,
+        stickyLeft: position.stickyLeft,
+        stickyRight: position.stickyRight,
+        zIndex: zIndexes[index],
+      };
+
+      return layouts;
+    }, {});
+
+    const viewportStart = scrollLeft;
     const viewportEnd = viewportStart + tabScroll.clientWidth;
     const leftHiddenTabs: EditorTabPreview[] = [];
     const rightHiddenTabs: EditorTabPreview[] = [];
 
-    previewTabs.forEach((tab) => {
-      const tabButton = tabButtonRefs.current[tab.id];
+    previewTabs.forEach((tab, index) => {
+      const tabElement = tabElements[index];
 
-      if (!tabButton) {
+      if (!tabElement) {
         return;
       }
 
-      const tabStart = tabButton.offsetLeft;
-      const tabEnd = tabStart + tabButton.offsetWidth;
+      const tabStart = tabElement.offsetLeft;
+      const tabEnd = tabStart + tabElement.offsetWidth;
 
       if (tabEnd < viewportStart + 6) {
         leftHiddenTabs.push(tab);
@@ -4219,12 +4440,51 @@ function EditorSurface({
     });
 
     setTabOverflow({
-      left: tabScroll.scrollLeft > 2,
-      right: tabScroll.scrollLeft < maxScrollLeft - 2,
+      left: scrollLeft > 2,
+      right: scrollLeft < scrollMax - 2,
     });
+    setTabLayouts(nextLayouts);
     setTabFoldStacks({
       left: leftHiddenTabs.slice(-3),
       right: rightHiddenTabs.slice(0, 3).reverse(),
+    });
+    setHiddenCloseTabIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+
+      previewTabs.forEach((tab) => {
+        const layout = nextLayouts[tab.id];
+
+        if (!layout) {
+          nextIds.delete(tab.id);
+          return;
+        }
+
+        if (layout.coveredLeft >= 60) {
+          nextIds.add(tab.id);
+          return;
+        }
+
+        if (layout.coveredLeft <= 20) {
+          nextIds.delete(tab.id);
+        }
+      });
+
+      if (nextIds.size === currentIds.size && [...nextIds].every((id) => currentIds.has(id))) {
+        return currentIds;
+      }
+
+      return nextIds;
+    });
+  };
+
+  const scheduleTabLayout = () => {
+    if (tabLayoutFrameRef.current !== null) {
+      window.cancelAnimationFrame(tabLayoutFrameRef.current);
+    }
+
+    tabLayoutFrameRef.current = window.requestAnimationFrame(() => {
+      tabLayoutFrameRef.current = null;
+      updateTabLayout();
     });
   };
 
@@ -4249,7 +4509,7 @@ function EditorSurface({
 
     window.requestAnimationFrame(() => {
       scrollPreviewTabIntoView(document.id);
-      updateTabOverflow();
+      updateTabLayout();
 
       viewRef.current?.focus();
     });
@@ -4258,7 +4518,7 @@ function EditorSurface({
   useEffect(() => {
     window.requestAnimationFrame(() => {
       scrollPreviewTabIntoView(activePreviewTabId);
-      updateTabOverflow();
+      updateTabLayout();
     });
   }, [activePreviewTabId, previewTabs.length]);
 
@@ -4269,14 +4529,14 @@ function EditorSurface({
       return;
     }
 
-    updateTabOverflow();
+    updateTabLayout();
     tabScrollLeftRef.current = tabScroll.scrollLeft;
 
     const handleTabScroll = () => {
       const currentScrollLeft = tabScroll.scrollLeft;
       const scrollDelta = currentScrollLeft - tabScrollLeftRef.current;
 
-      updateTabOverflow();
+      scheduleTabLayout();
 
       if (Math.abs(scrollDelta) > 1 && window.performance.now() > suppressTabBellowsUntilRef.current) {
         setTabBellows(scrollDelta > 0 ? "right" : "left");
@@ -4294,14 +4554,19 @@ function EditorSurface({
     };
 
     tabScroll.addEventListener("scroll", handleTabScroll, { passive: true });
-    window.addEventListener("resize", updateTabOverflow);
+    window.addEventListener("resize", scheduleTabLayout);
 
     return () => {
       tabScroll.removeEventListener("scroll", handleTabScroll);
-      window.removeEventListener("resize", updateTabOverflow);
+      window.removeEventListener("resize", scheduleTabLayout);
 
       if (tabScrollSettleTimerRef.current) {
         window.clearTimeout(tabScrollSettleTimerRef.current);
+      }
+
+      if (tabLayoutFrameRef.current !== null) {
+        window.cancelAnimationFrame(tabLayoutFrameRef.current);
+        tabLayoutFrameRef.current = null;
       }
     };
   }, [previewTabs]);
@@ -4551,14 +4816,33 @@ function EditorSurface({
             const active = tab.id === activePreviewTabId;
             const editing = tab.id === editingPreviewTabId;
             const tabDocument = openDocuments.find((openDocument) => openDocument.id === tab.id);
+            const layout = tabLayouts[tab.id];
+            const isLeftStacked = (layout?.hideRight ?? 0) > 0;
+            const hideCloseButton = isLeftStacked || hiddenCloseTabIds.has(tab.id);
+            const tabStyle = {
+              "--editor-tab-accent": tab.accent,
+              "--hide-left": `${layout?.hideLeft ?? 0}%`,
+              "--hide-right": `${layout?.hideRight ?? 0}%`,
+              "--sticky-left": `${layout?.stickyLeft ?? 0}px`,
+              "--sticky-right": `${layout?.stickyRight ?? 0}px`,
+              zIndex: layout?.zIndex,
+            } as CSSProperties;
 
             return (
               <button
-                className={cn("editor-file-tab", active && "editor-file-tab-active")}
+                className={cn(
+                  "editor-file-tab",
+                  active && "editor-file-tab-active",
+                  layout?.side !== "right" && "editor-file-tab-left-sticky",
+                  layout?.side === "right" && "editor-file-tab-right-sticky",
+                  (layout?.hideLeft ?? 0) > 0 && "editor-file-tab-right-stacked",
+                  (layout?.hideRight ?? 0) > 0 && "editor-file-tab-left-stacked",
+                )}
                 key={tab.id}
                 ref={(element) => {
                   tabButtonRefs.current[tab.id] = element;
                 }}
+                style={tabStyle}
                 type="button"
                 role="tab"
                 aria-selected={active}
@@ -4575,7 +4859,6 @@ function EditorSurface({
                   setEditingPreviewTabName(tab.name);
                 }}
               >
-                <span className={cn("editor-file-tab-dot", tab.dirty ? "bg-amber-500" : "bg-emerald-500")} />
                 {editing ? (
                   <input
                     ref={renameInputRef}
@@ -4600,23 +4883,34 @@ function EditorSurface({
                 ) : (
                   <span className="truncate">{tab.name}</span>
                 )}
-                {tab.dirty && !editing ? <span className="text-muted-foreground">•</span> : null}
-                {tab.closable && !editing ? (
-                  <span
-                    className="editor-file-tab-close"
-                    role="button"
-                    tabIndex={-1}
-                    aria-label={`Close ${tab.name}`}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
+                {!editing ? (
+                  <span className={cn("editor-file-tab-trailing", hideCloseButton && "editor-file-tab-trailing-hidden")}>
+                    <span className="editor-file-tab-dirty" aria-hidden={!tab.dirty}>
+                      {tab.dirty ? "•" : ""}
+                    </span>
+                    {tab.closable && (
+                      <button
+                        className="editor-file-tab-close"
+                        aria-label={`Close ${tab.name}`}
+                        title={`Close ${tab.name}`}
+                        type="button"
+                        tabIndex={hideCloseButton ? -1 : 0}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
 
-                      if (tabDocument) {
-                        onCloseDocument(tabDocument);
-                      }
-                    }}
-                  >
-                    <X className="h-3 w-3" />
+                          if (!hideCloseButton && tabDocument) {
+                            onCloseDocument(tabDocument);
+                          }
+                        }}
+                        onDoubleClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
                   </span>
                 ) : null}
               </button>
