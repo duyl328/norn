@@ -175,6 +175,31 @@
       letter-spacing: 0;
     }
 
+    .tab-editor {
+      position: relative;
+      z-index: 3;
+      width: 100%;
+      min-width: 0;
+      border: 0;
+      border-radius: 8px;
+      outline: 2px solid rgba(18, 60, 70, 0.28);
+      background: rgba(255, 255, 255, 0.82);
+      color: var(--ink);
+      font: inherit;
+      letter-spacing: 0;
+      text-align: center;
+      padding: 4px 8px;
+    }
+
+    .tab-editor::selection {
+      background: rgba(240, 91, 104, 0.26);
+    }
+
+    .tab.is-editing .tab-id,
+    .tab.is-editing .tab-z {
+      opacity: 0.34;
+    }
+
     .tab-id {
       position: absolute;
       left: 7px;
@@ -374,7 +399,7 @@
     let maxVisibleStack = Number(stackLimitInput.value);
     let layoutFrame = 0;
     let scrollAnimationFrame = 0;
-    let pendingActiveCleanup = null;
+    let editingSession = null;
 
     const palette = ["#b5f0c0", "#9ed2f2", "#eaded4", "#fff0a5", "#fffdf7", "#aee9ba", "#9fd0ef", "#ffe38b"];
     const names = [
@@ -401,6 +426,30 @@
 
     function clamp(value, min, max) {
       return Math.min(max, Math.max(min, value));
+    }
+
+    function createElement(tagName, className, textContent = "") {
+      const element = document.createElement(tagName);
+      if (className) element.className = className;
+      element.textContent = textContent;
+      return element;
+    }
+
+    function measureNameWidth(name) {
+      const sample = rail.querySelector(".tab");
+      const sampleLabel = sample?.querySelector(".label");
+
+      if (!sample || !sampleLabel) return 150;
+
+      const labelStyle = getComputedStyle(sampleLabel);
+      const style = getComputedStyle(sample);
+      const border = parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+      const padding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      measureLabel.style.font = labelStyle.font;
+      measureLabel.style.letterSpacing = labelStyle.letterSpacing;
+      measureLabel.textContent = name;
+
+      return Math.ceil(Math.max(84, measureLabel.getBoundingClientRect().width + padding + border));
     }
 
     function measureTabWidths() {
@@ -460,16 +509,17 @@
       scrollAnimationFrame = 0;
     }
 
-    function animateScrollTo(target) {
+    function animateScrollTo(target, onDone = null) {
       cancelScrollAnimation();
       const start = rail.scrollLeft;
       const distance = target - start;
-      const duration = 520;
+      const duration = 420;
       const startedAt = performance.now();
 
       if (Math.abs(distance) < 1) {
         rail.scrollLeft = target;
         layout();
+        if (onDone) onDone();
         return;
       }
 
@@ -483,6 +533,7 @@
           scrollAnimationFrame = requestAnimationFrame(tick);
         } else {
           scrollAnimationFrame = 0;
+          if (onDone) onDone();
         }
       }
 
@@ -654,7 +705,7 @@
       });
     }
 
-    function focusActiveWindow(placement = "center", animated = true) {
+    function focusActiveWindow(placement = "center", animated = true, onDone = null) {
       measureTabWidths();
       const style = getComputedStyle(rail);
       const railPadding = parseFloat(style.paddingLeft);
@@ -717,72 +768,118 @@
       }
 
       if (animated) {
-        animateScrollTo(target);
+        animateScrollTo(target, onDone);
       } else {
         cancelScrollAnimation();
         rail.scrollLeft = target;
         layout();
+        if (onDone) onDone();
+      }
+
+      return Math.abs(target - rail.scrollLeft) >= 1;
+    }
+
+    function addTabAfterRightEdgeSettles() {
+      const index = tabs.length;
+      const name = `new-file-${String(index).padStart(2, "0")}.ts`;
+      const nextTab = {
+        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${index}`,
+        name,
+        color: palette[index % palette.length],
+        width: measureNameWidth(name)
+      };
+      tabs.push(nextTab);
+      active = tabs.length - 1;
+      render();
+      if (autoMoveInput.checked) {
+        const scrollMax = Math.max(0, rail.scrollWidth - rail.clientWidth);
+        animateScrollTo(scrollMax);
       }
     }
 
-    function cancelPendingActivation() {
-      if (!pendingActiveCleanup) return;
-      pendingActiveCleanup();
-      pendingActiveCleanup = null;
+    function commitEdit() {
+      if (!editingSession) return;
+
+      const { index, input } = editingSession;
+      const nextName = input.value.trim() || tabs[index].name;
+      editingSession = null;
+      tabs[index].name = nextName;
+      tabs[index].width = measureNameWidth(nextName);
+      render();
+      if (autoMoveInput.checked) {
+        focusActiveWindow();
+      }
     }
 
-    function activateTabAfterWidthSettles(tabId) {
-      cancelPendingActivation();
-      const element = [...rail.querySelectorAll(".tab")].find(tab => {
-        const tabIndex = Number(tab.dataset.index);
-        return tabs[tabIndex]?.id === tabId;
+    function cancelEdit() {
+      if (!editingSession) return;
+      editingSession = null;
+      render();
+    }
+
+    function startEditing(index) {
+      if (editingSession) commitEdit();
+      cancelScrollAnimation();
+      active = index;
+      layout();
+
+      const tabElement = rail.querySelector(`[data-index="${index}"]`);
+      const label = tabElement?.querySelector(".label");
+      if (!tabElement || !label) return;
+
+      const input = document.createElement("input");
+      input.className = "tab-editor";
+      input.type = "text";
+      input.value = tabs[index].name;
+      input.setAttribute("aria-label", `编辑标签 ${index}`);
+      label.replaceChildren(input);
+      tabElement.classList.add("is-editing");
+      editingSession = { index, input };
+
+      input.addEventListener("click", event => event.stopPropagation());
+      input.addEventListener("dblclick", event => event.stopPropagation());
+      input.addEventListener("keydown", event => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commitEdit();
+        }
+
+        if (event.key === "Escape") {
+          event.preventDefault();
+          cancelEdit();
+        }
+      });
+      input.addEventListener("blur", () => {
+        if (editingSession?.input === input) commitEdit();
       });
 
-      if (!element) return;
-
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        pendingActiveCleanup = null;
-        element.removeEventListener("transitionend", handleTransitionEnd);
-        clearTimeout(fallbackTimer);
-
-        const nextIndex = tabs.findIndex(tab => tab.id === tabId);
-        if (nextIndex < 0) return;
-        active = nextIndex;
-        if (autoMoveInput.checked) {
-          focusActiveWindow();
-        } else {
-          layout();
-        }
-      };
-      const handleTransitionEnd = event => {
-        if (event.target !== element || event.propertyName !== "width") return;
-        finish();
-      };
-      const fallbackTimer = setTimeout(finish, 700);
-
-      element.addEventListener("transitionend", handleTransitionEnd);
-      pendingActiveCleanup = () => {
-        done = true;
-        element.removeEventListener("transitionend", handleTransitionEnd);
-        clearTimeout(fallbackTimer);
-      };
+      requestAnimationFrame(() => {
+        input.focus();
+        input.select();
+      });
     }
 
     function render() {
       rail.replaceChildren(...tabs.map((tab, index) => {
         const button = document.createElement("button");
+        const idBadge = createElement("span", "tab-id", String(index));
+        const zBadge = createElement("span", "tab-z", "z:0");
+        const label = createElement("span", "label", tab.name);
         button.className = `tab is-sticky${index === active ? " is-active" : ""}`;
         button.type = "button";
         button.dataset.index = index;
         button.style.background = tab.color;
         button.style.setProperty("--w", `${tab.width}px`);
         button.style.setProperty("--scribble", `${index % 2 ? -0.5 : 0.4}deg`);
-        button.innerHTML = `<span class="tab-id">${index}</span><span class="tab-z">z:0</span><span class="label">${tab.name}</span>`;
+        button.append(idBadge, zBadge, label);
         button.addEventListener("click", () => {
+          if (editingSession) return;
           setActive(index);
+        });
+        button.addEventListener("dblclick", event => {
+          event.preventDefault();
+          event.stopPropagation();
+          startEditing(index);
         });
         return button;
       }));
@@ -852,6 +949,7 @@
     }
 
     function setActive(next) {
+      if (editingSession) commitEdit();
       active = clamp(next, 0, tabs.length - 1);
       if (autoMoveInput.checked) {
         focusActiveWindow();
@@ -874,21 +972,11 @@
     rail.addEventListener("scroll", scheduleLayout);
 
     addButton.addEventListener("click", () => {
-      const index = tabs.length % names.length;
-      const nextTab = {
-        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${index}`,
-        name: names[index],
-        color: palette[index % palette.length],
-        width: 0
-      };
-      tabs.push(nextTab);
-      render();
-      activateTabAfterWidthSettles(nextTab.id);
+      addTabAfterRightEdgeSettles();
     });
 
     removeButton.addEventListener("click", () => {
       if (tabs.length <= 3) return;
-      cancelPendingActivation();
       tabs.splice(active, 1);
       active = clamp(active, 0, tabs.length - 1);
       render();
@@ -910,6 +998,7 @@
 
     window.addEventListener("resize", layout);
     window.addEventListener("keydown", event => {
+      if (editingSession || event.target instanceof HTMLInputElement) return;
       if (event.key === "ArrowLeft") setActive(active - 1);
       if (event.key === "ArrowRight") setActive(active + 1);
     });
