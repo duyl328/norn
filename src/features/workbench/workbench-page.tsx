@@ -927,35 +927,42 @@ const getTabAccent = (id: string) => {
   return projectColorPairs[hash % projectColorPairs.length].background;
 };
 
-const getTabBorderAccent = (name: string, fallback: string) => {
+const getTabBorderAccent = (name: string) => {
   const extension = getFileExtension(name);
 
-  if (["ts", "tsx", "js", "jsx", "rs", "py", "go", "java", "c", "cpp", "cs", "swift"].includes(extension)) {
-    return "#2563eb";
-  }
-  if (["json", "jsonc", "sql", "sqlite", "db"].includes(extension)) {
-    return "#7c3aed";
-  }
-  if (["css", "scss", "less", "html", "xml", "md", "mdx"].includes(extension)) {
-    return "#0f766e";
-  }
-  if (["toml", "yaml", "yml", "env", "ini", "conf", "config", "lock"].includes(extension)) {
-    return "#64748b";
-  }
-  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "ico"].includes(extension)) {
-    return "#c2410c";
-  }
-  if (["csv", "xls", "xlsx"].includes(extension)) {
-    return "#047857";
-  }
-  if (["zip", "tar", "gz", "rar", "7z"].includes(extension)) {
-    return "#a16207";
-  }
-  if (["sh", "bash", "zsh", "ps1", "bat"].includes(extension)) {
-    return "#475569";
-  }
+  if (["ts", "tsx", "js", "jsx", "mjs", "cjs"].includes(extension)) return "#2563eb";
+  if (["rs"].includes(extension)) return "#b45309";
+  if (["py"].includes(extension)) return "#0369a1";
+  if (["go"].includes(extension)) return "#0891b2";
+  if (["java", "kt", "kts"].includes(extension)) return "#dc2626";
+  if (["c", "cpp", "cc", "h", "hpp"].includes(extension)) return "#7c3aed";
+  if (["cs"].includes(extension)) return "#6d28d9";
+  if (["swift"].includes(extension)) return "#ea580c";
+  if (["rb"].includes(extension)) return "#be123c";
+  if (["php"].includes(extension)) return "#4f46e5";
+  if (["json", "jsonc"].includes(extension)) return "#8b5cf6";
+  if (["sql", "sqlite", "db"].includes(extension)) return "#0e7490";
+  if (["html", "htm"].includes(extension)) return "#c2410c";
+  if (["css", "scss", "sass", "less"].includes(extension)) return "#0d9488";
+  if (["xml", "xsl", "xslt"].includes(extension)) return "#b45309";
+  if (["md", "mdx", "markdown"].includes(extension)) return "#4338ca";
+  if (["vue"].includes(extension)) return "#059669";
+  if (["svelte"].includes(extension)) return "#d97706";
+  if (["toml", "yaml", "yml"].includes(extension)) return "#64748b";
+  if (["env", "ini", "conf", "config"].includes(extension)) return "#6b7280";
+  if (["lock"].includes(extension)) return "#9ca3af";
+  if (["png", "jpg", "jpeg", "gif", "webp", "ico"].includes(extension)) return "#db2777";
+  if (["svg"].includes(extension)) return "#f59e0b";
+  if (["csv"].includes(extension)) return "#047857";
+  if (["xls", "xlsx"].includes(extension)) return "#166534";
+  if (["zip", "tar", "gz", "rar", "7z"].includes(extension)) return "#a16207";
+  if (["sh", "bash", "zsh", "ps1", "bat", "cmd"].includes(extension)) return "#475569";
+  if (["txt", "text"].includes(extension)) return "#94a3b8";
+  if (["log"].includes(extension)) return "#6b7280";
+  if (["pdf"].includes(extension)) return "#b91c1c";
+  if (["dockerfile", "dockerignore"].includes(extension)) return "#0369a1";
 
-  return fallback;
+  return "#94a3b8";
 };
 
 const isDocumentDirty = (document: WorkbenchDocument) => document.content !== document.savedContent;
@@ -4259,7 +4266,7 @@ function EditorSurface({
     const leftStackStep = Number.parseFloat(style.getPropertyValue("--tab-left-stack-step")) || 30;
     const rightStackStep = Number.parseFloat(style.getPropertyValue("--tab-stack-step")) || 20;
     const leftVisibleStackLimit = 4;
-    const rightVisibleStackLimit = 6;
+    const rightVisibleStackLimit = 4;
     const hideBuffer = 50;
     const widths = tabElements.map((element) => element.offsetWidth);
     const scrollLeft = tabScroll.scrollLeft;
@@ -4647,7 +4654,7 @@ function EditorSurface({
     const leftStackStep = Number.parseFloat(style.getPropertyValue("--tab-left-stack-step")) || 30;
     const rightStackStep = Number.parseFloat(style.getPropertyValue("--tab-stack-step")) || 20;
     const leftVisibleStackLimit = 4;
-    const rightVisibleStackLimit = 6;
+    const rightVisibleStackLimit = 4;
     const scrollMax = Math.max(0, tabScroll.scrollWidth - tabScroll.clientWidth);
 
     const getStackOverflow = (orderedWidths: number[], scrollOffset: number, stackStep: number, visibleStackLimit: number) => {
@@ -5168,6 +5175,21 @@ function EditorSurface({
     window.addEventListener("pointerup", handlePointerUp);
   };
 
+  // Compute stack depth per tab for progressive height reduction.
+  // Left-stacked tabs: sort by zIndex asc → deeper (leftmost) = index 0.
+  // Right-stacked tabs: same sort → deeper (rightmost) = index 0.
+  const leftStackedIds = previewTabs
+    .filter((t) => tabLayouts[t.id]?.side === "left")
+    .sort((a, b) => (tabLayouts[a.id]?.zIndex ?? 0) - (tabLayouts[b.id]?.zIndex ?? 0))
+    .map((t) => t.id);
+  const rightStackedIds = previewTabs
+    .filter((t) => tabLayouts[t.id]?.side === "right")
+    .sort((a, b) => (tabLayouts[a.id]?.zIndex ?? 0) - (tabLayouts[b.id]?.zIndex ?? 0))
+    .map((t) => t.id);
+  const stackDepthMap: Record<string, { depth: number; total: number }> = {};
+  leftStackedIds.forEach((id, i) => { stackDepthMap[id] = { depth: i, total: leftStackedIds.length }; });
+  rightStackedIds.forEach((id, i) => { stackDepthMap[id] = { depth: i, total: rightStackedIds.length }; });
+
   return (
     <section className="editor-surface-panel flex min-h-0 min-w-0 flex-col overflow-hidden bg-[hsl(var(--editor-background))]">
       <div
@@ -5186,21 +5208,25 @@ function EditorSurface({
             const editing = tab.id === editingPreviewTabId;
             const tabDocument = openDocuments.find((openDocument) => openDocument.id === tab.id);
             const layout = tabLayouts[tab.id];
-            const isLeftStacked = (layout?.hideRight ?? 0) > 0;
-            const hideCloseButton = isLeftStacked || hiddenCloseTabIds.has(tab.id);
+            const isStacked = layout?.side === "left" || layout?.side === "right";
+            const hideCloseButton = !active || isStacked || hiddenCloseTabIds.has(tab.id);
             const { className: tabIconClassName, Icon: TabIcon } = getFileTreeIcon({
               kind: "file",
               name: tab.name,
               path: tab.name,
               relativePath: tab.name,
             });
+            const stackInfo = stackDepthMap[tab.id];
+            const positionFromActive = stackInfo ? stackInfo.total - stackInfo.depth : 0;
+            const stackScale = stackInfo ? Math.max(0.68, 1 - positionFromActive * 0.08) : 1;
             const tabStyle = {
               "--editor-tab-accent": tab.accent,
-              "--editor-tab-border-accent": getTabBorderAccent(tab.name, tab.accent),
+              "--editor-tab-border-accent": getTabBorderAccent(tab.name),
               "--hide-left": `${layout?.hideLeft ?? 0}%`,
               "--hide-right": `${layout?.hideRight ?? 0}%`,
               "--sticky-left": `${layout?.stickyLeft ?? 0}px`,
               "--sticky-right": `${layout?.stickyRight ?? 0}px`,
+              "--tab-stack-scale": String(stackScale),
               zIndex: layout?.zIndex,
             } as CSSProperties;
 
@@ -5213,8 +5239,8 @@ function EditorSurface({
                       active && "editor-file-tab-active",
                       layout?.side !== "right" && "editor-file-tab-left-sticky",
                       layout?.side === "right" && "editor-file-tab-right-sticky",
-                      (layout?.hideLeft ?? 0) > 0 && "editor-file-tab-right-stacked",
-                      (layout?.hideRight ?? 0) > 0 && "editor-file-tab-left-stacked",
+                      layout?.side === "right" && "editor-file-tab-right-stacked",
+                      layout?.side === "left" && "editor-file-tab-left-stacked",
                     )}
                     ref={(element) => {
                       tabButtonRefs.current[tab.id] = element;
