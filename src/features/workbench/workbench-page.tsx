@@ -51,6 +51,7 @@ import {
   PanelLeft,
   PanelRight,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   Terminal,
@@ -79,7 +80,7 @@ import { Input } from "@/components/ui/input";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
   FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES,
@@ -206,6 +207,14 @@ type FolderView = {
   error: string | null;
 };
 
+type ScratchView = {
+  error: string | null;
+  loadingPath: string | null;
+  loading: boolean;
+  nodes: FileTreeNode[];
+  rootPath: string;
+};
+
 type FileTreeNode = {
   name: string;
   path: string;
@@ -269,6 +278,10 @@ const rightPanelDefaultWidth = 360;
 const settingsSidebarMinWidth = 240;
 const settingsSidebarMaxWidth = 360;
 const settingsSidebarDefaultWidth = 280;
+const scratchPanelMinHeight = 92;
+const scratchPanelDefaultHeight = 180;
+const scratchPanelMaxHeightRatio = 0.6;
+const scratchPanelFocusThreshold = 150;
 
 const emptyEditorScrollMetrics: EditorScrollMetrics = {
   clientHeight: 0,
@@ -397,6 +410,22 @@ const getParentPath = (path: string) => {
   return path.slice(0, separatorIndex);
 };
 
+const replacePathName = (path: string, name: string) => {
+  const parentPath = getParentPath(path);
+
+  if (!parentPath) {
+    return name;
+  }
+
+  if (parentPath === "/" || /[\\/]$/.test(parentPath)) {
+    return `${parentPath}${name}`;
+  }
+
+  const separator = path.includes("\\") && !path.includes("/") ? "\\" : "/";
+
+  return `${parentPath}${separator}${name}`;
+};
+
 const isAbsolutePath = (path: string) => path.startsWith("/") || path.startsWith("\\\\") || /^[a-zA-Z]:[\\/]/.test(path);
 
 const getFileOpenId = (path: string, lastModified?: number | null) => `${path}-${lastModified ?? Date.now()}`;
@@ -435,6 +464,16 @@ const toFileTreeNode = (entry: NativeDirectoryEntry): FileTreeNode => ({
   children: entry.kind === "directory" ? [] : undefined,
   childrenLoaded: false,
   expanded: false,
+});
+
+const createDirectoryRootNode = (path: string, children: FileTreeNode[] = [], expanded = true): FileTreeNode => ({
+  name: getPathName(path),
+  path,
+  relativePath: "",
+  kind: "directory",
+  children,
+  childrenLoaded: true,
+  expanded,
 });
 
 const updateTreeNode = (
@@ -540,14 +579,31 @@ type WorkbenchDocument = {
 
 type EditorTabPreview = {
   accent: string;
+  borderAccent: string;
   id: string;
   name: string;
+  path: string;
   dirty?: boolean;
 };
 
-type TabFoldStacks = {
-  left: EditorTabPreview[];
-  right: EditorTabPreview[];
+type EditorTabLayout = {
+  coveredLeft: number;
+  coveredRight: number;
+  hideLeft: number;
+  hideRight: number;
+  side: "left" | "normal" | "right";
+  stickyLeft: number;
+  stickyRight: number;
+  zIndex: number;
+};
+
+type EditorTabPosition = {
+  left: number;
+  naturalLeft: number;
+  side: EditorTabLayout["side"];
+  stickyLeft: number;
+  stickyRight: number;
+  width: number;
 };
 
 const initialDocument: WorkbenchDocument = {
@@ -734,6 +790,44 @@ const getTabAccent = (id: string) => {
   return projectColorPairs[hash % projectColorPairs.length].background;
 };
 
+const getTabBorderAccent = (name: string, fallback: string) => {
+  const extension = getFileExtension(name);
+
+  if (["ts", "tsx", "js", "jsx", "rs", "py", "go", "java", "c", "cpp", "cs", "swift"].includes(extension)) {
+    return "#2563eb";
+  }
+
+  if (["json", "jsonc", "sql", "sqlite", "db"].includes(extension)) {
+    return "#7c3aed";
+  }
+
+  if (["css", "scss", "less", "html", "xml", "md", "mdx"].includes(extension)) {
+    return "#0f766e";
+  }
+
+  if (["toml", "yaml", "yml", "env", "ini", "conf", "config", "lock"].includes(extension)) {
+    return "#64748b";
+  }
+
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "ico"].includes(extension)) {
+    return "#c2410c";
+  }
+
+  if (["csv", "xls", "xlsx"].includes(extension)) {
+    return "#047857";
+  }
+
+  if (["zip", "tar", "gz", "rar", "7z"].includes(extension)) {
+    return "#a16207";
+  }
+
+  if (["sh", "bash", "zsh", "ps1", "bat"].includes(extension)) {
+    return "#475569";
+  }
+
+  return fallback;
+};
+
 export function WorkbenchPage() {
   const [document, setDocument] = useState<WorkbenchDocument>(initialDocument);
   const [leftPanelOpen, setLeftPanelOpen] = useState(false);
@@ -742,12 +836,14 @@ export function WorkbenchPage() {
   const [rightPanelWidth, setRightPanelWidth] = useState(rightPanelDefaultWidth);
   const [resizingPanel, setResizingPanel] = useState<"left" | "right" | null>(null);
   const [resizeHandleHintsVisible, setResizeHandleHintsVisible] = useState(() => loadResizeHandleHints());
+  const [scratchPanelHeight, setScratchPanelHeight] = useState(scratchPanelDefaultHeight);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [folderView, setFolderView] = useState<FolderView | null>(null);
   const [gitWorkspace, setGitWorkspace] = useState<GitWorkspaceState>({ kind: "idle" });
   const [recentFolders, setRecentFolders] = useState<RecentFolder[]>(() => loadRecentFolders());
   const [pendingFileOpen, setPendingFileOpen] = useState<PendingFileOpen | null>(null);
+  const [scratchView, setScratchView] = useState<ScratchView | null>(null);
   const [saveConflict, setSaveConflict] = useState<SaveConflict | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -761,13 +857,7 @@ export function WorkbenchPage() {
   };
 
   const createFile = () => {
-    setFileError(null);
-    setLeftPanelOpen(false);
-    setFolderView(null);
-    setGitWorkspace({ kind: "idle" });
-    setSaveConflict(null);
-    setSaveState("idle");
-    setDocument({
+    const nextDocument: WorkbenchDocument = {
       id: createDocumentId("untitled"),
       name: "Untitled.txt",
       path: "Untitled.txt",
@@ -775,7 +865,17 @@ export function WorkbenchPage() {
       savedContent: "",
       isUntitled: true,
       mode: "editable",
-    });
+    };
+
+    setFileError(null);
+    setLeftPanelOpen(false);
+    setFolderView(null);
+    setGitWorkspace({ kind: "idle" });
+    setSaveConflict(null);
+    setSaveState("idle");
+    setDocument(nextDocument);
+
+    return nextDocument;
   };
 
   const applySavedDocument = (savedFile: NativeSavedTextFile, content: string) => {
@@ -937,6 +1037,48 @@ export function WorkbenchPage() {
     }
   };
 
+  const loadScratchView = async () => {
+    if (!isTauriRuntime()) {
+      setScratchView({
+        error: "Scratch files are only available in the Tauri desktop app.",
+        loadingPath: null,
+        loading: false,
+        nodes: [createDirectoryRootNode("temp/norn-scratch")],
+        rootPath: "temp/norn-scratch",
+      });
+      return;
+    }
+
+    setScratchView((currentView) => ({
+      error: null,
+      loadingPath: currentView?.rootPath ?? "temp/norn-scratch",
+      loading: true,
+      nodes: currentView?.nodes ?? [createDirectoryRootNode("temp/norn-scratch")],
+      rootPath: currentView?.rootPath ?? "temp/norn-scratch",
+    }));
+
+    try {
+      const rootPath = await invoke<string>("ensure_scratch_directory");
+      const nodes = await readFolderEntries(rootPath);
+
+      setScratchView({
+        error: null,
+        loadingPath: null,
+        loading: false,
+        nodes: [createDirectoryRootNode(rootPath, nodes)],
+        rootPath,
+      });
+    } catch (error) {
+      setScratchView((currentView) => ({
+        error: error instanceof Error ? error.message : String(error),
+        loadingPath: null,
+        loading: false,
+        nodes: currentView?.nodes ?? [createDirectoryRootNode("temp/norn-scratch")],
+        rootPath: currentView?.rootPath ?? "temp/norn-scratch",
+      }));
+    }
+  };
+
   const openNativeFile = async (path: string, options: { clearFolderView?: boolean; size?: number } = {}) => {
     const { clearFolderView = false, size } = options;
 
@@ -1060,6 +1202,10 @@ export function WorkbenchPage() {
     requestFileOpen({ kind: "file-dialog" });
   };
 
+  useEffect(() => {
+    void loadScratchView();
+  }, []);
+
   const toggleFilesTool = () => {
     setLeftPanelOpen((value) => !value);
   };
@@ -1157,6 +1303,36 @@ export function WorkbenchPage() {
     window.addEventListener("pointerup", handlePointerUp);
   };
 
+  const startScratchResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const pointerStart = event.clientY;
+    const heightStart = scratchPanelHeight;
+    const panel = event.currentTarget.closest(".project-panel");
+    const panelHeight = panel?.getBoundingClientRect().height ?? window.innerHeight;
+    const maxHeight = Math.max(scratchPanelMinHeight, Math.floor(panelHeight * scratchPanelMaxHeightRatio));
+
+    event.preventDefault();
+
+    const previousCursor = globalThis.document.body.style.cursor;
+    const previousUserSelect = globalThis.document.body.style.userSelect;
+    globalThis.document.body.style.cursor = "row-resize";
+    globalThis.document.body.style.userSelect = "none";
+
+    const handlePointerMove = (pointerEvent: globalThis.PointerEvent) => {
+      const delta = pointerStart - pointerEvent.clientY;
+      setScratchPanelHeight(clamp(heightStart + delta, scratchPanelMinHeight, maxHeight));
+    };
+
+    const handlePointerUp = () => {
+      globalThis.document.body.style.cursor = previousCursor;
+      globalThis.document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
+
   const rememberRecentFolder = (path: string) => {
     const folder = { name: getPathName(path), path };
 
@@ -1173,7 +1349,7 @@ export function WorkbenchPage() {
       rootPath,
       rootName: getPathName(rootPath),
       origin,
-      nodes: [],
+      nodes: [createDirectoryRootNode(rootPath, [], true)],
       loadingPath: rootPath,
       error: null,
     });
@@ -1185,7 +1361,7 @@ export function WorkbenchPage() {
         rootPath,
         rootName: getPathName(rootPath),
         origin,
-        nodes,
+        nodes: [createDirectoryRootNode(rootPath, nodes, true)],
         loadingPath: null,
         error: null,
       });
@@ -1196,7 +1372,7 @@ export function WorkbenchPage() {
         rootPath,
         rootName: getPathName(rootPath),
         origin,
-        nodes: [],
+        nodes: [createDirectoryRootNode(rootPath, [], true)],
         loadingPath: null,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -1232,74 +1408,90 @@ export function WorkbenchPage() {
     await openFolderView(parentPath, "containing-folder");
   };
 
-  const toggleDirectory = async (node: FileTreeNode) => {
-    if (!folderView || node.kind !== "directory") {
+  const loadDirectoryChildren = async (
+    node: FileTreeNode,
+    applyLoadingState: (loadingPath: string | null, update: (nodes: FileTreeNode[]) => FileTreeNode[]) => void,
+  ) => {
+    if (node.kind !== "directory") {
       return;
     }
 
     if (node.childrenLoaded) {
-      setFolderView((currentView) =>
-        currentView
-          ? {
-              ...currentView,
-              nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
-                ...currentNode,
-                expanded: !currentNode.expanded,
-              })),
-            }
-          : currentView,
+      applyLoadingState(null, (nodes) =>
+        updateTreeNode(nodes, node.path, (currentNode) => ({
+          ...currentNode,
+          expanded: !currentNode.expanded,
+        })),
       );
       return;
     }
 
-    setFolderView((currentView) =>
-      currentView
-        ? {
-            ...currentView,
-            loadingPath: node.path,
-            nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
-              ...currentNode,
-              expanded: true,
-              error: undefined,
-            })),
-          }
-        : currentView,
+    applyLoadingState(node.path, (nodes) =>
+      updateTreeNode(nodes, node.path, (currentNode) => ({
+        ...currentNode,
+        expanded: true,
+        error: undefined,
+      })),
     );
 
     try {
       const children = await readFolderEntries(node.path);
 
-      setFolderView((currentView) =>
-        currentView
-          ? {
-              ...currentView,
-              loadingPath: null,
-              nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
-                ...currentNode,
-                children,
-                childrenLoaded: true,
-                expanded: true,
-                error: undefined,
-              })),
-            }
-          : currentView,
+      applyLoadingState(null, (nodes) =>
+        updateTreeNode(nodes, node.path, (currentNode) => ({
+          ...currentNode,
+          children,
+          childrenLoaded: true,
+          expanded: true,
+          error: undefined,
+        })),
       );
     } catch (error) {
+      applyLoadingState(null, (nodes) =>
+        updateTreeNode(nodes, node.path, (currentNode) => ({
+          ...currentNode,
+          childrenLoaded: true,
+          expanded: true,
+          error: error instanceof Error ? error.message : String(error),
+        })),
+      );
+    }
+  };
+
+  const toggleDirectory = async (node: FileTreeNode) => {
+    if (!folderView) {
+      return;
+    }
+
+    await loadDirectoryChildren(node, (loadingPath, updateNodes) => {
       setFolderView((currentView) =>
         currentView
           ? {
               ...currentView,
-              loadingPath: null,
-              nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
-                ...currentNode,
-                childrenLoaded: true,
-                expanded: true,
-                error: error instanceof Error ? error.message : String(error),
-              })),
+              loadingPath,
+              nodes: updateNodes(currentView.nodes),
             }
           : currentView,
       );
+    });
+  };
+
+  const toggleScratchDirectory = async (node: FileTreeNode) => {
+    if (!scratchView) {
+      return;
     }
+
+    await loadDirectoryChildren(node, (loadingPath, updateNodes) => {
+      setScratchView((currentView) =>
+        currentView
+          ? {
+              ...currentView,
+              loadingPath,
+              nodes: updateNodes(currentView.nodes),
+            }
+          : currentView,
+      );
+    });
   };
 
   const openTreeFile = async (node: FileTreeNode) => {
@@ -1470,21 +1662,14 @@ export function WorkbenchPage() {
                 onOpenRecentFolder={(path) => void openFolderView(path, "open-folder")}
                 onOpenTreeFile={openTreeFile}
                 recentFolders={recentFolders}
+                scratchView={scratchView}
+                onOpenScratchFile={(node) => requestFileOpen({ kind: "path", path: node.path, size: node.size })}
+                onRefreshScratch={() => void loadScratchView()}
+                onResizeScratch={startScratchResize}
+                onToggleScratchDirectory={(node) => void toggleScratchDirectory(node)}
                 onToggleDirectory={toggleDirectory}
+                scratchPanelHeight={scratchPanelHeight}
               />
-            </div>
-            <EditorSurface
-              document={document}
-              error={fileError}
-              isDirty={isDirty}
-              onChange={updateDocumentContent}
-              onCreateFile={createFile}
-            />
-            <div
-              className={cn("workbench-side-panel workbench-right-panel", !rightPanelOpen && "workbench-side-panel-closed")}
-              aria-hidden={!rightPanelOpen}
-            >
-              <GitPanel folderView={folderView} gitWorkspace={gitWorkspace} />
             </div>
             <PanelResizeHandle
               max={leftPanelMaxWidth}
@@ -1495,6 +1680,13 @@ export function WorkbenchPage() {
               side="left"
               value={leftPanelWidth}
             />
+            <EditorSurface
+              document={document}
+              error={fileError}
+              isDirty={isDirty}
+              onChange={updateDocumentContent}
+              onCreateFile={createFile}
+            />
             <PanelResizeHandle
               max={rightPanelMaxWidth}
               min={rightPanelMinWidth}
@@ -1504,6 +1696,12 @@ export function WorkbenchPage() {
               side="right"
               value={rightPanelWidth}
             />
+            <div
+              className={cn("workbench-side-panel workbench-right-panel", !rightPanelOpen && "workbench-side-panel-closed")}
+              aria-hidden={!rightPanelOpen}
+            >
+              <GitPanel folderView={folderView} gitWorkspace={gitWorkspace} />
+            </div>
           </main>
           <StatusBar
             document={document}
@@ -1999,28 +2197,6 @@ function PanelResizeHandle({
   );
 }
 
-function TabFoldStack({ open, side, tabs }: { open: boolean; side: "left" | "right"; tabs: EditorTabPreview[] }) {
-  return (
-    <div
-      className={cn(
-        "editor-file-tabs-fold-stack",
-        `editor-file-tabs-fold-stack-${side}`,
-        tabs.length > 0 && "editor-file-tabs-fold-stack-visible",
-        open && "editor-file-tabs-fold-stack-open",
-      )}
-      aria-hidden="true"
-    >
-      {tabs.map((tab) => (
-        <span
-          className="editor-file-tabs-fold-card"
-          key={tab.id}
-          style={{ "--tab-fold-color": tab.accent } as CSSProperties}
-        />
-      ))}
-    </div>
-  );
-}
-
 function TopSearchButton({ className, onClick }: { className: string; onClick: () => void }) {
   return (
     <button className={className} type="button" onClick={onClick}>
@@ -2074,8 +2250,14 @@ function ProjectPanel({
   onOpenFolder,
   onOpenRecentFolder,
   onOpenSettings,
+  onOpenScratchFile,
   onOpenTreeFile,
+  onRefreshScratch,
+  onResizeScratch,
+  onToggleScratchDirectory,
   recentFolders,
+  scratchView,
+  scratchPanelHeight,
   onToggleDirectory,
 }: {
   activePath: string;
@@ -2084,15 +2266,49 @@ function ProjectPanel({
   onOpenFolder: () => void;
   onOpenRecentFolder: (path: string) => void;
   onOpenSettings: () => void;
+  onOpenScratchFile: (node: FileTreeNode) => void;
   onOpenTreeFile: (node: FileTreeNode) => void;
+  onRefreshScratch: () => void;
+  onResizeScratch: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onToggleScratchDirectory: (node: FileTreeNode) => void;
   recentFolders: RecentFolder[];
+  scratchPanelHeight: number;
+  scratchView: ScratchView | null;
   onToggleDirectory: (node: FileTreeNode) => void;
 }) {
+  const [focusedPanel, setFocusedPanel] = useState<"scratch" | "workspace" | null>(null);
+  const effectiveScratchHeight =
+    focusedPanel === "scratch" ? "60%" : focusedPanel === "workspace" ? scratchPanelMinHeight : scratchPanelHeight;
+  const focusWorkspace = () => {
+    if (leftPanelWidth <= 280) {
+      setFocusedPanel("workspace");
+    }
+  };
+
+  const focusScratch = () => {
+    if (scratchPanelHeight <= scratchPanelFocusThreshold) {
+      setFocusedPanel("scratch");
+    }
+  };
+
   return (
-    <aside className="project-panel frosted-surface frosted-surface-subtle">
+    <aside
+      className={cn(
+        "project-panel frosted-surface frosted-surface-subtle",
+        focusedPanel === "workspace" && "project-panel-focus-workspace",
+        focusedPanel === "scratch" && "project-panel-focus-scratch",
+      )}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          setFocusedPanel(null);
+        }
+      }}
+    >
       <ProjectPanelStart
+        focused={focusedPanel === "workspace"}
         folderView={folderView}
         leftPanelWidth={leftPanelWidth}
+        onFocusWorkspace={focusWorkspace}
         onOpenFolder={onOpenFolder}
         onOpenRecentFolder={onOpenRecentFolder}
         recentFolders={recentFolders}
@@ -2101,8 +2317,24 @@ function ProjectPanel({
       <FolderTreePanel
         activePath={activePath}
         folderView={folderView}
+        onClearFocus={() => setFocusedPanel(null)}
         onOpenFile={onOpenTreeFile}
         onToggleDirectory={onToggleDirectory}
+      />
+      <ScratchPanel
+        activePath={activePath}
+        focused={focusedPanel === "scratch"}
+        height={effectiveScratchHeight}
+        onOpenFile={onOpenScratchFile}
+        onFocus={focusScratch}
+        onRefresh={onRefreshScratch}
+        onResize={(event) => {
+          setFocusedPanel(null);
+          onResizeScratch(event);
+        }}
+        scratchView={scratchView}
+        subdued={focusedPanel === "workspace"}
+        onToggleDirectory={onToggleScratchDirectory}
       />
       <ProjectPanelFooter onOpenSettings={onOpenSettings} />
     </aside>
@@ -2110,14 +2342,18 @@ function ProjectPanel({
 }
 
 function ProjectPanelStart({
+  focused,
   folderView,
   leftPanelWidth,
+  onFocusWorkspace,
   onOpenFolder,
   onOpenRecentFolder,
   recentFolders,
 }: {
+  focused: boolean;
   folderView: FolderView | null;
   leftPanelWidth: number;
+  onFocusWorkspace: () => void;
   onOpenFolder: () => void;
   onOpenRecentFolder: (path: string) => void;
   recentFolders: RecentFolder[];
@@ -2158,11 +2394,15 @@ function ProjectPanelStart({
       </button>
       <div className="project-panel-divider" aria-hidden="true" />
       {folderView ? (
-        <div className="project-panel-recent-switcher">
+        <div className={cn("project-panel-recent-switcher", focused && "project-panel-recent-switcher-focused")}>
           <div className="project-panel-recent-heading">Recent folders</div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="project-panel-recent-select" type="button">
+              <button
+                className={cn("project-panel-recent-select", focused && "project-panel-recent-select-focused")}
+                type="button"
+                onClick={onFocusWorkspace}
+              >
                 <span className="project-panel-recent-select-avatar" style={activeFolderAccentStyle}>
                   {getProjectInitials(activeFolderName)}
                 </span>
@@ -2223,11 +2463,13 @@ function ProjectPanelStart({
 function FolderTreePanel({
   activePath,
   folderView,
+  onClearFocus,
   onOpenFile,
   onToggleDirectory,
 }: {
   activePath: string;
   folderView: FolderView | null;
+  onClearFocus: () => void;
   onOpenFile: (node: FileTreeNode) => void;
   onToggleDirectory: (node: FileTreeNode) => void;
 }) {
@@ -2274,7 +2516,11 @@ function FolderTreePanel({
     return <div className="min-h-0 flex-1" />;
   }
 
-  const hasRootDirectories = folderView.nodes.some((node) => node.kind === "directory");
+  const rootNode = folderView.nodes[0];
+  const rootChildren = rootNode?.children ?? [];
+  const rootExpanded = Boolean(rootNode?.expanded);
+  const hasRootChildren = rootChildren.length > 0;
+  const showRootEmptyMessage = rootExpanded && !hasRootChildren && folderView.loadingPath !== folderView.rootPath && !folderView.error;
 
   return (
     <>
@@ -2283,11 +2529,17 @@ function FolderTreePanel({
           {folderView.error}
         </div>
       ) : null}
-      <ScrollArea className="file-tree-scroll min-h-0 flex-1" type="auto">
+      {rootNode ? (
+        <FileTreeRootHeader
+          loadingPath={folderView.loadingPath}
+          node={rootNode}
+          onToggleDirectory={onToggleDirectory}
+        />
+      ) : null}
+      <ScrollArea className="file-tree-scroll min-h-0 flex-1" type="auto" onPointerDown={onClearFocus}>
         <div
           className={cn(
             "file-tree-list",
-            !hasRootDirectories && "file-tree-list-flat",
             treeScrollOverflowing && "file-tree-list-scroll-overflowing",
           )}
           ref={treeScrollContentRef}
@@ -2297,22 +2549,99 @@ function FolderTreePanel({
           {folderView.loadingPath === folderView.rootPath && folderView.nodes.length === 0 ? (
             <div className="px-2 py-2 text-[12px] text-muted-foreground">Loading folder...</div>
           ) : null}
-          {folderView.nodes.map((node) => (
+          {rootExpanded ? rootChildren.map((node) => (
             <FileTreeRow
               activePath={activePath}
+              depth={1}
               key={node.path}
               loadingPath={folderView.loadingPath}
               node={node}
               onOpenFile={onOpenFile}
               onToggleDirectory={onToggleDirectory}
             />
-          ))}
-          {folderView.nodes.length === 0 && folderView.loadingPath !== folderView.rootPath && !folderView.error ? (
-            <div className="px-2 py-2 text-[12px] text-muted-foreground">No files in this folder.</div>
-          ) : null}
+          )) : null}
+          {showRootEmptyMessage ? <div className="file-tree-empty-message">No files in this folder.</div> : null}
         </div>
       </ScrollArea>
     </>
+  );
+}
+
+function ScratchPanel({
+  activePath,
+  focused,
+  height,
+  onOpenFile,
+  onFocus,
+  onRefresh,
+  onResize,
+  onToggleDirectory,
+  scratchView,
+  subdued,
+}: {
+  activePath: string;
+  focused: boolean;
+  height: CSSProperties["height"];
+  onOpenFile: (node: FileTreeNode) => void;
+  onFocus: () => void;
+  onRefresh: () => void;
+  onResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onToggleDirectory: (node: FileTreeNode) => void;
+  scratchView: ScratchView | null;
+  subdued: boolean;
+}) {
+  const nodes = scratchView?.nodes ?? [];
+  const rootNode = nodes[0];
+  const rootChildren = rootNode?.children ?? [];
+  const rootExpanded = Boolean(rootNode?.expanded);
+  const hasScratchContent = rootChildren.length > 0;
+  const showScratchEmptyMessage = rootExpanded && !scratchView?.loading && !scratchView?.error && !hasScratchContent;
+
+  return (
+    <section
+      className={cn("scratch-panel", focused && "scratch-panel-focused", subdued && "scratch-panel-subdued")}
+      style={{ height }}
+      onFocus={onFocus}
+    >
+      <div className="scratch-panel-resize-handle" role="separator" aria-orientation="horizontal" onPointerDown={onResize} />
+      <button className="scratch-panel-heading" type="button" onClick={onFocus}>
+        <div className="min-w-0">
+          <div className="scratch-panel-title">Scratch folder</div>
+          <div className="scratch-panel-path" title={scratchView?.rootPath}>
+            {scratchView?.rootPath ? getTailPath(scratchView.rootPath, 28) : "temp/norn-scratch"}
+          </div>
+        </div>
+      </button>
+      <div className="scratch-panel-toolbar">
+        <button className="scratch-panel-refresh" type="button" onClick={onRefresh} aria-label="Refresh scratch folder">
+          <RefreshCw className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      {rootNode ? (
+        <FileTreeRootHeader
+          className="scratch-panel-root-header"
+          loadingPath={scratchView?.loadingPath ?? null}
+          node={rootNode}
+          onToggleDirectory={onToggleDirectory}
+        />
+      ) : null}
+      <div className="scratch-panel-list" role="tree" aria-label="Scratch files">
+        {scratchView?.loading ? <div className="scratch-panel-message">Loading scratch files...</div> : null}
+        {scratchView?.error ? <div className="scratch-panel-error">{scratchView.error}</div> : null}
+        {rootExpanded ? rootChildren.map((node) => (
+          <FileTreeRow
+            activePath={activePath}
+            depth={1}
+            key={node.path}
+            loadingPath={scratchView?.loadingPath ?? null}
+            node={node}
+            onOpenFile={onOpenFile}
+            onToggleDirectory={onToggleDirectory}
+          />
+        )) : null}
+        {showScratchEmptyMessage ? <div className="scratch-panel-message">No scratch files yet.</div> : null}
+      </div>
+    </section>
   );
 }
 
@@ -2331,9 +2660,46 @@ function ProjectPanelFooter({ onOpenSettings }: { onOpenSettings: () => void }) 
   );
 }
 
+function FileTreeRootHeader({
+  className,
+  loadingPath,
+  node,
+  onToggleDirectory,
+}: {
+  className?: string;
+  loadingPath: string | null;
+  node: FileTreeNode;
+  onToggleDirectory: (node: FileTreeNode) => void;
+}) {
+  const isLoading = loadingPath === node.path;
+  const { className: iconClassName, Icon } = getFileTreeIcon(node);
+
+  return (
+    <button
+      aria-expanded={Boolean(node.expanded)}
+      className={cn("file-tree-root-header", className)}
+      role="treeitem"
+      title={node.path}
+      type="button"
+      onClick={() => onToggleDirectory(node)}
+    >
+      <span className="tree-row-toggle">
+        {node.expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+      </span>
+      <span className="tree-row-main">
+        <Icon className={cn("tree-row-icon", iconClassName)} />
+        <span className="tree-row-name">{node.name}</span>
+      </span>
+      <span className="tree-row-size">{isLoading ? "..." : ""}</span>
+    </button>
+  );
+}
+
 function FileTreeRow({
   activePath,
   depth = 0,
+  emptyDirectoryMessage,
+  emptyDirectoryPath,
   loadingPath,
   node,
   onOpenFile,
@@ -2341,6 +2707,8 @@ function FileTreeRow({
 }: {
   activePath: string;
   depth?: number;
+  emptyDirectoryMessage?: string;
+  emptyDirectoryPath?: string;
   loadingPath: string | null;
   node: FileTreeNode;
   onOpenFile: (node: FileTreeNode) => void;
@@ -2349,14 +2717,26 @@ function FileTreeRow({
   const isDirectory = node.kind === "directory";
   const isActive = node.path === activePath;
   const isLoading = loadingPath === node.path;
+  const showEmptyDirectoryMessage =
+    Boolean(emptyDirectoryMessage) &&
+    node.path === emptyDirectoryPath &&
+    Boolean(node.expanded) &&
+    Boolean(node.childrenLoaded) &&
+    node.children?.length === 0 &&
+    !isLoading;
   const { className: iconClassName, Icon } = getFileTreeIcon(node);
 
   return (
-    <div className="file-tree-node" role="none">
+    <div className={cn("file-tree-node", depth === 0 && isDirectory && "file-tree-root-node")} role="none">
       <button
         aria-expanded={isDirectory ? Boolean(node.expanded) : undefined}
         aria-selected={isActive}
-        className={cn("tree-row w-full text-left", isActive && "tree-row-active", node.error && "tree-row-muted")}
+        className={cn(
+          "tree-row w-full text-left",
+          depth === 0 && isDirectory && "tree-row-root",
+          isActive && "tree-row-active",
+          node.error && "tree-row-muted",
+        )}
         role="treeitem"
         style={{ "--tree-depth": depth } as CSSProperties}
         type="button"
@@ -2381,6 +2761,14 @@ function FileTreeRow({
         </span>
       </button>
       {node.error ? <div className="px-2 py-1 text-[11px] text-destructive">{node.error}</div> : null}
+      {showEmptyDirectoryMessage ? (
+        <div
+          className="file-tree-empty-message"
+          style={{ "--tree-empty-depth": `${depth + 1}` } as CSSProperties}
+        >
+          {emptyDirectoryMessage}
+        </div>
+      ) : null}
       {node.expanded && node.children ? (
         <div
           className="file-tree-children"
@@ -2391,6 +2779,8 @@ function FileTreeRow({
             <FileTreeRow
               activePath={activePath}
               depth={depth + 1}
+              emptyDirectoryMessage={emptyDirectoryMessage}
+              emptyDirectoryPath={emptyDirectoryPath}
               key={child.path}
               loadingPath={loadingPath}
               node={child}
@@ -2489,15 +2879,15 @@ function EditorSurface({
   error: string | null;
   isDirty: boolean;
   onChange: (content: string) => void;
-  onCreateFile: () => void;
+  onCreateFile: () => WorkbenchDocument;
 }) {
   const editorFrameRef = useRef<HTMLDivElement>(null);
   const editorElementRef = useRef<HTMLDivElement>(null);
   const tabScrollRef = useRef<HTMLDivElement>(null);
-  const tabButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const tabButtonRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const tabScrollLeftRef = useRef(0);
-  const tabScrollSettleTimerRef = useRef<number | null>(null);
-  const suppressTabBellowsUntilRef = useRef(0);
+  const tabLayoutFrameRef = useRef<number | null>(null);
+  const tabScrollAnimationFrameRef = useRef<number | null>(null);
   const scrollDOMRef = useRef<HTMLElement | null>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -2514,16 +2904,24 @@ function EditorSurface({
   const [activePreviewTabId, setActivePreviewTabId] = useState(document.id);
   const [editingPreviewTabId, setEditingPreviewTabId] = useState<string | null>(null);
   const [editingPreviewTabName, setEditingPreviewTabName] = useState("");
-  const [tabBellows, setTabBellows] = useState<"left" | "right" | null>(null);
-  const [tabFoldStacks, setTabFoldStacks] = useState<TabFoldStacks>({ left: [], right: [] });
+  const [hiddenCloseTabIds, setHiddenCloseTabIds] = useState<Set<string>>(() => new Set());
+  const [tabLayouts, setTabLayouts] = useState<Record<string, EditorTabLayout>>({});
   const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
   const [previewTabs, setPreviewTabs] = useState<EditorTabPreview[]>(() =>
-    editorTabPreviewNames.map((name, index) => ({
-      accent: getTabAccent(index === 0 ? document.id : `preview-tab-${index}`),
-      id: index === 0 ? document.id : `preview-tab-${index}`,
-      name: index === 0 ? document.name : name,
-      dirty: index === 0 ? isDirty || document.isUntitled : index % 4 === 1,
-    })),
+    editorTabPreviewNames.map((name, index) => {
+      const id = index === 0 ? document.id : `preview-tab-${index}`;
+      const tabName = index === 0 ? document.name : name;
+      const accent = getTabAccent(id);
+
+      return {
+        accent,
+        borderAccent: getTabBorderAccent(tabName, accent),
+        id,
+        name: tabName,
+        path: index === 0 ? document.path : `src/mock-tabs/${tabName}`,
+        dirty: index === 0 ? isDirty || document.isUntitled : index % 4 === 1,
+      };
+    }),
   );
 
   const commitPreviewTabName = () => {
@@ -2535,7 +2933,16 @@ function EditorSurface({
 
     if (nextName) {
       setPreviewTabs((currentTabs) =>
-        currentTabs.map((tab) => (tab.id === editingPreviewTabId ? { ...tab, name: nextName } : tab)),
+        currentTabs.map((tab) =>
+          tab.id === editingPreviewTabId
+            ? {
+                ...tab,
+                borderAccent: getTabBorderAccent(nextName, tab.accent),
+                name: nextName,
+                path: replacePathName(tab.path, nextName),
+              }
+            : tab,
+        ),
       );
     }
 
@@ -2543,78 +2950,677 @@ function EditorSurface({
   };
 
   const addPreviewTab = () => {
+    const nextDocument = onCreateFile();
+
     setEditingPreviewTabId(null);
-    onCreateFile();
+    setActivePreviewTabId(nextDocument.id);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const tabScroll = tabScrollRef.current;
+
+        if (!tabScroll) {
+          return;
+        }
+
+        animateTabScrollTo(Math.max(0, tabScroll.scrollWidth - tabScroll.clientWidth));
+      });
+    });
   };
 
-  const updateTabOverflow = () => {
+  const closePreviewTab = (tabId: string) => {
+    setEditingPreviewTabId((currentId) => (currentId === tabId ? null : currentId));
+    setPreviewTabs((currentTabs) => {
+      if (currentTabs.length <= 1) {
+        return currentTabs;
+      }
+
+      const closingIndex = currentTabs.findIndex((tab) => tab.id === tabId);
+      const nextTabs = currentTabs.filter((tab) => tab.id !== tabId);
+
+      if (activePreviewTabId === tabId) {
+        const nextActiveTab = nextTabs[Math.min(Math.max(closingIndex, 0), nextTabs.length - 1)];
+
+        if (nextActiveTab) {
+          setActivePreviewTabId(nextActiveTab.id);
+          window.requestAnimationFrame(() => {
+            scrollPreviewTabIntoView(nextActiveTab.id);
+          });
+        }
+      }
+
+      return nextTabs;
+    });
+  };
+
+  const updateTabLayout = () => {
     const tabScroll = tabScrollRef.current;
 
     if (!tabScroll) {
       setTabOverflow({ left: false, right: false });
-      setTabFoldStacks({ left: [], right: [] });
+      setTabLayouts({});
       return;
     }
 
-    const maxScrollLeft = tabScroll.scrollWidth - tabScroll.clientWidth;
-    const viewportStart = tabScroll.scrollLeft;
-    const viewportEnd = viewportStart + tabScroll.clientWidth;
-    const leftHiddenTabs: EditorTabPreview[] = [];
-    const rightHiddenTabs: EditorTabPreview[] = [];
+    const tabElements = previewTabs.map((tab) => tabButtonRefs.current[tab.id]).filter(Boolean) as HTMLDivElement[];
 
-    previewTabs.forEach((tab) => {
-      const tabButton = tabButtonRefs.current[tab.id];
+    if (tabElements.length !== previewTabs.length) {
+      return;
+    }
 
-      if (!tabButton) {
-        return;
-      }
+    const style = window.getComputedStyle(tabScroll);
+    const railPadding = Number.parseFloat(style.paddingLeft) || 0;
+    const leftStackStep = Number.parseFloat(style.getPropertyValue("--tab-left-stack-step")) || 30;
+    const rightStackStep = Number.parseFloat(style.getPropertyValue("--tab-stack-step")) || 20;
+    const leftVisibleStackLimit = 4;
+    const rightVisibleStackLimit = 6;
+    const hideBuffer = 50;
+    const widths = tabElements.map((element) => element.offsetWidth);
+    const scrollLeft = tabScroll.scrollLeft;
+    const scrollMax = Math.max(0, tabScroll.scrollWidth - tabScroll.clientWidth);
 
-      const tabStart = tabButton.offsetLeft;
-      const tabEnd = tabStart + tabButton.offsetWidth;
+    const getStackOverflow = (orderedWidths: number[], scrollOffset: number, stackStep: number, visibleStackLimit: number) => {
+      let cursor = railPadding;
+      let overflow = 0;
 
-      if (tabEnd < viewportStart + 6) {
-        leftHiddenTabs.push(tab);
-        return;
-      }
+      orderedWidths.forEach((width, index) => {
+        if (index >= visibleStackLimit) {
+          const triggerScroll = cursor - index * stackStep;
+          const rawProgress = (scrollOffset - triggerScroll) / stackStep;
 
-      if (tabStart > viewportEnd - 6) {
-        rightHiddenTabs.push(tab);
-      }
+          if (rawProgress > 0) {
+            overflow = Math.max(overflow, index - visibleStackLimit + clamp(rawProgress, 0, 1));
+          }
+        }
+
+        cursor += width;
+      });
+
+      return Math.max(0, overflow);
+    };
+
+    const leftStackOverflow = getStackOverflow(widths, scrollLeft, leftStackStep, leftVisibleStackLimit);
+    const reversedWidths = [...widths].reverse();
+    const rightStackOverflow = getStackOverflow(reversedWidths, scrollMax - scrollLeft, rightStackStep, rightVisibleStackLimit);
+    const viewportWidth = tabScroll.clientWidth;
+    let reverseCursor = railPadding;
+    const rightSlots: Array<{ right: number; stickyRight: number }> = [];
+
+    reversedWidths.forEach((width, reversedIndex) => {
+      const originalIndex = widths.length - 1 - reversedIndex;
+      const naturalLeft = reverseCursor - (scrollMax - scrollLeft);
+      const stickyRight = (reversedIndex - rightStackOverflow) * rightStackStep;
+
+      rightSlots[originalIndex] = {
+        right: Math.max(naturalLeft, stickyRight),
+        stickyRight,
+      };
+      reverseCursor += width;
     });
+
+    let cursor = railPadding;
+    const positions = widths.map((width, index) => {
+      const naturalLeft = cursor - scrollLeft;
+      const naturalRight = naturalLeft + width;
+      const stickyLeft = (index - leftStackOverflow) * leftStackStep;
+      const rightSlot = rightSlots[index];
+      const isLeftPinned = naturalLeft <= stickyLeft;
+      const isRightPinned = naturalRight >= viewportWidth - rightSlot.stickyRight;
+      let side: EditorTabLayout["side"] = "normal";
+      let left = naturalLeft;
+
+      if (isLeftPinned && isRightPinned) {
+        side = naturalLeft + width / 2 < viewportWidth / 2 ? "left" : "right";
+      } else if (isLeftPinned) {
+        side = "left";
+      } else if (isRightPinned) {
+        side = "right";
+      }
+
+      if (side === "left") {
+        left = Math.max(naturalLeft, stickyLeft);
+      } else if (side === "right") {
+        left = viewportWidth - width - rightSlot.right;
+      }
+
+      cursor += width;
+
+      return {
+        left,
+        side,
+        stickyLeft,
+        stickyRight: rightSlot.stickyRight,
+        width,
+      };
+    });
+
+    const centerLine = viewportWidth / 2;
+    const crossingCenterIndex = positions.findIndex(
+      (position) => position.left <= centerLine && position.left + position.width >= centerLine,
+    );
+    const visualCenterIndex =
+      crossingCenterIndex >= 0
+        ? crossingCenterIndex
+        : positions.reduce((bestIndex, position, index) => {
+            const currentCenter = position.left + position.width / 2;
+            const best = positions[bestIndex];
+            const bestCenter = best.left + best.width / 2;
+
+            return Math.abs(currentCenter - centerLine) < Math.abs(bestCenter - centerLine) ? index : bestIndex;
+          }, 0);
+    const zIndexes = positions.map((_, index) => {
+      if (index === visualCenterIndex) {
+        return 10000;
+      }
+
+      return index < visualCenterIndex ? 1000 + index : 1000 + positions.length - index;
+    });
+
+    const getCoveredEdges = (index: number) => {
+      const position = positions[index];
+      const left = position.left;
+      const right = position.left + position.width;
+      const coveredRanges: Array<[number, number]> = [];
+
+      positions.forEach((other, otherIndex) => {
+        if (otherIndex === index || zIndexes[otherIndex] <= zIndexes[index]) {
+          return;
+        }
+
+        const overlapLeft = Math.max(left, other.left);
+        const overlapRight = Math.min(right, other.left + other.width);
+
+        if (overlapRight - overlapLeft > 0) {
+          coveredRanges.push([overlapLeft - left, overlapRight - left]);
+        }
+      });
+
+      if (!coveredRanges.length) {
+        return { left: 0, right: 0 };
+      }
+
+      coveredRanges.sort((a, b) => a[0] - b[0]);
+
+      const merged: Array<[number, number]> = [];
+
+      coveredRanges.forEach((range) => {
+        const last = merged[merged.length - 1];
+
+        if (!last || range[0] > last[1]) {
+          merged.push([...range]);
+          return;
+        }
+
+        last[1] = Math.max(last[1], range[1]);
+      });
+
+      let coveredLeft = 0;
+      let cursorLeft = 0;
+
+      merged.forEach((range) => {
+        if (range[0] <= cursorLeft) {
+          coveredLeft = Math.max(coveredLeft, range[1]);
+          cursorLeft = coveredLeft;
+        }
+      });
+
+      let coveredRight = 0;
+      let cursorRight = position.width;
+
+      for (let index = merged.length - 1; index >= 0; index -= 1) {
+        const range = merged[index];
+
+        if (range[1] >= cursorRight) {
+          coveredRight = Math.max(coveredRight, cursorRight - range[0]);
+          cursorRight = range[0];
+        }
+      }
+
+      return {
+        left: clamp(coveredLeft, 0, position.width),
+        right: clamp(coveredRight, 0, position.width),
+      };
+    };
+
+    const nextLayouts = previewTabs.reduce<Record<string, EditorTabLayout>>((layouts, tab, index) => {
+      const position = positions[index];
+      const coveredEdges = getCoveredEdges(index);
+
+      layouts[tab.id] = {
+        coveredLeft: clamp((coveredEdges.left / position.width) * 100, 0, 100),
+        coveredRight: clamp((coveredEdges.right / position.width) * 100, 0, 100),
+        hideLeft: clamp(((coveredEdges.left - hideBuffer) / position.width) * 100, 0, 100),
+        hideRight: clamp(((coveredEdges.right - hideBuffer) / position.width) * 100, 0, 100),
+        side: position.side,
+        stickyLeft: position.stickyLeft,
+        stickyRight: position.stickyRight,
+        zIndex: zIndexes[index],
+      };
+
+      return layouts;
+    }, {});
 
     setTabOverflow({
-      left: tabScroll.scrollLeft > 2,
-      right: tabScroll.scrollLeft < maxScrollLeft - 2,
+      left: scrollLeft > 2,
+      right: scrollLeft < scrollMax - 2,
     });
-    setTabFoldStacks({
-      left: leftHiddenTabs.slice(-3),
-      right: rightHiddenTabs.slice(0, 3).reverse(),
+    setTabLayouts(nextLayouts);
+    setHiddenCloseTabIds((currentIds) => {
+      const nextIds = new Set(currentIds);
+
+      previewTabs.forEach((tab) => {
+        const layout = nextLayouts[tab.id];
+
+        if (!layout) {
+          nextIds.delete(tab.id);
+          return;
+        }
+
+        if (layout.coveredLeft >= 60) {
+          nextIds.add(tab.id);
+          return;
+        }
+
+        if (layout.coveredLeft <= 20) {
+          nextIds.delete(tab.id);
+        }
+      });
+
+      if (nextIds.size === currentIds.size && [...nextIds].every((id) => currentIds.has(id))) {
+        return currentIds;
+      }
+
+      return nextIds;
+    });
+  };
+
+  const cancelTabScrollAnimation = () => {
+    if (tabScrollAnimationFrameRef.current === null) {
+      return;
+    }
+
+    window.cancelAnimationFrame(tabScrollAnimationFrameRef.current);
+    tabScrollAnimationFrameRef.current = null;
+  };
+
+  const animateTabScrollTo = (target: number, onDone: (() => void) | null = null) => {
+    const tabScroll = tabScrollRef.current;
+
+    if (!tabScroll) {
+      return;
+    }
+
+    cancelTabScrollAnimation();
+
+    const start = tabScroll.scrollLeft;
+    const distance = target - start;
+    const duration = 420;
+    const startedAt = window.performance.now();
+
+    if (Math.abs(distance) < 1) {
+      tabScroll.scrollLeft = target;
+      updateTabLayout();
+      onDone?.();
+      return;
+    }
+
+    const tick = (now: number) => {
+      const progress = clamp((now - startedAt) / duration, 0, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+
+      tabScroll.scrollLeft = start + distance * eased;
+      updateTabLayout();
+
+      if (progress < 1) {
+        tabScrollAnimationFrameRef.current = window.requestAnimationFrame(tick);
+        return;
+      }
+
+      tabScrollAnimationFrameRef.current = null;
+      onDone?.();
+    };
+
+    tabScrollAnimationFrameRef.current = window.requestAnimationFrame(tick);
+  };
+
+  const getCoveredEdgesForPositions = (
+    index: number,
+    positions: EditorTabPosition[],
+    zIndexes: number[],
+  ) => {
+    const position = positions[index];
+    const left = position.left;
+    const right = position.left + position.width;
+    const coveredRanges: Array<[number, number]> = [];
+
+    positions.forEach((other, otherIndex) => {
+      if (otherIndex === index || zIndexes[otherIndex] <= zIndexes[index]) {
+        return;
+      }
+
+      const overlapLeft = Math.max(left, other.left);
+      const overlapRight = Math.min(right, other.left + other.width);
+
+      if (overlapRight - overlapLeft > 0) {
+        coveredRanges.push([overlapLeft - left, overlapRight - left]);
+      }
+    });
+
+    if (!coveredRanges.length) {
+      return { left: 0, right: 0 };
+    }
+
+    coveredRanges.sort((a, b) => a[0] - b[0]);
+
+    const merged: Array<[number, number]> = [];
+
+    coveredRanges.forEach((range) => {
+      const last = merged[merged.length - 1];
+
+      if (!last || range[0] > last[1]) {
+        merged.push([...range]);
+        return;
+      }
+
+      last[1] = Math.max(last[1], range[1]);
+    });
+
+    let coveredLeft = 0;
+    let cursorLeft = 0;
+
+    merged.forEach((range) => {
+      if (range[0] <= cursorLeft) {
+        coveredLeft = Math.max(coveredLeft, range[1]);
+        cursorLeft = coveredLeft;
+      }
+    });
+
+    let coveredRight = 0;
+    let cursorRight = position.width;
+
+    for (let index = merged.length - 1; index >= 0; index -= 1) {
+      const range = merged[index];
+
+      if (range[1] >= cursorRight) {
+        coveredRight = Math.max(coveredRight, cursorRight - range[0]);
+        cursorRight = range[0];
+      }
+    }
+
+    return {
+      left: clamp(coveredLeft, 0, position.width),
+      right: clamp(coveredRight, 0, position.width),
+    };
+  };
+
+  const getTabPositionsForScroll = (widths: number[], scrollLeft: number) => {
+    const tabScroll = tabScrollRef.current;
+
+    if (!tabScroll) {
+      return [];
+    }
+
+    const style = window.getComputedStyle(tabScroll);
+    const railPadding = Number.parseFloat(style.paddingLeft) || 0;
+    const leftStackStep = Number.parseFloat(style.getPropertyValue("--tab-left-stack-step")) || 30;
+    const rightStackStep = Number.parseFloat(style.getPropertyValue("--tab-stack-step")) || 20;
+    const leftVisibleStackLimit = 4;
+    const rightVisibleStackLimit = 6;
+    const scrollMax = Math.max(0, tabScroll.scrollWidth - tabScroll.clientWidth);
+
+    const getStackOverflow = (orderedWidths: number[], scrollOffset: number, stackStep: number, visibleStackLimit: number) => {
+      let cursor = railPadding;
+      let overflow = 0;
+
+      orderedWidths.forEach((width, index) => {
+        if (index >= visibleStackLimit) {
+          const triggerScroll = cursor - index * stackStep;
+          const rawProgress = (scrollOffset - triggerScroll) / stackStep;
+
+          if (rawProgress > 0) {
+            overflow = Math.max(overflow, index - visibleStackLimit + clamp(rawProgress, 0, 1));
+          }
+        }
+
+        cursor += width;
+      });
+
+      return Math.max(0, overflow);
+    };
+
+    const reversedWidths = [...widths].reverse();
+    const leftStackOverflow = getStackOverflow(widths, scrollLeft, leftStackStep, leftVisibleStackLimit);
+    const rightStackOverflow = getStackOverflow(reversedWidths, scrollMax - scrollLeft, rightStackStep, rightVisibleStackLimit);
+    const viewportWidth = tabScroll.clientWidth;
+    let reverseCursor = railPadding;
+    const rightSlots: Array<{ right: number; stickyRight: number }> = [];
+
+    reversedWidths.forEach((width, reversedIndex) => {
+      const originalIndex = widths.length - 1 - reversedIndex;
+      const naturalLeft = reverseCursor - (scrollMax - scrollLeft);
+      const stickyRight = (reversedIndex - rightStackOverflow) * rightStackStep;
+
+      rightSlots[originalIndex] = {
+        right: Math.max(naturalLeft, stickyRight),
+        stickyRight,
+      };
+      reverseCursor += width;
+    });
+
+    let cursor = railPadding;
+
+    return widths.map<EditorTabPosition>((width, index) => {
+      const naturalLeft = cursor - scrollLeft;
+      const naturalRight = naturalLeft + width;
+      const stickyLeft = (index - leftStackOverflow) * leftStackStep;
+      const rightSlot = rightSlots[index];
+      const isLeftPinned = naturalLeft <= stickyLeft;
+      const isRightPinned = naturalRight >= viewportWidth - rightSlot.stickyRight;
+      let side: EditorTabLayout["side"] = "normal";
+      let left = naturalLeft;
+
+      if (isLeftPinned && isRightPinned) {
+        side = naturalLeft + width / 2 < viewportWidth / 2 ? "left" : "right";
+      } else if (isLeftPinned) {
+        side = "left";
+      } else if (isRightPinned) {
+        side = "right";
+      }
+
+      if (side === "left") {
+        left = Math.max(naturalLeft, stickyLeft);
+      } else if (side === "right") {
+        left = viewportWidth - width - rightSlot.right;
+      }
+
+      cursor += width;
+
+      return { left, naturalLeft, side, stickyLeft, stickyRight: rightSlot.stickyRight, width };
+    });
+  };
+
+  const getVisualCenterIndexForPositions = (positions: EditorTabPosition[]) => {
+    const tabScroll = tabScrollRef.current;
+
+    if (!tabScroll) {
+      return 0;
+    }
+
+    const centerLine = tabScroll.clientWidth / 2;
+    const crossingIndex = positions.findIndex(
+      (position) => position.left <= centerLine && position.left + position.width >= centerLine,
+    );
+
+    if (crossingIndex >= 0) {
+      return crossingIndex;
+    }
+
+    return positions.reduce((bestIndex, position, index) => {
+      const center = position.left + position.width / 2;
+      const best = positions[bestIndex];
+      const bestCenter = best.left + best.width / 2;
+
+      return Math.abs(center - centerLine) < Math.abs(bestCenter - centerLine) ? index : bestIndex;
+    }, 0);
+  };
+
+  const getZIndexesForPositions = (positions: EditorTabPosition[]) => {
+    const visualCenterIndex = getVisualCenterIndexForPositions(positions);
+
+    return positions.map((_, index) => {
+      if (index === visualCenterIndex) {
+        return 10000;
+      }
+
+      if (index < visualCenterIndex) {
+        return 1000 + index;
+      }
+
+      return 1000 + positions.length - index;
+    });
+  };
+
+  const getTabVisibilityForPositions = (
+    index: number,
+    positions: EditorTabPosition[],
+    railPadding: number,
+    zIndexes: number[],
+  ) => {
+    const tabScroll = tabScrollRef.current;
+    const position = positions[index];
+    const previous = positions[index - 1];
+    const next = positions[index + 1];
+    const tolerance = 2;
+    const left = position.left;
+    const right = position.left + position.width;
+    const visibleStart = railPadding;
+    const visibleEnd = (tabScroll?.clientWidth ?? 0) - railPadding;
+    const previousOverlap = previous ? Math.max(0, previous.left + previous.width - left) : 0;
+    const nextOverlap = next ? Math.max(0, right - next.left) : 0;
+    const coveredByPrevious = position.side === "right" ? previousOverlap : 0;
+    const coveredByNext = position.side === "left" ? nextOverlap : 0;
+    const coveredEdges = getCoveredEdgesForPositions(index, positions, zIndexes);
+
+    return {
+      coveredByNext,
+      coveredByPrevious,
+      fullyExpanded: coveredEdges.left <= tolerance && coveredEdges.right <= tolerance,
+      insideContainer: left >= visibleStart - tolerance && right <= visibleEnd + tolerance,
+      position,
+    };
+  };
+
+  const scheduleTabLayout = () => {
+    if (tabLayoutFrameRef.current !== null) {
+      return;
+    }
+
+    tabLayoutFrameRef.current = window.requestAnimationFrame(() => {
+      tabLayoutFrameRef.current = null;
+      updateTabLayout();
     });
   };
 
   const scrollPreviewTabIntoView = (tabId: string) => {
+    const tabScroll = tabScrollRef.current;
     const tabButton = tabButtonRefs.current[tabId];
 
-    if (!tabButton) {
+    if (!tabScroll || !tabButton) {
       return;
     }
 
-    suppressTabBellowsUntilRef.current = window.performance.now() + 420;
+    const activeIndex = previewTabs.findIndex((tab) => tab.id === tabId);
 
-    tabButton.scrollIntoView({
-      behavior: "smooth",
-      block: "nearest",
-      inline: "nearest",
+    if (activeIndex < 0) {
+      return;
+    }
+
+    const style = window.getComputedStyle(tabScroll);
+    const railPadding = Number.parseFloat(style.paddingLeft) || 0;
+    const widths = previewTabs.map((tab) => tabButtonRefs.current[tab.id]?.offsetWidth ?? 0);
+    const scrollMax = Math.max(0, tabScroll.scrollWidth - tabScroll.clientWidth);
+    let cursor = railPadding;
+    let activeStart = railPadding;
+    let activeEnd = railPadding;
+    let target = tabScroll.scrollLeft;
+
+    widths.forEach((width, index) => {
+      if (index === activeIndex) {
+        activeStart = cursor;
+      }
+
+      cursor += width;
+
+      if (index === activeIndex) {
+        activeEnd = cursor;
+      }
+    });
+
+    const getFocusStepTarget = (scrollLeft: number) => {
+      const positions = getTabPositionsForScroll(widths, scrollLeft);
+      const zIndexes = getZIndexesForPositions(positions);
+      const visibility = getTabVisibilityForPositions(activeIndex, positions, railPadding, zIndexes);
+
+      if (visibility.insideContainer && visibility.fullyExpanded) {
+        return scrollLeft;
+      }
+
+      if (activeStart < scrollLeft + railPadding) {
+        return activeStart - railPadding;
+      }
+
+      if (activeEnd > scrollLeft + tabScroll.clientWidth - railPadding) {
+        return activeEnd - tabScroll.clientWidth + railPadding;
+      }
+
+      if (visibility.coveredByNext > 2 || visibility.position.side === "left") {
+        return scrollLeft - Math.max(20, visibility.coveredByNext);
+      }
+
+      if (visibility.coveredByPrevious > 2 || visibility.position.side === "right") {
+        return scrollLeft + Math.max(20, visibility.coveredByPrevious);
+      }
+
+      return scrollLeft;
+    };
+
+    for (let index = 0; index < 24; index += 1) {
+      const nextTarget = clamp(getFocusStepTarget(target), 0, scrollMax);
+
+      if (Math.abs(nextTarget - target) < 0.5) {
+        break;
+      }
+
+      target = nextTarget;
+
+      const positions = getTabPositionsForScroll(widths, target);
+      const zIndexes = getZIndexesForPositions(positions);
+      const visibility = getTabVisibilityForPositions(activeIndex, positions, railPadding, zIndexes);
+
+      if (visibility.insideContainer && visibility.fullyExpanded) {
+        break;
+      }
+    }
+
+    animateTabScrollTo(clamp(target, 0, scrollMax));
+  };
+
+  const activatePreviewTab = (tabId: string) => {
+    setActivePreviewTabId(tabId);
+    window.requestAnimationFrame(() => {
+      scrollPreviewTabIntoView(tabId);
     });
   };
 
   useEffect(() => {
     setPreviewTabs((currentTabs) => {
       const existingDocumentTab = currentTabs.find((tab) => tab.id === document.id);
+      const accent = existingDocumentTab?.accent ?? getTabAccent(document.id);
       const documentTab: EditorTabPreview = {
-        accent: existingDocumentTab?.accent ?? getTabAccent(document.id),
+        accent,
+        borderAccent: getTabBorderAccent(document.name, accent),
         id: document.id,
         name: document.name,
+        path: document.path,
         dirty: isDirty || document.isUntitled,
       };
 
@@ -2631,18 +3637,32 @@ function EditorSurface({
 
     window.requestAnimationFrame(() => {
       scrollPreviewTabIntoView(document.id);
-      updateTabOverflow();
+      updateTabLayout();
 
       viewRef.current?.focus();
     });
   }, [document.id]);
 
   useEffect(() => {
+    const tabIds = new Set(previewTabs.map((tab) => tab.id));
+
+    setHiddenCloseTabIds((currentIds) => {
+      const nextIds = new Set([...currentIds].filter((id) => tabIds.has(id)));
+
+      if (nextIds.size === currentIds.size) {
+        return currentIds;
+      }
+
+      return nextIds;
+    });
+  }, [previewTabs]);
+
+  useEffect(() => {
     window.requestAnimationFrame(() => {
       scrollPreviewTabIntoView(activePreviewTabId);
-      updateTabOverflow();
+      updateTabLayout();
     });
-  }, [activePreviewTabId, previewTabs.length]);
+  }, [activePreviewTabId, previewTabs]);
 
   useEffect(() => {
     const tabScroll = tabScrollRef.current;
@@ -2651,40 +3671,30 @@ function EditorSurface({
       return;
     }
 
-    updateTabOverflow();
+    updateTabLayout();
     tabScrollLeftRef.current = tabScroll.scrollLeft;
 
     const handleTabScroll = () => {
       const currentScrollLeft = tabScroll.scrollLeft;
-      const scrollDelta = currentScrollLeft - tabScrollLeftRef.current;
 
-      updateTabOverflow();
-
-      if (Math.abs(scrollDelta) > 1 && window.performance.now() > suppressTabBellowsUntilRef.current) {
-        setTabBellows(scrollDelta > 0 ? "right" : "left");
-      }
+      scheduleTabLayout();
 
       tabScrollLeftRef.current = currentScrollLeft;
-
-      if (tabScrollSettleTimerRef.current) {
-        window.clearTimeout(tabScrollSettleTimerRef.current);
-      }
-
-      tabScrollSettleTimerRef.current = window.setTimeout(() => {
-        setTabBellows(null);
-      }, 180);
     };
 
     tabScroll.addEventListener("scroll", handleTabScroll, { passive: true });
-    window.addEventListener("resize", updateTabOverflow);
+    window.addEventListener("resize", scheduleTabLayout);
 
     return () => {
       tabScroll.removeEventListener("scroll", handleTabScroll);
-      window.removeEventListener("resize", updateTabOverflow);
+      window.removeEventListener("resize", scheduleTabLayout);
 
-      if (tabScrollSettleTimerRef.current) {
-        window.clearTimeout(tabScrollSettleTimerRef.current);
+      if (tabLayoutFrameRef.current !== null) {
+        window.cancelAnimationFrame(tabLayoutFrameRef.current);
+        tabLayoutFrameRef.current = null;
       }
+
+      cancelTabScrollAnimation();
     };
   }, [previewTabs]);
 
@@ -2927,60 +3937,123 @@ function EditorSurface({
         role="tablist"
         aria-label="Open files"
       >
-        <TabFoldStack open={tabBellows === "left"} side="left" tabs={tabFoldStacks.left} />
         <div className="editor-file-tabs-scroll" ref={tabScrollRef}>
           {previewTabs.map((tab) => {
             const active = tab.id === activePreviewTabId;
             const editing = tab.id === editingPreviewTabId;
+            const layout = tabLayouts[tab.id];
+            const isLeftStacked = (layout?.hideRight ?? 0) > 0;
+            const hideCloseButton = isLeftStacked || hiddenCloseTabIds.has(tab.id);
+            const { className: tabIconClassName, Icon: TabIcon } = getFileTreeIcon({
+              kind: "file",
+              name: tab.name,
+              path: tab.name,
+              relativePath: tab.name,
+            });
+            const tabStyle = {
+              "--editor-tab-accent": tab.accent,
+              "--editor-tab-border-accent": tab.borderAccent,
+              "--hide-left": `${layout?.hideLeft ?? 0}%`,
+              "--hide-right": `${layout?.hideRight ?? 0}%`,
+              "--sticky-left": `${layout?.stickyLeft ?? 0}px`,
+              "--sticky-right": `${layout?.stickyRight ?? 0}px`,
+              zIndex: layout?.zIndex,
+            } as CSSProperties;
 
             return (
-              <button
-                className={cn("editor-file-tab", active && "editor-file-tab-active")}
-                key={tab.id}
-                ref={(element) => {
-                  tabButtonRefs.current[tab.id] = element;
-                }}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setActivePreviewTabId(tab.id)}
-                onDoubleClick={() => {
-                  setActivePreviewTabId(tab.id);
-                  setEditingPreviewTabId(tab.id);
-                  setEditingPreviewTabName(tab.name);
-                }}
-              >
-                <span className={cn("editor-file-tab-dot", tab.dirty ? "bg-amber-500" : "bg-emerald-500")} />
-                {editing ? (
-                  <input
-                    ref={renameInputRef}
-                    className="editor-file-tab-input"
-                    value={editingPreviewTabName}
-                    onChange={(event) => setEditingPreviewTabName(event.target.value)}
-                    onBlur={commitPreviewTabName}
-                    onClick={(event) => event.stopPropagation()}
-                    onDoubleClick={(event) => event.stopPropagation()}
+              <Tooltip key={tab.id}>
+                <TooltipTrigger asChild>
+                  <div
+                    className={cn(
+                      "editor-file-tab",
+                      active && "editor-file-tab-active",
+                      layout?.side !== "right" && "editor-file-tab-left-sticky",
+                      layout?.side === "right" && "editor-file-tab-right-sticky",
+                      (layout?.hideLeft ?? 0) > 0 && "editor-file-tab-right-stacked",
+                      (layout?.hideRight ?? 0) > 0 && "editor-file-tab-left-stacked",
+                    )}
+                    ref={(element) => {
+                      tabButtonRefs.current[tab.id] = element;
+                    }}
+                    style={tabStyle}
+                    role="tab"
+                    aria-selected={active}
+                    tabIndex={active ? 0 : -1}
+                    onClick={() => activatePreviewTab(tab.id)}
+                    onDoubleClick={() => {
+                      activatePreviewTab(tab.id);
+                      setEditingPreviewTabId(tab.id);
+                      setEditingPreviewTabName(tab.name);
+                    }}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter") {
+                      if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        commitPreviewTabName();
-                      }
-
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        setEditingPreviewTabId(null);
+                        activatePreviewTab(tab.id);
                       }
                     }}
-                  />
-                ) : (
-                  <span className="truncate">{tab.name}</span>
-                )}
-                {tab.dirty && !editing ? <span className="text-muted-foreground">•</span> : null}
-              </button>
+                  >
+                    <TabIcon className={cn("editor-file-tab-icon", tabIconClassName)} aria-hidden="true" />
+                    {editing ? (
+                      <input
+                        ref={renameInputRef}
+                        className="editor-file-tab-input"
+                        value={editingPreviewTabName}
+                        onChange={(event) => setEditingPreviewTabName(event.target.value)}
+                        onBlur={commitPreviewTabName}
+                        onClick={(event) => event.stopPropagation()}
+                        onDoubleClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            commitPreviewTabName();
+                          }
+
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            setEditingPreviewTabId(null);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <span className="truncate">{tab.name}</span>
+                    )}
+                    {!editing ? (
+                      <span className={cn("editor-file-tab-trailing", hideCloseButton && "editor-file-tab-trailing-hidden")}>
+                        <span className="editor-file-tab-dirty" aria-hidden={!tab.dirty}>
+                          {tab.dirty ? "•" : ""}
+                        </span>
+                        <button
+                          className="editor-file-tab-close"
+                          aria-label={`Close ${tab.name}`}
+                          title={`Close ${tab.name}`}
+                          type="button"
+                          tabIndex={hideCloseButton ? -1 : 0}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+
+                            if (!hideCloseButton) {
+                              closePreviewTab(tab.id);
+                            }
+                          }}
+                          onDoubleClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ) : null}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="editor-file-tab-tooltip" side="bottom" align="start" sideOffset={8}>
+                  <div className="editor-file-tab-tooltip-path">{tab.path}</div>
+                </TooltipContent>
+              </Tooltip>
             );
           })}
         </div>
-        <TabFoldStack open={tabBellows === "right"} side="right" tabs={tabFoldStacks.right} />
         <button className="editor-file-tab-add" type="button" aria-label="Add test tab" title="Add test tab" onClick={addPreviewTab}>
           <Plus className="h-3.5 w-3.5" />
         </button>
