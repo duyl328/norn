@@ -67,7 +67,7 @@ const identifier = `com.norn.workbench.${sanitizeIdentifierPart(instanceName)}.$
 const config = {
   identifier,
   build: {
-    beforeDevCommand: `npm run dev -- --host 127.0.0.1 --port ${port}`,
+    beforeDevCommand: `pnpm dev --host 127.0.0.1 --port ${port}`,
     devUrl: `http://127.0.0.1:${port}`,
   },
 };
@@ -81,7 +81,7 @@ console.log(`Worktree: ${cwd}`);
 console.log(`Dev URL:  http://127.0.0.1:${port}`);
 console.log(`Bundle:   ${identifier}`);
 
-const child = spawn("npm", ["run", "tauri", "--", "dev", "--config", JSON.stringify(config)], {
+const child = spawn("pnpm", ["tauri", "dev", "--config", JSON.stringify(config)], {
   cwd,
   env: childEnv,
   stdio: "inherit",

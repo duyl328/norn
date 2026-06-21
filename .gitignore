@@ -2,9 +2,14 @@ node_modules
 .npm-cache
 dist
 dist-ssr
+coverage
 src-tauri/target
 .DS_Store
 *.local
 *.log
 dev-server.err
 dev-server.log
+
+# Playwright
+test-results/
+playwright-report/

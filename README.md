@@ -2,41 +2,41 @@
 
 Norn 是一个基于 Tauri 2、React、TypeScript 和 Vite 的轻量代码与 Git 工作台桌面应用。项目目标是提供一个启动更快、占用更轻的日常开发辅助工具，用于查看代码、进行少量文本编辑、检查 Git 变更并完成基础提交流程。
 
-当前仓库处于早期原型阶段：前端已经实现工作台界面 mock，后端 Tauri 侧已搭建应用壳和示例命令；真实文件读写、真实 Git 操作和完整编辑器能力仍需继续接入。
+当前仓库处于原型向真实功能过渡阶段：前端工作台界面已搭建完整，后端 Tauri 侧已实现真实的本地文件系统能力；编辑器已接入 CodeMirror 6 并支持语法高亮；真实 Git 操作（status/diff/stage/commit 等）仍待接入。
 
 ## 核心功能
 
 当前代码中已实现：
 
-- Tauri 2 桌面应用壳，窗口标题为 `Norn`。
+- Tauri 2 桌面应用壳，窗口标题为 `Norn`，支持 macOS 透明侧栏（vibrancy）。
 - React 工作台主界面，包含标题栏、菜单栏、工具栏、项目文件树区域、编辑器区域、Git 面板和状态栏。
 - 浅色 / 深色主题切换。
-- 基于 mock 数据的文件树、编辑器内容、Git 变更列表和提交面板展示。
+- **真实本地文件系统能力**（Rust / Tauri command）：打开文件 / 文件夹、读取目录树、读写文本文件、另存为、大文件分块读取与降级、新建 / 重命名 / 移动 / 复制 / 删除到回收站、scratch 文件夹。
+- **CodeMirror 6 编辑器**：多标签页、按文件类型语法高亮（按需加载语言包）、大文件自动降级为只读 / 纯文本。
+- **Git 工作区探测**：识别 Git 仓库根目录与当前分支（`inspect_git_workspace`）。
 - shadcn/ui 风格的基础 UI 组件封装，包括按钮、徽标、对话框、菜单、输入框、滚动区域、分隔线、标签页、文本框和提示。
 - Tauri command `app_version`，返回 Rust crate 版本号。
 
 需求文档中规划但当前尚未完成的能力：
 
-- 打开本地项目目录与真实文件树。
-- CodeMirror 6 真实编辑器接入、文件打开、编辑、保存、多标签页。
-- 当前文件搜索、项目文件名搜索、语法高亮和代码折叠。
-- 调用系统 `git` CLI 获取状态、查看 diff、stage / unstage、commit、push、pull。
-- 最近项目、用户设置、快捷键配置和本地持久化。
+- **真实 Git 变更操作**：Git 面板的状态列表、diff、stage / unstage、commit、push、pull 仍使用 mock 数据（`mock-data.ts`），尚未调用系统 `git` CLI。
+- 项目文件名搜索（当前文件内搜索已具备基础）。
+- 最近项目持久化（最近文件夹已落地 localStorage）、用户设置、快捷键配置。
 
 ## 技术栈
 
-| 层级 | 技术 |
-| --- | --- |
-| 桌面框架 | Tauri 2 |
-| 后端语言 | Rust |
-| 前端框架 | React 18 + TypeScript |
-| 构建工具 | Vite 6 |
-| 样式 | Tailwind CSS 3 |
-| UI 基础 | Radix UI、shadcn/ui 风格组件 |
-| 图标 | lucide-react |
-| 编辑器规划 | CodeMirror 6 |
-| Git 规划 | 系统 `git` CLI |
-| 包管理 | 当前仓库同时包含 `package-lock.json` 和 `pnpm-lock.yaml`，Tauri 配置中使用 `npm run dev` / `npm run build` |
+| 层级       | 技术                         |
+| ---------- | ---------------------------- |
+| 桌面框架   | Tauri 2                      |
+| 后端语言   | Rust                         |
+| 前端框架   | React 18 + TypeScript        |
+| 构建工具   | Vite 6                       |
+| 样式       | Tailwind CSS 3               |
+| UI 基础    | Radix UI、shadcn/ui 风格组件 |
+| 图标       | lucide-react                 |
+| 编辑器规划 | CodeMirror 6                 |
+| Git 规划   | 系统 `git` CLI               |
+| 包管理     | pnpm                         |
 
 ## 目录结构
 
@@ -51,7 +51,7 @@ norn/
 │   ├── main.tsx                # React DOM 挂载入口
 │   ├── styles.css              # Tailwind 与全局样式变量
 │   ├── components/ui/          # 基础 UI 组件
-│   ├── features/workbench/     # 工作台界面与 mock 数据
+│   ├── features/workbench/     # 工作台界面、文件能力、编辑器与 Git 面板
 │   └── lib/utils.ts            # 通用工具函数
 ├── src-tauri/
 │   ├── capabilities/           # Tauri 权限配置
@@ -72,7 +72,6 @@ norn/
 生成目录：
 
 - `node_modules/`：前端依赖目录。
-- `.npm-cache/`：npm 本地缓存目录。
 - `dist/`：Vite 构建产物。
 - `src-tauri/target/`：Rust / Tauri 构建产物。
 
@@ -82,7 +81,8 @@ norn/
 
 开发本项目需要：
 
-- Node.js 与 npm：具体最低版本待补充。
+- Node.js：`package.json` 要求 `>=20`。
+- pnpm：仓库通过 `packageManager` 锁定版本。
 - Rust 工具链：`src-tauri/Cargo.toml` 要求 `rust-version = "1.77"`。
 - Cargo：随 Rust 工具链安装。
 - Tauri 2 所需系统依赖：请按目标平台安装 Tauri 官方前置依赖。
@@ -101,17 +101,15 @@ cd norn
 安装前端依赖：
 
 ```bash
-npm install
+pnpm install
 ```
-
-说明：仓库中同时存在 `package-lock.json` 和 `pnpm-lock.yaml`。当前 `tauri.conf.json` 使用的是 `npm run dev` 和 `npm run build`，因此 README 默认使用 npm。团队最终使用的包管理器待补充统一。
 
 ## 配置说明
 
 前端开发服务器配置位于 `vite.config.ts`：
 
-- 默认端口：`1420`
-- `strictPort: true`，端口被占用时不会自动切换端口。
+- 默认端口：`1420`，可通过 `NORN_DEV_PORT` 或 `PORT` 覆盖。
+- `strictPort: false`，端口被占用时 Vite 可自动选择后续可用端口。
 - 路径别名：`@` 指向 `src/`。
 
 Tauri 应用配置位于 `src-tauri/tauri.conf.json`：
@@ -120,8 +118,8 @@ Tauri 应用配置位于 `src-tauri/tauri.conf.json`：
 - 版本：`0.1.0`
 - 应用标识：`com.norn.workbench`
 - 开发地址：`http://localhost:1420`
-- 开发前命令：`npm run dev`
-- 构建前命令：`npm run build`
+- 开发前命令：`pnpm dev`
+- 构建前命令：`pnpm build`
 - 前端构建目录：`../dist`
 - 默认窗口大小：`1440x900`
 - 最小窗口大小：`1024x700`
@@ -138,7 +136,7 @@ Tauri 权限配置位于 `src-tauri/capabilities/default.json`，当前启用：
 启动 Web 开发服务器：
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 默认访问地址：
@@ -150,35 +148,35 @@ http://localhost:1420
 启动 Tauri 桌面开发模式：
 
 ```bash
-npm run tauri dev
+pnpm tauri:dev
 ```
 
 查看生产构建预览：
 
 ```bash
-npm run preview
+pnpm preview
 ```
 
 ## 常用命令
 
-| 命令 | 说明 |
-| --- | --- |
-| `npm install` | 安装前端依赖 |
-| `npm run dev` | 启动 Vite 开发服务器 |
-| `npm run build` | 执行 TypeScript 检查并构建前端产物 |
-| `npm run preview` | 预览 Vite 构建产物 |
-| `npm run tauri dev` | 启动 Tauri 桌面开发模式 |
-| `npm run tauri build` | 构建 Tauri 桌面应用安装包 / 可执行产物 |
-
-当前 `package.json` 未配置 `test`、`lint`、`format` 等脚本。
+| 命令               | 说明                                   |
+| ------------------ | -------------------------------------- |
+| `pnpm install`     | 安装前端依赖                           |
+| `pnpm dev`         | 启动 Vite 开发服务器                   |
+| `pnpm build`       | 执行 TypeScript 检查并构建前端产物     |
+| `pnpm preview`     | 预览 Vite 构建产物                     |
+| `pnpm tauri:dev`   | 启动 Tauri 桌面开发模式                |
+| `pnpm tauri build` | 构建 Tauri 桌面应用安装包 / 可执行产物 |
+| `pnpm ci:quick`    | 本地快速 CI                            |
+| `pnpm ci:full`     | 本地完整 CI                            |
 
 ## 使用示例
 
 ### Web 原型预览
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 浏览器打开 `http://localhost:1420` 后，可以看到 Norn 工作台原型界面，包括项目面板、编辑器 mock、Git 变更面板和状态栏。
@@ -186,8 +184,8 @@ npm run dev
 ### 桌面应用预览
 
 ```bash
-npm install
-npm run tauri dev
+pnpm install
+pnpm tauri:dev
 ```
 
 该命令会通过 Tauri 打开桌面窗口，并加载本地 Vite 开发服务器。
@@ -198,31 +196,56 @@ Rust 侧已注册 `app_version` Tauri command，返回 `Cargo.toml` 中的 crate
 
 ## 测试方法
 
-自动化测试：待补充。当前仓库未发现测试文件或测试框架配置，`package.json` 也未提供 `test` 脚本。
-
-当前可执行的基础校验：
+### 静态校验
 
 ```bash
-npm run build
+pnpm typecheck   # tsc --noEmit
+pnpm lint        # ESLint 9 flat config
+pnpm format:check
+pnpm test        # Vitest 单测 / 组件测试
+pnpm test:coverage
+pnpm build       # tsc + vite build
 ```
 
-该命令会先执行 `tsc`，再执行 `vite build`。
+### 本地 CI
 
-Rust / Tauri 侧可执行的基础校验：
+当前 CI 先以 macOS 本地执行为主：
 
 ```bash
-cd src-tauri
-cargo check
+pnpm ci:quick
+pnpm ci:full
 ```
 
-说明：`cargo check` 未封装到根目录 `package.json` 脚本中。
+`ci:quick` 会依次执行类型检查、lint、Vitest、覆盖率门禁和前端构建。`ci:full` 在此基础上继续执行 Rust 测试和 Playwright E2E。Windows 仍属于支持目标，但当前手头只有 Mac，Windows 路径、权限、窗口和 UI 差异后续在 Windows 机器上单独验证。
+
+### 前端冒烟测试（Playwright）
+
+```bash
+pnpm test:e2e
+```
+
+针对 Vite 浏览器版运行无头测试（默认使用系统 Google Chrome，见 `playwright.config.ts`）。当前覆盖工作台渲染、打开文件夹、文件树 CRUD、编辑 / 保存、Tab 切换、未保存关闭确认、设置页、状态栏、大文件、文件错误，以及 macOS / Windows Tauri runtime 的标题栏 mock。
+
+测试用 Tauri 运行时桩见 `tests/e2e/tauri-mock.ts`，通过模拟原生菜单事件驱动应用，无需真实 Tauri 窗口。
+
+### 关于真实 Tauri 窗口的 E2E
+
+驱动真实 Tauri 窗口的官方方案是 `tauri-driver` + WebdriverIO，但**仅支持 Linux / Windows，不支持 macOS**（WKWebView 无 WebDriver 实现）。因此 macOS 上 native 能力（真实文件 / Git）目前只能通过 `pnpm tauri:dev` 手动验证，或在 Linux / Windows CI 上做自动化。
+
+### Rust / Tauri 侧
+
+```bash
+pnpm test:rust
+```
+
+该脚本会执行 `src-tauri` 下的 `cargo test`，覆盖文本读取、range 读取、二进制 / 非 UTF-8 拒绝、文件操作保护等基础后端行为。
 
 ## 构建与部署
 
 ### 构建前端产物
 
 ```bash
-npm run build
+pnpm build
 ```
 
 构建产物输出到：
@@ -234,34 +257,34 @@ dist/
 ### 构建桌面应用
 
 ```bash
-npm run tauri build
+pnpm tauri build
 ```
 
-Tauri 会先执行 `npm run build`，再根据 `src-tauri/tauri.conf.json` 进行桌面应用打包。具体平台产物路径由 Tauri / Cargo 输出决定，通常位于 `src-tauri/target/` 下。
+Tauri 会先执行前端构建，再根据 `src-tauri/tauri.conf.json` 进行桌面应用打包。具体平台产物路径由 Tauri / Cargo 输出决定，通常位于 `src-tauri/target/` 下。
 
-部署方式：待补充。当前仓库未发现 CI/CD、发布脚本或安装包分发说明。
+部署方式：待补充。当前已提供本地 CI 脚本；安装包分发说明仍待补充。
 
 ## 常见问题
 
 ### 端口 1420 被占用怎么办？
 
-`vite.config.ts` 中配置了 `strictPort: true`，端口被占用时开发服务器会启动失败。可以释放端口，或修改 `vite.config.ts` 和 `src-tauri/tauri.conf.json` 中对应的开发地址配置。
+`vite.config.ts` 中配置了 `strictPort: false`，浏览器开发服务器可自动选择后续可用端口。Tauri 开发模式建议使用 `pnpm tauri:dev`，该脚本会为当前 worktree 分配可用端口并注入临时 Tauri devUrl。
 
-### 为什么界面中的文件树和 Git 变更不是我的真实项目？
+### 为什么 Git 变更不是我的真实项目？
 
-当前工作台数据来自 `src/features/workbench/mock-data.ts`，真实文件系统和真实 Git CLI 尚未接入。
+当前文件系统能力已接入真实 Tauri command；Git 面板仍以 mock / 探测结果展示为主，真实 `git status`、`git diff`、`git add`、`git commit`、`git push`、`git pull` 等操作仍待实现。
 
 ### 为什么 Git 按钮看起来可用但没有执行真实操作？
 
 当前 Git 面板是 UI 原型，真实的 `git status`、`git diff`、`git add`、`git commit`、`git push`、`git pull` 等命令调用仍待实现。
 
-### 为什么没有测试命令？
+### 为什么 Windows 还没有完整验证？
 
-当前 `package.json` 未配置 `test` 脚本，仓库中也未发现测试配置。测试体系待补充。
+当前本地 CI 以 macOS 为执行环境，因为手头只有 Mac。Windows 仍是支持目标，后续需要在 Windows 机器上单独验证路径、权限、窗口行为和 UI 差异。
 
-### 为什么文档中同时出现 npm 和 pnpm 锁文件？
+### 为什么项目统一使用 pnpm？
 
-仓库同时包含 `package-lock.json` 和 `pnpm-lock.yaml`。由于 Tauri 配置当前调用 npm 脚本，本文档默认使用 npm。包管理器规范待补充统一。
+仓库统一使用 pnpm，锁文件以 `pnpm-lock.yaml` 为准。运行脚本请使用 `pnpm <script>`。
 
 ## 贡献指南
 

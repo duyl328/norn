@@ -5,44 +5,52 @@
 - [x] 搭建 Tauri 2 + React + TypeScript + Vite 项目壳
 - [x] 完成主工作台界面骨架：标题栏、工具栏、文件树区、编辑器区、Git 面板、状态栏
 - [x] 支持浅色 / 深色主题切换
-- [x] 初步接入 CodeMirror 6 编辑器壳
-- [x] 支持浏览器文件选择读取单文件内容
-- [x] 前端构建通过：`npm run build`
+- [x] 接入 CodeMirror 6 编辑器：多标签页、按需语法高亮、大文件降级
+- [x] 接入真实本地项目目录与目录树（Tauri command）
+- [x] 接入真实文件读写：打开 / 保存 / 另存为 / 新建 / 重命名 / 移动 / 复制 / 回收站
+- [x] Git 工作区探测：识别仓库根目录与当前分支
+- [x] 前端构建通过：`pnpm build`
 - [x] Rust / Tauri 基础检查通过：`cargo check`
-- [ ] 接入真实本地项目目录
-- [ ] 接入真实文件读写
-- [ ] 接入真实 Git CLI 操作
+- [x] 建立编码规范（见 `CODING_STANDARDS.md`）、统一 pnpm、接入 ESLint + Prettier
+- [x] 拆分工作台前导区：types / constants / codemirror-setup / workbench-utils 模块化
+- [x] 拆分工作台子组件到 `components/`（titlebar / file-tree / editor-surface / git-panel 等 8 个文件）
+- [x] 接入 Playwright 前端冒烟测试（含注入 Tauri mock 驱动数据流）：`pnpm test:e2e`
+- [x] 接入 Mac 本地 CI：`pnpm ci:quick` / `pnpm ci:full`
+- [x] 接入 Vitest 覆盖率报告与基线门禁：`pnpm test:coverage`
+- [ ] 继续收敛工作台状态与大文件结构（`workbench-page.tsx` 约 900 行，`editor-surface.tsx` 仍超过 800 行）
+- [ ] 接入真实 Git CLI 变更操作（status / diff / stage / commit / push / pull，当前为 mock）
+- [ ] 后续补 Windows 平台验证（当前手头仅 Mac，Windows 路径 / 权限 / UI 差异待单独处理）
 
 ## 按顺序推进
 
 1. [ ] 整理仓库状态
    - [ ] 决定是否将 `.idea/` 加入 `.gitignore`
    - [ ] 确认 `todo.md` 是否纳入版本控制
-   - [ ] 统一 npm / pnpm 锁文件策略
+   - [x] 统一 npm / pnpm 锁文件策略
    - [ ] 检查当前未提交改动，只保留与任务相关的文件
 
 2. [ ] 更新项目文档
-   - [ ] 更新 README 中的当前完成度说明
-   - [ ] 标明 CodeMirror 已部分接入
-   - [ ] 标明本地文件系统和 Git CLI 尚未接入
-   - [ ] 补充环境依赖、包管理器和许可证说明
+   - [x] 更新 README 中的当前完成度说明
+   - [x] 标明 CodeMirror 已接入
+   - [x] 标明本地文件系统已接入、Git 操作尚未接入
+   - [x] 补充环境依赖、包管理器和许可证说明
 
-3. [ ] 拆分工作台大组件
-   - [ ] 从 `workbench-page.tsx` 拆出标题栏组件
+3. [ ] 继续拆分工作台大组件
+   - [x] 从 `workbench-page.tsx` 拆出标题栏组件
    - [ ] 拆出工具栏组件
-   - [ ] 拆出文件树组件
-   - [ ] 拆出编辑器组件
-   - [ ] 拆出 Git 面板组件
-   - [ ] 拆出状态栏组件
+   - [x] 拆出文件树组件
+   - [x] 拆出编辑器组件
+   - [x] 拆出 Git 面板组件
+   - [x] 拆出状态栏组件
    - [ ] 保留清晰的数据流和事件边界
 
-4. [ ] 接入 Tauri 文件系统能力
-   - [ ] 支持选择并打开本地项目目录
-   - [ ] 支持读取目录树
-   - [ ] 支持读取本地文件内容
-   - [ ] 支持写入本地文件内容
-   - [ ] 处理无权限、文件不存在、路径异常等错误
-   - [ ] 默认忽略 `.git`、`node_modules`、`target`、`dist` 等目录
+4. [x] 接入 Tauri 文件系统能力
+   - [x] 支持选择并打开本地项目目录
+   - [x] 支持读取目录树
+   - [x] 支持读取本地文件内容
+   - [x] 支持写入本地文件内容
+   - [x] 处理无权限、文件不存在、路径异常等错误
+   - [x] 默认忽略 `.git`、`node_modules`、`target`、`dist` 等目录
 
 5. [ ] 建立真实工作区状态
    - [ ] 保存当前工作区路径
@@ -163,16 +171,20 @@
     - [ ] CodeMirror 语言包按需加载，降低首包体积
 
 21. [ ] 补充测试和工程脚本
-    - [ ] 添加 `lint` 脚本
-    - [ ] 添加 `format` 脚本
-    - [ ] 添加 `test` 脚本
+    - [x] 添加 `lint` 脚本
+    - [x] 添加 `format` 脚本
+    - [x] 添加 `test` 脚本
+    - [x] 添加覆盖率脚本和基线门禁
+    - [x] 添加本地 CI 脚本（Mac 当前执行环境）
     - [ ] 为 Git 状态解析添加单元测试
-    - [ ] 为 Rust command 添加基础测试
-    - [ ] 添加前端工作台冒烟测试
+    - [x] 为 Rust command 添加基础测试
+    - [x] 添加前端工作台冒烟测试
+    - [ ] 在 Windows 机器上补充本地 CI 验证与平台差异测试
 
 22. [ ] 补充发布基础
     - [ ] 添加 LICENSE
-    - [ ] 添加 CI 检查
+    - [x] 添加本地 CI 检查
+    - [ ] 添加 Windows 平台 CI / 本地验证流程
     - [ ] 补充 Tauri 打包说明
     - [ ] 补充 Windows、macOS、Linux 依赖说明
     - [ ] 明确安装包产物路径和发布流程

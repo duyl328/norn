@@ -1,6 +1,6 @@
-import * as React from "react";
 import * as MenubarPrimitive from "@radix-ui/react-menubar";
 import { Check, ChevronRight, Circle } from "lucide-react";
+import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -29,7 +29,7 @@ const MenubarTrigger = React.forwardRef<
   <MenubarPrimitive.Trigger
     ref={ref}
     className={cn(
-      "flex cursor-default select-none items-center rounded-sm px-2 py-1 text-[12px] font-medium outline-none focus:bg-accent data-[state=open]:bg-accent",
+      "flex cursor-default select-none items-center rounded-sm px-2 py-1 text-ui font-medium outline-none focus:bg-accent data-[state=open]:bg-accent",
       className,
     )}
     {...props}
@@ -66,7 +66,7 @@ const MenubarItem = React.forwardRef<
   <MenubarPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-[12px] outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-ui outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       inset && "pl-8",
       className,
     )}
@@ -84,7 +84,7 @@ const MenubarSubTrigger = React.forwardRef<
   <MenubarPrimitive.SubTrigger
     ref={ref}
     className={cn(
-      "flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-[12px] outline-none focus:bg-accent data-[state=open]:bg-accent",
+      "flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-ui outline-none focus:bg-accent data-[state=open]:bg-accent",
       inset && "pl-8",
       className,
     )}
@@ -118,7 +118,7 @@ const MenubarCheckboxItem = React.forwardRef<
   <MenubarPrimitive.CheckboxItem
     ref={ref}
     className={cn(
-      "relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-[12px] outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-ui outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className,
     )}
     checked={checked}
@@ -141,7 +141,7 @@ const MenubarRadioItem = React.forwardRef<
   <MenubarPrimitive.RadioItem
     ref={ref}
     className={cn(
-      "relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-[12px] outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-ui outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className,
     )}
     {...props}
@@ -165,24 +165,24 @@ const MenubarSeparator = React.forwardRef<
 MenubarSeparator.displayName = MenubarPrimitive.Separator.displayName;
 
 const MenubarShortcut = ({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) => {
-  return <span className={cn("ml-auto pl-8 font-mono text-[11px] text-muted-foreground", className)} {...props} />;
+  return <span className={cn("ml-auto pl-8 font-mono text-ui-md text-muted-foreground", className)} {...props} />;
 };
 MenubarShortcut.displayName = "MenubarShortcut";
 
 export {
   Menubar,
-  MenubarMenu,
-  MenubarTrigger,
+  MenubarCheckboxItem,
   MenubarContent,
+  MenubarGroup,
   MenubarItem,
+  MenubarMenu,
+  MenubarPortal,
+  MenubarRadioGroup,
+  MenubarRadioItem,
   MenubarSeparator,
   MenubarShortcut,
-  MenubarGroup,
-  MenubarPortal,
   MenubarSub,
   MenubarSubContent,
   MenubarSubTrigger,
-  MenubarCheckboxItem,
-  MenubarRadioGroup,
-  MenubarRadioItem,
+  MenubarTrigger,
 };

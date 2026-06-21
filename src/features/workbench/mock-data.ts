@@ -1,14 +1,5 @@
-import {
-  Braces,
-  Code2,
-  FileCode2,
-  FileText,
-  Folder,
-  FolderOpen,
-  GitBranch,
-  Settings,
-} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Braces, Code2, FileCode2, FileText, Folder, FolderOpen, GitBranch, Settings } from "lucide-react";
 
 export type TreeNode = {
   name: string;

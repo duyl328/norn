@@ -1,6 +1,6 @@
 import { StreamLanguage, type StreamParser } from "@codemirror/language";
-import { RangeSetBuilder, type Extension } from "@codemirror/state";
-import { Decoration, EditorView, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
+import { type Extension, RangeSetBuilder } from "@codemirror/state";
+import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 
 export const HIGHLIGHT_LANGUAGE_SIZE_LIMIT_BYTES = 5 * 1024 * 1024;
 export const FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES = 5 * 1024 * 1024;
@@ -170,9 +170,7 @@ const looksLikeConfig = (content: string) => {
     return false;
   }
 
-  const matches = lines.filter((line) =>
-    /^(?:[#;].+|\[[^\]]+\]|[a-z0-9_.-]+\s*[:=]\s*.+)$/i.test(line),
-  ).length;
+  const matches = lines.filter((line) => /^(?:[#;].+|\[[^\]]+\]|[a-z0-9_.-]+\s*[:=]\s*.+)$/i.test(line)).length;
 
   return matches >= MIN_STRUCTURED_LINES && matches / lines.length >= 0.35;
 };
@@ -461,7 +459,7 @@ const genericConfigParser: StreamParser<EmptyParserState> = {
       return "punctuation";
     }
 
-    if (stream.match(/^[^\s#;:=\[\]"']+/)) {
+    if (stream.match(/^[^\s#;:=[\]"']+/)) {
       return null;
     }
 
@@ -673,11 +671,7 @@ const buildSmartOverlayDecorations = (view: EditorView) => {
       const tokens = classifySmartLine(line.text);
 
       for (const token of tokens) {
-        builder.add(
-          line.from + token.start,
-          line.from + token.end,
-          Decoration.mark({ class: token.className }),
-        );
+        builder.add(line.from + token.start, line.from + token.end, Decoration.mark({ class: token.className }));
       }
 
       if (line.to >= range.to) {
@@ -785,7 +779,11 @@ const collectRegex = (
 };
 
 const isCommentLine = (line: string) =>
-  line.startsWith("//") || line.startsWith("#") || line.startsWith(";") || line.startsWith("/*") || line.startsWith("*");
+  line.startsWith("//") ||
+  line.startsWith("#") ||
+  line.startsWith(";") ||
+  line.startsWith("/*") ||
+  line.startsWith("*");
 
 const resolveTokenOverlaps = (tokens: SmartTokenMatch[]) => {
   const sorted = [...tokens].sort((left, right) => {

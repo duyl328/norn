@@ -165,8 +165,9 @@ fn app_version() -> &'static str {
 #[tauri::command]
 fn inspect_git_workspace(path: String) -> Result<GitWorkspaceInspection, String> {
     let workspace = PathBuf::from(path);
-    let metadata = fs::metadata(&workspace)
-        .map_err(|error| format_file_error("Unable to read workspace metadata", &workspace, error))?;
+    let metadata = fs::metadata(&workspace).map_err(|error| {
+        format_file_error("Unable to read workspace metadata", &workspace, error)
+    })?;
 
     if !metadata.is_dir() {
         return Err(format!("{} is not a directory", workspace.display()));
@@ -188,7 +189,11 @@ fn inspect_git_workspace(path: String) -> Result<GitWorkspaceInspection, String>
             });
         }
         Err(error) => {
-            return Err(format_file_error("Unable to check git version", &workspace, error));
+            return Err(format_file_error(
+                "Unable to check git version",
+                &workspace,
+                error,
+            ));
         }
     };
 
@@ -215,7 +220,9 @@ fn inspect_git_workspace(path: String) -> Result<GitWorkspaceInspection, String>
         .arg(&workspace)
         .args(["rev-parse", "--show-toplevel"])
         .output()
-        .map_err(|error| format_file_error("Unable to inspect git repository", &workspace, error))?;
+        .map_err(|error| {
+            format_file_error("Unable to inspect git repository", &workspace, error)
+        })?;
 
     let has_dot_git = workspace.join(".git").exists();
 
@@ -250,7 +257,11 @@ fn inspect_git_workspace(path: String) -> Result<GitWorkspaceInspection, String>
     let branch = String::from_utf8_lossy(&branch_output.stdout)
         .trim()
         .to_string();
-    let branch = branch_output.status.success().then_some(branch).filter(|value| !value.is_empty());
+    let branch = branch_output
+        .status
+        .success()
+        .then_some(branch)
+        .filter(|value| !value.is_empty());
 
     Ok(GitWorkspaceInspection {
         workspace_path: workspace.to_string_lossy().into_owned(),
@@ -1438,28 +1449,27 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use tempfile::TempDir;
 
     struct TestWorkspace {
         root: PathBuf,
+        _temp_dir: TempDir,
     }
 
     impl TestWorkspace {
         fn new() -> Self {
-            let unique = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("system clock should be available")
-                .as_nanos();
-            let root = std::env::temp_dir().join(format!(
-                "norn-file-tree-test-{}-{unique}",
-                std::process::id()
-            ));
-            fs::create_dir_all(&root).expect("test workspace should be created");
+            let temp_dir = tempfile::Builder::new()
+                .prefix("norn-file-tree-test-")
+                .tempdir()
+                .expect("test workspace should be created");
+            let root = temp_dir
+                .path()
+                .canonicalize()
+                .expect("test workspace should be canonicalized");
 
             Self {
-                root: root
-                    .canonicalize()
-                    .expect("test workspace should be canonicalized"),
+                root,
+                _temp_dir: temp_dir,
             }
         }
 
@@ -1469,12 +1479,6 @@ mod tests {
 
         fn path_string(&self, path: &Path) -> String {
             path.to_string_lossy().into_owned()
-        }
-    }
-
-    impl Drop for TestWorkspace {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.root);
         }
     }
 
@@ -1518,6 +1522,110 @@ mod tests {
             .expect_err("workspace root should not be moved to trash");
 
         assert_eq!(error.kind, FileOperationErrorKind::RootOperation);
+    }
+
+    #[test]
+    fn read_text_file_reads_utf8_file() {
+        let workspace = TestWorkspace::new();
+        let file_path = workspace.root.join("notes.txt");
+        fs::write(&file_path, "hello\nworld\n").expect("text file should be written");
+
+        let file =
+            read_text_file(workspace.path_string(&file_path)).expect("utf-8 file should be read");
+
+        assert_eq!(file.name, "notes.txt");
+        assert_eq!(file.content, "hello\nworld\n");
+        assert_eq!(file.size, 12);
+    }
+
+    #[test]
+    fn read_text_file_rejects_binary_file() {
+        let workspace = TestWorkspace::new();
+        let file_path = workspace.root.join("binary.bin");
+        fs::write(&file_path, [b'a', 0, b'b']).expect("binary file should be written");
+
+        let error = match read_text_file(workspace.path_string(&file_path)) {
+            Ok(_) => panic!("binary file should be rejected"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("appears to be a binary file"));
+    }
+
+    #[test]
+    fn inspect_text_file_flags_non_utf8_file() {
+        let workspace = TestWorkspace::new();
+        let file_path = workspace.root.join("latin1.txt");
+        fs::write(&file_path, [0xff, 0xfe, b'a']).expect("non utf-8 file should be written");
+
+        let inspection = inspect_text_file(workspace.path_string(&file_path))
+            .expect("inspection should not require full utf-8 content");
+
+        assert!(!inspection.is_binary);
+        assert!(!inspection.is_utf8);
+        assert!(inspection.sample.is_empty());
+    }
+
+    #[test]
+    fn read_text_file_range_reads_requested_slice() {
+        let workspace = TestWorkspace::new();
+        let file_path = workspace.root.join("range.txt");
+        fs::write(&file_path, "first\nsecond\nthird\n").expect("range file should be written");
+
+        let range = read_text_file_range(workspace.path_string(&file_path), 2, 4)
+            .expect("range should be read");
+
+        assert_eq!(range.content, "first\nsecond\n");
+        assert_eq!(range.requested_offset, 2);
+        assert_eq!(range.start_offset, 0);
+        assert_eq!(range.end_offset, 13);
+        assert!(!range.has_more_before);
+        assert!(range.has_more_after);
+    }
+
+    #[test]
+    fn read_text_file_range_handles_offset_beyond_end() {
+        let workspace = TestWorkspace::new();
+        let file_path = workspace.root.join("small.txt");
+        fs::write(&file_path, "abc").expect("small file should be written");
+
+        let range = read_text_file_range(workspace.path_string(&file_path), 99, 10)
+            .expect("out-of-range offset should be clamped");
+
+        assert_eq!(range.content, "abc");
+        assert_eq!(range.requested_offset, 3);
+        assert_eq!(range.start_offset, 0);
+        assert_eq!(range.end_offset, 3);
+        assert!(!range.has_more_before);
+        assert!(!range.has_more_after);
+    }
+
+    #[test]
+    fn read_text_file_range_aligns_to_utf8_boundary() {
+        let workspace = TestWorkspace::new();
+        let file_path = workspace.root.join("utf8.txt");
+        fs::write(&file_path, "a你b").expect("utf-8 file should be written");
+
+        let range = read_text_file_range(workspace.path_string(&file_path), 2, 1)
+            .expect("range should align to utf-8 character boundaries");
+
+        assert_eq!(range.content, "a你b");
+        assert_eq!(range.start_offset, 0);
+        assert_eq!(range.end_offset, 5);
+    }
+
+    #[test]
+    fn read_text_file_range_rejects_binary_content() {
+        let workspace = TestWorkspace::new();
+        let file_path = workspace.root.join("binary-range.bin");
+        fs::write(&file_path, [b'a', 0, b'b']).expect("binary file should be written");
+
+        let error = match read_text_file_range(workspace.path_string(&file_path), 0, 3) {
+            Ok(_) => panic!("binary range should be rejected"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("appears to be a binary file"));
     }
 
     #[cfg(unix)]

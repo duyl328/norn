@@ -1,0 +1,134 @@
+import { expect, test } from "@playwright/test";
+
+import { emitMenu } from "./helpers";
+import { installTauriMock } from "./tauri-mock";
+
+/**
+ * 工作台关键用户流程的行为护栏。注入 Tauri mock 运行时后，真实驱动组件
+ * （文件树点击 / CodeMirror 输入 / 原生菜单命令），断言真实渲染结果。
+ *
+ * 选择器优先级：可见文本 > role > 稳定 class。需要触发原生菜单命令时走
+ * `__emitTauriEvent`（最稳，复用应用已注册的 listen 回调）。
+ */
+
+/**
+ * 流程 1：打开文件 → 编辑器显示内容 + 出现对应 Tab。
+ * 打开文件夹后点击文件树里的 README.md（tree-row 按钮），断言编辑器渲染 mock 文件内容，
+ * 并出现对应的编辑器 Tab。
+ */
+test("流程：打开文件树文件后编辑器显示内容并出现 Tab", async ({ page }) => {
+  await installTauriMock(page);
+  await page.goto("/");
+
+  await emitMenu(page, "menu-open-folder");
+
+  // 点击文件树里的 README.md 行（tree-row 按钮）
+  const readmeRow = page.locator("button.tree-row", { hasText: "README.md" });
+  await expect(readmeRow).toBeVisible();
+  await readmeRow.click();
+
+  // 编辑器渲染 mock 文件内容
+  await expect(page.locator(".cm-content")).toContainText("Mock Project");
+
+  // 出现 README.md 的编辑器 Tab（role=tab）
+  await expect(page.getByRole("tab", { name: /README\.md/ })).toBeVisible();
+});
+
+/**
+ * 流程 2：编辑 → 脏标记 → 保存 → 已保存。
+ * 打开 README.md 后在 CodeMirror 输入文本，断言状态栏出现 "Unsaved"；
+ * 触发 menu-save-file（mock 的 save_text_file 返回 NativeSavedTextFile），
+ * 断言状态栏回到 "Saved"。
+ */
+test("流程：编辑产生脏标记后保存回到已保存", async ({ page }) => {
+  await installTauriMock(page);
+  await page.goto("/");
+
+  await emitMenu(page, "menu-open-folder");
+  await page.locator("button.tree-row", { hasText: "README.md" }).click();
+  await expect(page.locator(".cm-content")).toContainText("Mock Project");
+
+  // 打开后应为已保存
+  await expect(page.locator(".status-bar")).toContainText("Saved");
+
+  // 在编辑器输入文本，产生本地改动
+  await page.locator(".cm-content").click();
+  await page.keyboard.type("EDITED");
+
+  // 状态栏出现未保存指示
+  await expect(page.locator(".status-bar")).toContainText("Unsaved");
+
+  // 触发原生保存命令（save_text_file）
+  await emitMenu(page, "menu-save-file");
+
+  // 状态栏回到已保存
+  await expect(page.locator(".status-bar")).toContainText("Saved");
+});
+
+/**
+ * 流程 3：多 Tab 切换。
+ * 打开 README.md 与 src/main.tsx（先展开 src 目录），断言出现两个 Tab，
+ * 点击切换后编辑器内容随之变化。
+ */
+test("流程：打开多个文件后切换 Tab 编辑器内容随之变化", async ({ page }) => {
+  await installTauriMock(page);
+  await page.goto("/");
+
+  await emitMenu(page, "menu-open-folder");
+
+  // 打开 README.md
+  await page.locator("button.tree-row", { hasText: "README.md" }).click();
+  await expect(page.locator(".cm-content")).toContainText("Mock Project");
+
+  // 展开 src 目录后打开 main.tsx
+  await page.locator("button.tree-row", { hasText: "src" }).click();
+  const mainRow = page.locator("button.tree-row", { hasText: "main.tsx" });
+  await expect(mainRow).toBeVisible();
+  await mainRow.click();
+  await expect(page.locator(".cm-content")).toContainText("hello from mock");
+
+  // 两个 Tab 均存在
+  const readmeTab = page.getByRole("tab", { name: /README\.md/ });
+  const mainTab = page.getByRole("tab", { name: /main\.tsx/ });
+  await expect(readmeTab).toBeVisible();
+  await expect(mainTab).toBeVisible();
+
+  // 切回 README.md，编辑器内容随之变化
+  await readmeTab.click();
+  await expect(page.locator(".cm-content")).toContainText("Mock Project");
+  await expect(page.locator(".cm-content")).not.toContainText("hello from mock");
+});
+
+/**
+ * 流程 4：关闭未保存文档 → 弹出 UnsavedChangesDialog 确认对话框。
+ * 打开两个文件（确保 Tab 可关闭），对其中一个产生改动后点击 Tab 上的关闭按钮，
+ * 断言出现 "Unsaved changes" 确认对话框及其操作项。
+ */
+test("流程：关闭有未保存改动的文档弹出确认对话框", async ({ page }) => {
+  await installTauriMock(page);
+  await page.goto("/");
+
+  await emitMenu(page, "menu-open-folder");
+
+  // 打开两个文件，使 Tab 可关闭（closable 需 openDocuments.length > 1）
+  await page.locator("button.tree-row", { hasText: "README.md" }).click();
+  await expect(page.locator(".cm-content")).toContainText("Mock Project");
+  await page.locator("button.tree-row", { hasText: "src" }).click();
+  await page.locator("button.tree-row", { hasText: "main.tsx" }).click();
+  await expect(page.locator(".cm-content")).toContainText("hello from mock");
+
+  // 在当前活动文档（main.tsx）产生改动
+  await page.locator(".cm-content").click();
+  await page.keyboard.type("EDITED");
+  await expect(page.locator(".status-bar")).toContainText("Unsaved");
+
+  // 点击该 Tab 上的关闭按钮（活动 Tab 才显示关闭按钮）
+  await page.getByRole("button", { name: /Close main\.tsx/ }).click();
+
+  // 弹出 UnsavedChangesDialog
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("Unsaved changes");
+  await expect(dialog.getByRole("button", { name: "Save and Close" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Discard" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeVisible();
+});

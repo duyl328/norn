@@ -49,6 +49,18 @@ const config = {
         sans: ["Segoe UI", "Inter", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "Cascadia Code", "Consolas", "monospace"],
       },
+      // 紧凑工具型 UI 字号刻度（仅 font-size，不强制 line-height，与原 text-[Npx] 行为一致）。
+      // 主字号为 text-ui (12px) / text-ui-lg (13px)，见 TECH_STACK 约束。
+      fontSize: {
+        "ui-2xs": "8px",
+        "ui-xs": "9px",
+        "ui-sm": "10px",
+        "ui-md": "11px",
+        ui: "12px",
+        "ui-lg": "13px",
+        "ui-xl": "14px",
+        "ui-2xl": "24px",
+      },
       boxShadow: {
         tool: "0 1px 2px rgb(0 0 0 / 0.08)",
       },

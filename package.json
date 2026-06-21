@@ -3,12 +3,31 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite",
     "tauri:dev": "node scripts/tauri-dev-instance.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "node scripts/tauri-runner.mjs"
+    "tauri": "node scripts/tauri-runner.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.{ts,js,mjs,json,md}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"*.{ts,js,mjs,json,md}\"",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:unit": "vitest run tests/unit tests/components",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:rust": "cd src-tauri && cargo test",
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:coverage && pnpm build",
+    "check:all": "pnpm check && pnpm test:rust && pnpm test:e2e",
+    "ci:quick": "node scripts/local-ci.mjs quick",
+    "ci:full": "node scripts/local-ci.mjs full"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.0",
@@ -41,19 +60,34 @@
     "lucide-react": "^0.469.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "tailwind-merge": "^2.6.0"
+    "tailwind-merge": "^2.6.0",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.61.0",
     "@tauri-apps/cli": "^2.9.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^4.1.9",
     "autoprefixer": "^10.4.20",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "eslint-plugin-simple-import-sort": "^13.0.0",
+    "jsdom": "^29.1.1",
     "playwright": "^1.61.0",
     "postcss": "^8.4.49",
+    "prettier": "^3.8.4",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^6.0.5"
+    "typescript-eslint": "^8.61.1",
+    "vite": "^6.0.5",
+    "vitest": "^4.1.9"
   }
 }
