@@ -1,6 +1,6 @@
 use tauri::{
     menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu},
-    Emitter,
+    Emitter, Manager,
 };
 use tauri_plugin_dialog::DialogExt;
 
@@ -108,6 +108,13 @@ struct DirectoryEntry {
     canonical_path: Option<String>,
     is_readonly: bool,
     error: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScratchFolder {
+    name: String,
+    path: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -420,6 +427,39 @@ fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String> {
     });
 
     Ok(entries)
+}
+
+#[tauri::command]
+fn scratch_folder(app: tauri::AppHandle) -> Result<ScratchFolder, String> {
+    let base_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Unable to resolve app data directory: {error}"))?;
+    let path = base_dir.join("Scratch");
+    fs::create_dir_all(&path)
+        .map_err(|error| format_file_error("Unable to create scratch folder", &path, error))?;
+
+    let default_file_path = path.join("Scratch.md");
+    if !default_file_path.try_exists().map_err(|error| {
+        format_file_error(
+            "Unable to inspect scratch default file",
+            &default_file_path,
+            error,
+        )
+    })? {
+        fs::write(&default_file_path, "# Scratch\n\n").map_err(|error| {
+            format_file_error(
+                "Unable to create scratch default file",
+                &default_file_path,
+                error,
+            )
+        })?;
+    }
+
+    Ok(ScratchFolder {
+        name: "Scratch".to_string(),
+        path: path.to_string_lossy().into_owned(),
+    })
 }
 
 #[tauri::command]
@@ -1259,6 +1299,7 @@ pub fn run() {
             save_text_file,
             save_text_file_as,
             list_directory,
+            scratch_folder,
             create_file,
             create_directory,
             rename_path,

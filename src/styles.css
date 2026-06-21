@@ -532,6 +532,37 @@
     padding-top: 2px;
   }
 
+  .project-panel-resizable-stack {
+    @apply flex min-h-0 flex-1 flex-col overflow-hidden;
+  }
+
+  .project-panel-main-region {
+    @apply flex min-h-0 min-w-0 flex-col overflow-hidden;
+    flex: 1 1 auto;
+  }
+
+  .project-panel-splitter {
+    @apply relative flex h-3 shrink-0 cursor-row-resize items-center justify-center outline-none;
+    touch-action: none;
+  }
+
+  .project-panel-splitter-line {
+    @apply block h-px transition-colors;
+    width: calc(100% - 1.5rem);
+    background: hsl(var(--border) / 0.45);
+  }
+
+  .project-panel-splitter:hover .project-panel-splitter-line,
+  .project-panel-splitter:focus-visible .project-panel-splitter-line,
+  .project-panel-splitter-resizing .project-panel-splitter-line {
+    background: hsl(var(--primary) / 0.7);
+  }
+
+  .project-panel-splitter-resizing {
+    cursor: row-resize;
+    user-select: none;
+  }
+
   .project-panel-start + .min-h-0,
   .project-panel-start + .project-panel-tree-spacer {
     min-height: 0;
@@ -540,13 +571,6 @@
   .project-panel-divider {
     @apply mx-1 h-px;
     background: hsl(var(--border) / 0.52);
-  }
-
-  .project-panel-tree-divider {
-    height: 1px;
-    width: 64%;
-    margin: -6px auto 3px;
-    background: hsl(var(--border) / 0.2);
   }
 
   .project-panel-recent {
@@ -559,6 +583,15 @@
 
   .project-panel-recent-switcher {
     @apply grid min-w-0 gap-1;
+  }
+
+  .project-panel-scratch {
+    @apply flex min-h-0 min-w-0 shrink-0 flex-col py-1;
+    background: hsl(var(--background) / 0.1);
+  }
+
+  .project-panel-scratch-heading {
+    @apply shrink-0 px-3 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground;
   }
 
   .project-panel-recent-heading {
@@ -709,7 +742,7 @@
   }
 
   .project-panel-footer {
-    @apply p-1.5;
+    @apply shrink-0 p-1.5;
     background: transparent;
   }
 
@@ -814,6 +847,15 @@
 
   .editor-file-tab-input {
     @apply h-5 min-w-[72px] max-w-[170px] bg-transparent p-0 text-[12px] font-medium text-foreground outline-none;
+  }
+
+  .editor-file-tab-close {
+    @apply -mr-1 grid h-4 w-4 shrink-0 place-items-center rounded-sm text-muted-foreground transition-colors;
+  }
+
+  .editor-file-tab-close:hover {
+    background: hsl(var(--muted) / 0.72);
+    color: hsl(var(--foreground));
   }
 
   .editor-file-tab-add {
@@ -980,30 +1022,32 @@
     @apply z-20;
   }
 
-  .project-panel-recent-row {
-    @apply flex min-w-0 items-stretch gap-1;
-  }
-
-  .project-panel-icon-button {
-    @apply grid h-9 w-8 shrink-0 place-items-center rounded-md border border-border/70 bg-background/60 text-muted-foreground transition-colors;
-  }
-
-  .project-panel-icon-button:hover,
-  .project-panel-icon-button:focus-visible {
-    @apply outline-none;
-    background: hsl(var(--accent) / 0.62);
-    color: hsl(var(--foreground));
-  }
-
   .file-tree-scroll {
     @apply min-w-0 overflow-y-auto overflow-x-hidden;
     scrollbar-color: hsl(var(--muted-foreground) / 0.36) transparent;
     scrollbar-width: thin;
   }
 
+  .file-tree-root {
+    @apply shrink-0 px-1.5 pb-0.5 pt-1;
+    background: transparent;
+  }
+
   .file-tree-list {
     @apply min-w-0 overflow-x-hidden;
-    padding: 0.375rem;
+    margin-left: 15px;
+    padding: 0.125rem 0.375rem 0.375rem 0.25rem;
+    position: relative;
+  }
+
+  .file-tree-list::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0.375rem;
+    width: 1px;
+    background: hsl(var(--border) / 0.54);
   }
 
   .file-tree-list-flat .tree-row {
@@ -1118,6 +1162,13 @@
     @apply text-muted-foreground;
   }
 
+  .tree-row-root {
+    --tree-depth: 0;
+    @apply h-8 text-[13px] font-semibold;
+    grid-template-columns: 18px minmax(0, 1fr) 44px;
+    padding-left: 0.25rem;
+  }
+
   .tree-row-hidden {
     opacity: 0.62;
   }
@@ -1143,30 +1194,107 @@
   }
 
   .file-tree-context-menu {
-    @apply fixed z-50 grid min-w-[190px] gap-0.5 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg;
+    @apply fixed grid min-w-[188px] gap-[1px] rounded-[14px] border p-1.5 text-popover-foreground;
+    border-color: hsl(var(--border) / 0.42);
+    background: hsl(var(--background) / 0.94);
+    backdrop-filter: blur(22px) saturate(1.25);
+    box-shadow:
+      0 18px 42px rgb(15 23 42 / 0.16),
+      0 2px 8px rgb(15 23 42 / 0.08);
+    z-index: 2147483647;
   }
 
   .file-tree-context-item {
-    @apply flex h-7 items-center gap-2 rounded-sm px-2 text-left text-[12px] text-foreground transition-colors;
+    @apply flex h-7 items-center gap-2.5 rounded-[9px] px-2.5 text-left text-[13px] font-medium text-foreground/90 transition-colors;
   }
 
   .file-tree-context-item:hover,
   .file-tree-context-item:focus-visible {
     @apply outline-none;
-    background: hsl(var(--accent) / 0.72);
-    color: hsl(var(--accent-foreground));
+    background: hsl(var(--muted) / 0.86);
+    color: hsl(var(--foreground));
+  }
+
+  .file-tree-context-icon {
+    @apply h-4 w-4 shrink-0 text-foreground/70;
+    stroke-width: 2;
   }
 
   .file-tree-context-item:disabled {
-    @apply pointer-events-none text-muted-foreground opacity-50;
+    @apply pointer-events-none text-muted-foreground/55;
+  }
+
+  .file-tree-context-item:disabled .file-tree-context-icon {
+    @apply text-muted-foreground/45;
   }
 
   .file-tree-context-item-danger {
-    @apply text-destructive;
+    @apply text-foreground/90;
   }
 
   .file-tree-context-separator {
-    @apply my-1 h-px bg-border;
+    @apply my-0.5 h-0.5;
+  }
+
+  .dark .file-tree-context-menu {
+    border-color: hsl(var(--border) / 0.5);
+    background: hsl(var(--popover) / 0.94);
+    box-shadow:
+      0 18px 42px rgb(0 0 0 / 0.34),
+      0 2px 8px rgb(0 0 0 / 0.22);
+  }
+
+  .unsaved-close-dialog {
+    @apply w-[min(90vw,340px)] gap-2 rounded-[18px] border p-3;
+    border-color: hsl(var(--border) / 0.42);
+    background: hsl(var(--background) / 0.94);
+    backdrop-filter: blur(22px) saturate(1.25);
+    box-shadow:
+      0 18px 42px rgb(15 23 42 / 0.16),
+      0 2px 8px rgb(15 23 42 / 0.08);
+  }
+
+  .unsaved-close-dialog-header {
+    @apply gap-1 px-2 pb-1 pr-7 pt-1;
+  }
+
+  .unsaved-close-dialog-title {
+    @apply text-[14px] font-semibold text-foreground/90;
+  }
+
+  .unsaved-close-dialog-description {
+    @apply text-[12px] leading-5 text-muted-foreground;
+  }
+
+  .unsaved-close-dialog-actions {
+    @apply grid gap-[1px];
+  }
+
+  .unsaved-close-dialog-action {
+    @apply h-8 justify-start rounded-[10px] px-3 text-[13px] font-medium text-foreground/90;
+  }
+
+  .unsaved-close-dialog-action:hover,
+  .unsaved-close-dialog-action:focus-visible {
+    background: hsl(var(--muted) / 0.86);
+    color: hsl(var(--foreground));
+  }
+
+  .unsaved-close-dialog-action-danger {
+    @apply text-destructive;
+  }
+
+  .unsaved-close-dialog-action-danger:hover,
+  .unsaved-close-dialog-action-danger:focus-visible {
+    color: hsl(var(--destructive));
+  }
+
+  .dark .unsaved-close-dialog {
+    border-color: hsl(var(--border) / 0.5);
+    background: hsl(var(--popover) / 0.94);
+    box-shadow:
+      0 18px 42px rgb(0 0 0 / 0.34),
+      0 2px 8px rgb(0 0 0 / 0.22);
   }
 
   .status-token {
