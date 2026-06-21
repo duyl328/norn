@@ -1,6 +1,6 @@
 use tauri::{
     menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu},
-    Emitter,
+    Emitter, Manager, Theme,
 };
 use tauri_plugin_dialog::DialogExt;
 
@@ -32,6 +32,8 @@ const MENU_CHECK_FOR_UPDATES: &str = "menu-check-for-updates";
 const MENU_COMMUNITY: &str = "menu-community";
 const MENU_PRIVACY_STATEMENT: &str = "menu-privacy-statement";
 const MENU_ABOUT_NORN: &str = "menu-about-norn";
+const SCRATCH_DIRECTORY: &str = "temp/norn-scratch";
+const SCRATCH_README: &str = "scratch.md";
 const IGNORED_DIRECTORY_NAMES: &[&str] = &[
     ".git",
     "node_modules",
@@ -417,6 +419,28 @@ fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String> {
     });
 
     Ok(entries)
+}
+
+#[tauri::command]
+fn ensure_scratch_directory() -> Result<String, String> {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let project_root = manifest_dir.parent().unwrap_or(manifest_dir.as_path());
+    let root = project_root.join(SCRATCH_DIRECTORY);
+
+    fs::create_dir_all(&root)
+        .map_err(|error| format_file_error("Unable to create scratch directory", &root, error))?;
+
+    let readme_path = root.join(SCRATCH_README);
+
+    if !readme_path.exists() {
+        fs::write(
+            &readme_path,
+            "# Norn Scratch\n\nThis folder is managed by Norn for temporary notes, drafts, and generated files.\n",
+        )
+        .map_err(|error| format_file_error("Unable to create scratch readme", &readme_path, error))?;
+    }
+
+    Ok(root.to_string_lossy().into_owned())
 }
 
 fn should_ignore_entry(path: &Path, name: &str) -> bool {
@@ -824,6 +848,12 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            app.handle().set_theme(Some(Theme::Light));
+
+            if let Some(window) = app.get_webview_window("main") {
+                window.set_theme(Some(Theme::Light))?;
+            }
+
             #[cfg(target_os = "macos")]
             {
                 let menu = build_macos_menu(app.handle())?;
@@ -854,6 +884,7 @@ pub fn run() {
             save_text_file,
             save_text_file_as,
             list_directory,
+            ensure_scratch_directory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running norn");

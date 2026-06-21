@@ -78,6 +78,17 @@
   textarea {
     font: inherit;
   }
+
+  * {
+    scrollbar-color: hsl(var(--muted-foreground) / 0.38) transparent;
+  }
+
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-track-piece,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+    border-color: transparent;
+  }
 }
 
 @layer components {
@@ -559,6 +570,18 @@
 
   .project-panel-recent-switcher {
     @apply grid min-w-0 gap-1;
+    transition:
+      background-color 140ms ease,
+      box-shadow 140ms ease,
+      padding 140ms ease;
+  }
+
+  .project-panel-recent-switcher-focused {
+    margin-inline: -2px;
+    border-radius: 0.85rem;
+    padding: 2px;
+    background: rgb(255 255 255 / 0.12);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.34);
   }
 
   .project-panel-recent-heading {
@@ -595,14 +618,24 @@
 
   .project-panel-recent-select {
     @apply grid min-h-[58px] w-full min-w-0 grid-cols-[32px_minmax(0,1fr)_24px] items-center gap-2 overflow-hidden rounded-[0.75rem] border-0 bg-transparent px-2.5 py-2 text-left outline-none transition-colors;
+    transition:
+      min-height 140ms ease,
+      background-color 140ms ease,
+      box-shadow 140ms ease;
   }
 
   .project-panel-recent-select:hover,
-  .project-panel-recent-select:focus-visible {
+  .project-panel-recent-select:focus-visible,
+  .project-panel-recent-select-focused {
     background: rgb(211 216 224 / 0.72);
     box-shadow:
       inset 0 0 0 1px rgb(255 255 255 / 0.68),
       0 1px 2px rgb(15 23 42 / 0.06);
+  }
+
+  .project-panel-recent-select-focused {
+    min-height: 78px;
+    grid-template-columns: 40px minmax(0, 1fr) 24px;
   }
 
   .project-panel-recent-select-avatar {
@@ -614,12 +647,23 @@
       0 1px 2px rgb(15 23 42 / 0.08);
   }
 
+  .project-panel-recent-select-focused .project-panel-recent-select-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 0.75rem;
+    font-size: 14px;
+  }
+
   .project-panel-recent-select-text {
     @apply grid min-w-0 gap-[1px] overflow-hidden;
   }
 
   .project-panel-recent-select-name {
     @apply truncate text-[13px] font-semibold text-foreground/[0.9];
+  }
+
+  .project-panel-recent-select-focused .project-panel-recent-select-name {
+    font-size: 14px;
   }
 
   .project-panel-recent-select-path {
@@ -733,9 +777,15 @@
   }
 
   .dark .project-panel-recent-select:hover,
-  .dark .project-panel-recent-select:focus-visible {
+  .dark .project-panel-recent-select:focus-visible,
+  .dark .project-panel-recent-select-focused {
     background: rgb(255 255 255 / 0.18);
     box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12);
+  }
+
+  .dark .project-panel-recent-switcher-focused {
+    background: rgb(255 255 255 / 0.06);
+    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
   }
 
   .dark .project-panel-recent-select-chevron {
@@ -1018,7 +1068,13 @@
   }
 
   .file-tree-scroll [data-radix-scroll-area-scrollbar] {
+    background: transparent !important;
+    border-color: transparent !important;
     opacity: 0;
+  }
+
+  .file-tree-scroll [data-radix-scroll-area-thumb] {
+    background: hsl(var(--muted-foreground) / 0.34);
   }
 
   .file-tree-scroll [data-radix-scroll-area-scrollbar][data-orientation="horizontal"] {
@@ -1031,42 +1087,26 @@
   }
 
   .file-tree-list {
-    @apply grid min-w-0 content-start gap-0.5 overflow-x-hidden;
-    padding: 0.375rem;
+    @apply grid min-w-0 content-start gap-0.5;
+    overflow-x: clip;
+    padding: 0 0.375rem 0.375rem;
   }
 
   .file-tree-list-scroll-overflowing {
     padding-right: 18px !important;
   }
 
-  .file-tree-list-flat .tree-row {
-    --tree-indent: 0px;
-    grid-template-columns: 0 minmax(0, 1fr) 44px;
-    padding-left: 0.125rem;
-    padding-right: 0.25rem;
-  }
-
-  .file-tree-list-flat .tree-row-toggle {
-    width: 0;
-    overflow: hidden;
-  }
-
   .file-tree-node {
     @apply grid min-w-0 gap-0.5;
+    overflow: visible;
+  }
+
+  .file-tree-root-node {
+    display: contents;
   }
 
   .file-tree-children {
     @apply grid min-w-0 gap-0.5;
-    position: relative;
-  }
-
-  .file-tree-children::before {
-    content: "";
-    position: absolute;
-    inset-block: 1px 3px;
-    left: calc(var(--tree-depth-line, 0px) + 8px);
-    width: 1px;
-    background: hsl(var(--border) / 0.54);
   }
 
   .tree-row {
@@ -1077,6 +1117,31 @@
     transition:
       background-color 120ms ease,
       color 120ms ease;
+  }
+
+  .tree-row-root {
+    @apply h-7 rounded-[0.45rem] text-[12px] font-semibold uppercase;
+    letter-spacing: 0;
+    background: transparent;
+  }
+
+  .tree-row-root .tree-row-icon {
+    @apply h-4 w-4;
+  }
+
+  .file-tree-root-header {
+    @apply mx-1.5 mb-px grid h-[26px] shrink-0 grid-cols-[18px_minmax(0,1fr)_52px] items-center gap-1 rounded-sm border-0 bg-transparent px-0.5 pr-1.5 text-left text-[13px] font-semibold leading-none text-foreground outline-none transition-colors;
+    letter-spacing: 0;
+  }
+
+  .file-tree-root-header .tree-row-icon {
+    @apply h-4 w-4;
+  }
+
+  .file-tree-root-header:hover,
+  .file-tree-root-header:focus-visible {
+    background: hsl(var(--accent) / 0.5);
+    color: hsl(var(--accent-foreground));
   }
 
   .tree-row:hover,
@@ -1156,6 +1221,161 @@
     @apply bg-accent text-accent-foreground;
   }
 
+  .file-tree-empty-message {
+    --tree-empty-depth: 1;
+    @apply py-1 text-[11px] text-muted-foreground;
+    padding-left: calc(1.5rem + var(--tree-empty-depth) * 14px);
+  }
+
+  .scratch-panel {
+    @apply relative grid min-h-[92px] shrink-0 grid-rows-[auto_minmax(0,1fr)] border-t border-border/40 px-2 pb-2 pt-2;
+    background: rgb(255 255 255 / 0.08);
+    transition:
+      height 170ms ease,
+      background-color 140ms ease,
+      box-shadow 140ms ease,
+      opacity 140ms ease;
+  }
+
+  .scratch-panel-focused {
+    background: rgb(255 255 255 / 0.14);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.4);
+  }
+
+  .scratch-panel-subdued {
+    opacity: 0.78;
+  }
+
+  .scratch-panel-resize-handle {
+    position: absolute;
+    inset-inline: 0;
+    top: -4px;
+    height: 8px;
+    cursor: row-resize;
+    touch-action: none;
+  }
+
+  .scratch-panel-resize-handle::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 3px;
+    width: 42px;
+    height: 2px;
+    border-radius: 999px;
+    background: hsl(var(--border) / 0.44);
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  .scratch-panel:hover .scratch-panel-resize-handle::before,
+  .scratch-panel-resize-handle:focus-visible::before {
+    opacity: 1;
+  }
+
+  .scratch-panel-heading {
+    @apply grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-[0.55rem] border-0 bg-transparent px-1 pb-1.5 text-left;
+    color: inherit;
+  }
+
+  .scratch-panel-heading:hover,
+  .scratch-panel-heading:focus-visible {
+    @apply outline-none;
+  }
+
+  .scratch-panel-title {
+    @apply truncate text-[10px] font-semibold uppercase tracking-wide text-muted-foreground;
+  }
+
+  .scratch-panel-path {
+    @apply truncate text-[10px] text-muted-foreground/80;
+  }
+
+  .scratch-panel-refresh {
+    @apply grid h-6 w-6 place-items-center rounded-[0.45rem] border-0 bg-transparent p-0 text-muted-foreground transition-colors;
+  }
+
+  .scratch-panel-refresh:hover,
+  .scratch-panel-refresh:focus-visible {
+    @apply text-foreground outline-none;
+    background: rgb(211 216 224 / 0.72);
+  }
+
+  .scratch-panel-toolbar {
+    @apply absolute right-2 top-8;
+  }
+
+  .scratch-panel-list {
+    @apply grid min-h-0 min-w-0 content-start gap-0.5 overflow-y-auto;
+    overflow-x: clip;
+    padding-top: 0;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.34) transparent;
+    scrollbar-width: thin;
+  }
+
+  .scratch-panel-list::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .scratch-panel-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scratch-panel-list::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: hsl(var(--muted-foreground) / 0.34);
+  }
+
+  .scratch-panel-list .tree-row {
+    grid-template-columns: 16px minmax(0, 1fr) 42px;
+    padding-left: 0.125rem;
+    padding-right: 0.25rem;
+  }
+
+  .scratch-panel-list .tree-row-toggle {
+    width: auto;
+    overflow: visible;
+  }
+
+  .scratch-panel-list .tree-row-root {
+    grid-template-columns: 16px minmax(0, 1fr) 42px;
+    padding-left: 0.125rem;
+    top: 0;
+  }
+
+  .scratch-panel-list .tree-row-root .tree-row-toggle {
+    width: auto;
+    overflow: visible;
+  }
+
+  .scratch-panel-message,
+  .scratch-panel-error {
+    @apply px-1 py-1.5 text-[11px] text-muted-foreground;
+  }
+
+  .scratch-panel-error {
+    @apply text-destructive;
+  }
+
+  .dark .scratch-panel {
+    background: rgb(255 255 255 / 0.03);
+  }
+
+  .scratch-panel-root-header {
+    @apply mx-0 mb-px grid-cols-[18px_minmax(0,1fr)_42px] px-0.5;
+  }
+
+  .dark .scratch-panel-focused {
+    background: rgb(255 255 255 / 0.08);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.12);
+  }
+
+  .dark .scratch-panel-refresh:hover,
+  .dark .scratch-panel-refresh:focus-visible {
+    background: rgb(255 255 255 / 0.16);
+  }
+
   .status-token {
     @apply inline-flex h-5 items-center gap-1 whitespace-nowrap font-mono text-[11px] text-muted-foreground;
   }
@@ -1216,7 +1436,8 @@
   }
 
   .editor-scrollbar-vertical {
-    @apply z-40 border-l border-border bg-muted-foreground/10;
+    @apply z-40;
+    background: transparent;
   }
 
   .editor-scrollbar-thumb {

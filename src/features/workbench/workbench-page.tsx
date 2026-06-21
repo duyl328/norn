@@ -46,6 +46,7 @@ import {
   PanelLeft,
   PanelRight,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   Terminal,
@@ -177,6 +178,14 @@ type FolderView = {
   error: string | null;
 };
 
+type ScratchView = {
+  error: string | null;
+  loadingPath: string | null;
+  loading: boolean;
+  nodes: FileTreeNode[];
+  rootPath: string;
+};
+
 type FileTreeNode = {
   name: string;
   path: string;
@@ -237,6 +246,10 @@ const leftPanelDefaultWidth = 260;
 const rightPanelMinWidth = 300;
 const rightPanelMaxWidth = 520;
 const rightPanelDefaultWidth = 360;
+const scratchPanelMinHeight = 92;
+const scratchPanelDefaultHeight = 180;
+const scratchPanelMaxHeightRatio = 0.6;
+const scratchPanelFocusThreshold = 150;
 
 const emptyEditorScrollMetrics: EditorScrollMetrics = {
   clientHeight: 0,
@@ -419,6 +432,16 @@ const toFileTreeNode = (entry: NativeDirectoryEntry): FileTreeNode => ({
   children: entry.kind === "directory" ? [] : undefined,
   childrenLoaded: false,
   expanded: false,
+});
+
+const createDirectoryRootNode = (path: string, children: FileTreeNode[] = [], expanded = true): FileTreeNode => ({
+  name: getPathName(path),
+  path,
+  relativePath: "",
+  kind: "directory",
+  children,
+  childrenLoaded: true,
+  expanded,
 });
 
 const updateTreeNode = (
@@ -767,11 +790,13 @@ export function WorkbenchPage() {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelWidth, setRightPanelWidth] = useState(rightPanelDefaultWidth);
   const [resizingPanel, setResizingPanel] = useState<"left" | "right" | null>(null);
+  const [scratchPanelHeight, setScratchPanelHeight] = useState(scratchPanelDefaultHeight);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [folderView, setFolderView] = useState<FolderView | null>(null);
   const [recentFolders, setRecentFolders] = useState<RecentFolder[]>(() => loadRecentFolders());
   const [pendingFileOpen, setPendingFileOpen] = useState<PendingFileOpen | null>(null);
+  const [scratchView, setScratchView] = useState<ScratchView | null>(null);
   const [saveConflict, setSaveConflict] = useState<SaveConflict | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -935,6 +960,48 @@ export function WorkbenchPage() {
     return entries.map(toFileTreeNode);
   };
 
+  const loadScratchView = async () => {
+    if (!isTauriRuntime()) {
+      setScratchView({
+        error: "Scratch files are only available in the Tauri desktop app.",
+        loadingPath: null,
+        loading: false,
+        nodes: [createDirectoryRootNode("temp/norn-scratch")],
+        rootPath: "temp/norn-scratch",
+      });
+      return;
+    }
+
+    setScratchView((currentView) => ({
+      error: null,
+      loadingPath: currentView?.rootPath ?? "temp/norn-scratch",
+      loading: true,
+      nodes: currentView?.nodes ?? [createDirectoryRootNode("temp/norn-scratch")],
+      rootPath: currentView?.rootPath ?? "temp/norn-scratch",
+    }));
+
+    try {
+      const rootPath = await invoke<string>("ensure_scratch_directory");
+      const nodes = await readFolderEntries(rootPath);
+
+      setScratchView({
+        error: null,
+        loadingPath: null,
+        loading: false,
+        nodes: [createDirectoryRootNode(rootPath, nodes)],
+        rootPath,
+      });
+    } catch (error) {
+      setScratchView((currentView) => ({
+        error: error instanceof Error ? error.message : String(error),
+        loadingPath: null,
+        loading: false,
+        nodes: currentView?.nodes ?? [createDirectoryRootNode("temp/norn-scratch")],
+        rootPath: currentView?.rootPath ?? "temp/norn-scratch",
+      }));
+    }
+  };
+
   const openNativeFile = async (path: string, options: { clearFolderView?: boolean; size?: number } = {}) => {
     const { clearFolderView = false, size } = options;
 
@@ -1058,6 +1125,10 @@ export function WorkbenchPage() {
     requestFileOpen({ kind: "file-dialog" });
   };
 
+  useEffect(() => {
+    void loadScratchView();
+  }, []);
+
   const toggleFilesTool = () => {
     setLeftPanelOpen((value) => !value);
   };
@@ -1155,6 +1226,36 @@ export function WorkbenchPage() {
     window.addEventListener("pointerup", handlePointerUp);
   };
 
+  const startScratchResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const pointerStart = event.clientY;
+    const heightStart = scratchPanelHeight;
+    const panel = event.currentTarget.closest(".project-panel");
+    const panelHeight = panel?.getBoundingClientRect().height ?? window.innerHeight;
+    const maxHeight = Math.max(scratchPanelMinHeight, Math.floor(panelHeight * scratchPanelMaxHeightRatio));
+
+    event.preventDefault();
+
+    const previousCursor = globalThis.document.body.style.cursor;
+    const previousUserSelect = globalThis.document.body.style.userSelect;
+    globalThis.document.body.style.cursor = "row-resize";
+    globalThis.document.body.style.userSelect = "none";
+
+    const handlePointerMove = (pointerEvent: globalThis.PointerEvent) => {
+      const delta = pointerStart - pointerEvent.clientY;
+      setScratchPanelHeight(clamp(heightStart + delta, scratchPanelMinHeight, maxHeight));
+    };
+
+    const handlePointerUp = () => {
+      globalThis.document.body.style.cursor = previousCursor;
+      globalThis.document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
+
   const rememberRecentFolder = (path: string) => {
     const folder = { name: getPathName(path), path };
 
@@ -1171,7 +1272,7 @@ export function WorkbenchPage() {
       rootPath,
       rootName: getPathName(rootPath),
       origin,
-      nodes: [],
+      nodes: [createDirectoryRootNode(rootPath, [], true)],
       loadingPath: rootPath,
       error: null,
     });
@@ -1183,7 +1284,7 @@ export function WorkbenchPage() {
         rootPath,
         rootName: getPathName(rootPath),
         origin,
-        nodes,
+        nodes: [createDirectoryRootNode(rootPath, nodes, true)],
         loadingPath: null,
         error: null,
       });
@@ -1193,7 +1294,7 @@ export function WorkbenchPage() {
         rootPath,
         rootName: getPathName(rootPath),
         origin,
-        nodes: [],
+        nodes: [createDirectoryRootNode(rootPath, [], true)],
         loadingPath: null,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -1228,74 +1329,90 @@ export function WorkbenchPage() {
     await openFolderView(parentPath, "containing-folder");
   };
 
-  const toggleDirectory = async (node: FileTreeNode) => {
-    if (!folderView || node.kind !== "directory") {
+  const loadDirectoryChildren = async (
+    node: FileTreeNode,
+    applyLoadingState: (loadingPath: string | null, update: (nodes: FileTreeNode[]) => FileTreeNode[]) => void,
+  ) => {
+    if (node.kind !== "directory") {
       return;
     }
 
     if (node.childrenLoaded) {
-      setFolderView((currentView) =>
-        currentView
-          ? {
-              ...currentView,
-              nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
-                ...currentNode,
-                expanded: !currentNode.expanded,
-              })),
-            }
-          : currentView,
+      applyLoadingState(null, (nodes) =>
+        updateTreeNode(nodes, node.path, (currentNode) => ({
+          ...currentNode,
+          expanded: !currentNode.expanded,
+        })),
       );
       return;
     }
 
-    setFolderView((currentView) =>
-      currentView
-        ? {
-            ...currentView,
-            loadingPath: node.path,
-            nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
-              ...currentNode,
-              expanded: true,
-              error: undefined,
-            })),
-          }
-        : currentView,
+    applyLoadingState(node.path, (nodes) =>
+      updateTreeNode(nodes, node.path, (currentNode) => ({
+        ...currentNode,
+        expanded: true,
+        error: undefined,
+      })),
     );
 
     try {
       const children = await readFolderEntries(node.path);
 
-      setFolderView((currentView) =>
-        currentView
-          ? {
-              ...currentView,
-              loadingPath: null,
-              nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
-                ...currentNode,
-                children,
-                childrenLoaded: true,
-                expanded: true,
-                error: undefined,
-              })),
-            }
-          : currentView,
+      applyLoadingState(null, (nodes) =>
+        updateTreeNode(nodes, node.path, (currentNode) => ({
+          ...currentNode,
+          children,
+          childrenLoaded: true,
+          expanded: true,
+          error: undefined,
+        })),
       );
     } catch (error) {
+      applyLoadingState(null, (nodes) =>
+        updateTreeNode(nodes, node.path, (currentNode) => ({
+          ...currentNode,
+          childrenLoaded: true,
+          expanded: true,
+          error: error instanceof Error ? error.message : String(error),
+        })),
+      );
+    }
+  };
+
+  const toggleDirectory = async (node: FileTreeNode) => {
+    if (!folderView) {
+      return;
+    }
+
+    await loadDirectoryChildren(node, (loadingPath, updateNodes) => {
       setFolderView((currentView) =>
         currentView
           ? {
               ...currentView,
-              loadingPath: null,
-              nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
-                ...currentNode,
-                childrenLoaded: true,
-                expanded: true,
-                error: error instanceof Error ? error.message : String(error),
-              })),
+              loadingPath,
+              nodes: updateNodes(currentView.nodes),
             }
           : currentView,
       );
+    });
+  };
+
+  const toggleScratchDirectory = async (node: FileTreeNode) => {
+    if (!scratchView) {
+      return;
     }
+
+    await loadDirectoryChildren(node, (loadingPath, updateNodes) => {
+      setScratchView((currentView) =>
+        currentView
+          ? {
+              ...currentView,
+              loadingPath,
+              nodes: updateNodes(currentView.nodes),
+            }
+          : currentView,
+      );
+    });
   };
 
   const openTreeFile = async (node: FileTreeNode) => {
@@ -1449,7 +1566,13 @@ export function WorkbenchPage() {
                 onOpenRecentFolder={(path) => void openFolderView(path, "open-folder")}
                 onOpenTreeFile={openTreeFile}
                 recentFolders={recentFolders}
+                scratchView={scratchView}
+                onOpenScratchFile={(node) => requestFileOpen({ kind: "path", path: node.path, size: node.size })}
+                onRefreshScratch={() => void loadScratchView()}
+                onResizeScratch={startScratchResize}
+                onToggleScratchDirectory={(node) => void toggleScratchDirectory(node)}
                 onToggleDirectory={toggleDirectory}
+                scratchPanelHeight={scratchPanelHeight}
               />
             </div>
             <PanelResizeHandle
@@ -2030,8 +2153,14 @@ function ProjectPanel({
   onOpenFolder,
   onOpenRecentFolder,
   onOpenSettings,
+  onOpenScratchFile,
   onOpenTreeFile,
+  onRefreshScratch,
+  onResizeScratch,
+  onToggleScratchDirectory,
   recentFolders,
+  scratchView,
+  scratchPanelHeight,
   onToggleDirectory,
 }: {
   activePath: string;
@@ -2040,15 +2169,49 @@ function ProjectPanel({
   onOpenFolder: () => void;
   onOpenRecentFolder: (path: string) => void;
   onOpenSettings: () => void;
+  onOpenScratchFile: (node: FileTreeNode) => void;
   onOpenTreeFile: (node: FileTreeNode) => void;
+  onRefreshScratch: () => void;
+  onResizeScratch: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onToggleScratchDirectory: (node: FileTreeNode) => void;
   recentFolders: RecentFolder[];
+  scratchPanelHeight: number;
+  scratchView: ScratchView | null;
   onToggleDirectory: (node: FileTreeNode) => void;
 }) {
+  const [focusedPanel, setFocusedPanel] = useState<"scratch" | "workspace" | null>(null);
+  const effectiveScratchHeight =
+    focusedPanel === "scratch" ? "60%" : focusedPanel === "workspace" ? scratchPanelMinHeight : scratchPanelHeight;
+  const focusWorkspace = () => {
+    if (leftPanelWidth <= 280) {
+      setFocusedPanel("workspace");
+    }
+  };
+
+  const focusScratch = () => {
+    if (scratchPanelHeight <= scratchPanelFocusThreshold) {
+      setFocusedPanel("scratch");
+    }
+  };
+
   return (
-    <aside className="project-panel frosted-surface frosted-surface-subtle">
+    <aside
+      className={cn(
+        "project-panel frosted-surface frosted-surface-subtle",
+        focusedPanel === "workspace" && "project-panel-focus-workspace",
+        focusedPanel === "scratch" && "project-panel-focus-scratch",
+      )}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          setFocusedPanel(null);
+        }
+      }}
+    >
       <ProjectPanelStart
+        focused={focusedPanel === "workspace"}
         folderView={folderView}
         leftPanelWidth={leftPanelWidth}
+        onFocusWorkspace={focusWorkspace}
         onOpenFolder={onOpenFolder}
         onOpenRecentFolder={onOpenRecentFolder}
         recentFolders={recentFolders}
@@ -2057,8 +2220,24 @@ function ProjectPanel({
       <FolderTreePanel
         activePath={activePath}
         folderView={folderView}
+        onClearFocus={() => setFocusedPanel(null)}
         onOpenFile={onOpenTreeFile}
         onToggleDirectory={onToggleDirectory}
+      />
+      <ScratchPanel
+        activePath={activePath}
+        focused={focusedPanel === "scratch"}
+        height={effectiveScratchHeight}
+        onOpenFile={onOpenScratchFile}
+        onFocus={focusScratch}
+        onRefresh={onRefreshScratch}
+        onResize={(event) => {
+          setFocusedPanel(null);
+          onResizeScratch(event);
+        }}
+        scratchView={scratchView}
+        subdued={focusedPanel === "workspace"}
+        onToggleDirectory={onToggleScratchDirectory}
       />
       <ProjectPanelFooter onOpenSettings={onOpenSettings} />
     </aside>
@@ -2066,14 +2245,18 @@ function ProjectPanel({
 }
 
 function ProjectPanelStart({
+  focused,
   folderView,
   leftPanelWidth,
+  onFocusWorkspace,
   onOpenFolder,
   onOpenRecentFolder,
   recentFolders,
 }: {
+  focused: boolean;
   folderView: FolderView | null;
   leftPanelWidth: number;
+  onFocusWorkspace: () => void;
   onOpenFolder: () => void;
   onOpenRecentFolder: (path: string) => void;
   recentFolders: RecentFolder[];
@@ -2114,11 +2297,15 @@ function ProjectPanelStart({
       </button>
       <div className="project-panel-divider" aria-hidden="true" />
       {folderView ? (
-        <div className="project-panel-recent-switcher">
+        <div className={cn("project-panel-recent-switcher", focused && "project-panel-recent-switcher-focused")}>
           <div className="project-panel-recent-heading">Recent folders</div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="project-panel-recent-select" type="button">
+              <button
+                className={cn("project-panel-recent-select", focused && "project-panel-recent-select-focused")}
+                type="button"
+                onClick={onFocusWorkspace}
+              >
                 <span className="project-panel-recent-select-avatar" style={activeFolderAccentStyle}>
                   {getProjectInitials(activeFolderName)}
                 </span>
@@ -2179,11 +2366,13 @@ function ProjectPanelStart({
 function FolderTreePanel({
   activePath,
   folderView,
+  onClearFocus,
   onOpenFile,
   onToggleDirectory,
 }: {
   activePath: string;
   folderView: FolderView | null;
+  onClearFocus: () => void;
   onOpenFile: (node: FileTreeNode) => void;
   onToggleDirectory: (node: FileTreeNode) => void;
 }) {
@@ -2230,7 +2419,11 @@ function FolderTreePanel({
     return <div className="min-h-0 flex-1" />;
   }
 
-  const hasRootDirectories = folderView.nodes.some((node) => node.kind === "directory");
+  const rootNode = folderView.nodes[0];
+  const rootChildren = rootNode?.children ?? [];
+  const rootExpanded = Boolean(rootNode?.expanded);
+  const hasRootChildren = rootChildren.length > 0;
+  const showRootEmptyMessage = rootExpanded && !hasRootChildren && folderView.loadingPath !== folderView.rootPath && !folderView.error;
 
   return (
     <>
@@ -2239,11 +2432,17 @@ function FolderTreePanel({
           {folderView.error}
         </div>
       ) : null}
-      <ScrollArea className="file-tree-scroll min-h-0 flex-1" type="auto">
+      {rootNode ? (
+        <FileTreeRootHeader
+          loadingPath={folderView.loadingPath}
+          node={rootNode}
+          onToggleDirectory={onToggleDirectory}
+        />
+      ) : null}
+      <ScrollArea className="file-tree-scroll min-h-0 flex-1" type="auto" onPointerDown={onClearFocus}>
         <div
           className={cn(
             "file-tree-list",
-            !hasRootDirectories && "file-tree-list-flat",
             treeScrollOverflowing && "file-tree-list-scroll-overflowing",
           )}
           ref={treeScrollContentRef}
@@ -2253,22 +2452,99 @@ function FolderTreePanel({
           {folderView.loadingPath === folderView.rootPath && folderView.nodes.length === 0 ? (
             <div className="px-2 py-2 text-[12px] text-muted-foreground">Loading folder...</div>
           ) : null}
-          {folderView.nodes.map((node) => (
+          {rootExpanded ? rootChildren.map((node) => (
             <FileTreeRow
               activePath={activePath}
+              depth={1}
               key={node.path}
               loadingPath={folderView.loadingPath}
               node={node}
               onOpenFile={onOpenFile}
               onToggleDirectory={onToggleDirectory}
             />
-          ))}
-          {folderView.nodes.length === 0 && folderView.loadingPath !== folderView.rootPath && !folderView.error ? (
-            <div className="px-2 py-2 text-[12px] text-muted-foreground">No files in this folder.</div>
-          ) : null}
+          )) : null}
+          {showRootEmptyMessage ? <div className="file-tree-empty-message">No files in this folder.</div> : null}
         </div>
       </ScrollArea>
     </>
+  );
+}
+
+function ScratchPanel({
+  activePath,
+  focused,
+  height,
+  onOpenFile,
+  onFocus,
+  onRefresh,
+  onResize,
+  onToggleDirectory,
+  scratchView,
+  subdued,
+}: {
+  activePath: string;
+  focused: boolean;
+  height: CSSProperties["height"];
+  onOpenFile: (node: FileTreeNode) => void;
+  onFocus: () => void;
+  onRefresh: () => void;
+  onResize: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onToggleDirectory: (node: FileTreeNode) => void;
+  scratchView: ScratchView | null;
+  subdued: boolean;
+}) {
+  const nodes = scratchView?.nodes ?? [];
+  const rootNode = nodes[0];
+  const rootChildren = rootNode?.children ?? [];
+  const rootExpanded = Boolean(rootNode?.expanded);
+  const hasScratchContent = rootChildren.length > 0;
+  const showScratchEmptyMessage = rootExpanded && !scratchView?.loading && !scratchView?.error && !hasScratchContent;
+
+  return (
+    <section
+      className={cn("scratch-panel", focused && "scratch-panel-focused", subdued && "scratch-panel-subdued")}
+      style={{ height }}
+      onFocus={onFocus}
+    >
+      <div className="scratch-panel-resize-handle" role="separator" aria-orientation="horizontal" onPointerDown={onResize} />
+      <button className="scratch-panel-heading" type="button" onClick={onFocus}>
+        <div className="min-w-0">
+          <div className="scratch-panel-title">Scratch folder</div>
+          <div className="scratch-panel-path" title={scratchView?.rootPath}>
+            {scratchView?.rootPath ? getTailPath(scratchView.rootPath, 28) : "temp/norn-scratch"}
+          </div>
+        </div>
+      </button>
+      <div className="scratch-panel-toolbar">
+        <button className="scratch-panel-refresh" type="button" onClick={onRefresh} aria-label="Refresh scratch folder">
+          <RefreshCw className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      {rootNode ? (
+        <FileTreeRootHeader
+          className="scratch-panel-root-header"
+          loadingPath={scratchView?.loadingPath ?? null}
+          node={rootNode}
+          onToggleDirectory={onToggleDirectory}
+        />
+      ) : null}
+      <div className="scratch-panel-list" role="tree" aria-label="Scratch files">
+        {scratchView?.loading ? <div className="scratch-panel-message">Loading scratch files...</div> : null}
+        {scratchView?.error ? <div className="scratch-panel-error">{scratchView.error}</div> : null}
+        {rootExpanded ? rootChildren.map((node) => (
+          <FileTreeRow
+            activePath={activePath}
+            depth={1}
+            key={node.path}
+            loadingPath={scratchView?.loadingPath ?? null}
+            node={node}
+            onOpenFile={onOpenFile}
+            onToggleDirectory={onToggleDirectory}
+          />
+        )) : null}
+        {showScratchEmptyMessage ? <div className="scratch-panel-message">No scratch files yet.</div> : null}
+      </div>
+    </section>
   );
 }
 
@@ -2287,9 +2563,46 @@ function ProjectPanelFooter({ onOpenSettings }: { onOpenSettings: () => void }) 
   );
 }
 
+function FileTreeRootHeader({
+  className,
+  loadingPath,
+  node,
+  onToggleDirectory,
+}: {
+  className?: string;
+  loadingPath: string | null;
+  node: FileTreeNode;
+  onToggleDirectory: (node: FileTreeNode) => void;
+}) {
+  const isLoading = loadingPath === node.path;
+  const { className: iconClassName, Icon } = getFileTreeIcon(node);
+
+  return (
+    <button
+      aria-expanded={Boolean(node.expanded)}
+      className={cn("file-tree-root-header", className)}
+      role="treeitem"
+      title={node.path}
+      type="button"
+      onClick={() => onToggleDirectory(node)}
+    >
+      <span className="tree-row-toggle">
+        {node.expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+      </span>
+      <span className="tree-row-main">
+        <Icon className={cn("tree-row-icon", iconClassName)} />
+        <span className="tree-row-name">{node.name}</span>
+      </span>
+      <span className="tree-row-size">{isLoading ? "..." : ""}</span>
+    </button>
+  );
+}
+
 function FileTreeRow({
   activePath,
   depth = 0,
+  emptyDirectoryMessage,
+  emptyDirectoryPath,
   loadingPath,
   node,
   onOpenFile,
@@ -2297,6 +2610,8 @@ function FileTreeRow({
 }: {
   activePath: string;
   depth?: number;
+  emptyDirectoryMessage?: string;
+  emptyDirectoryPath?: string;
   loadingPath: string | null;
   node: FileTreeNode;
   onOpenFile: (node: FileTreeNode) => void;
@@ -2305,14 +2620,26 @@ function FileTreeRow({
   const isDirectory = node.kind === "directory";
   const isActive = node.path === activePath;
   const isLoading = loadingPath === node.path;
+  const showEmptyDirectoryMessage =
+    Boolean(emptyDirectoryMessage) &&
+    node.path === emptyDirectoryPath &&
+    Boolean(node.expanded) &&
+    Boolean(node.childrenLoaded) &&
+    node.children?.length === 0 &&
+    !isLoading;
   const { className: iconClassName, Icon } = getFileTreeIcon(node);
 
   return (
-    <div className="file-tree-node" role="none">
+    <div className={cn("file-tree-node", depth === 0 && isDirectory && "file-tree-root-node")} role="none">
       <button
         aria-expanded={isDirectory ? Boolean(node.expanded) : undefined}
         aria-selected={isActive}
-        className={cn("tree-row w-full text-left", isActive && "tree-row-active", node.error && "tree-row-muted")}
+        className={cn(
+          "tree-row w-full text-left",
+          depth === 0 && isDirectory && "tree-row-root",
+          isActive && "tree-row-active",
+          node.error && "tree-row-muted",
+        )}
         role="treeitem"
         style={{ "--tree-depth": depth } as CSSProperties}
         type="button"
@@ -2337,6 +2664,14 @@ function FileTreeRow({
         </span>
       </button>
       {node.error ? <div className="px-2 py-1 text-[11px] text-destructive">{node.error}</div> : null}
+      {showEmptyDirectoryMessage ? (
+        <div
+          className="file-tree-empty-message"
+          style={{ "--tree-empty-depth": `${depth + 1}` } as CSSProperties}
+        >
+          {emptyDirectoryMessage}
+        </div>
+      ) : null}
       {node.expanded && node.children ? (
         <div
           className="file-tree-children"
@@ -2347,6 +2682,8 @@ function FileTreeRow({
             <FileTreeRow
               activePath={activePath}
               depth={depth + 1}
+              emptyDirectoryMessage={emptyDirectoryMessage}
+              emptyDirectoryPath={emptyDirectoryPath}
               key={child.path}
               loadingPath={loadingPath}
               node={child}
