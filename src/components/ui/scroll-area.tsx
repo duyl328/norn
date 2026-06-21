@@ -47,7 +47,7 @@ const ScrollArea = React.forwardRef<
       </ScrollAreaPrimitive.Viewport>
       <ScrollBar onHoverStart={activate} onHoverEnd={deactivate} />
       <ScrollBar orientation="horizontal" onHoverStart={activate} onHoverEnd={deactivate} />
-      <ScrollAreaPrimitive.Corner className="bg-muted-foreground/10 opacity-40 transition-opacity duration-150 group-[.is-scroll-active]/scroll-area:opacity-80" />
+      <ScrollAreaPrimitive.Corner className="bg-transparent opacity-0" />
     </ScrollAreaPrimitive.Root>
   );
 });
@@ -74,7 +74,7 @@ const ScrollBar = React.forwardRef<
       onPointerLeave?.(event);
     }}
     className={cn(
-      "flex touch-none select-none bg-muted-foreground/5 opacity-45 transition-[background-color,opacity] duration-200 group-[.is-scroll-active]/scroll-area:bg-muted-foreground/10 group-[.is-scroll-active]/scroll-area:opacity-100",
+      "flex touch-none select-none bg-transparent opacity-45 transition-opacity duration-200 group-[.is-scroll-active]/scroll-area:opacity-100",
       orientation === "vertical" && "h-full w-4 border-l border-l-transparent p-[3px]",
       orientation === "horizontal" && "h-4 flex-col border-t border-t-transparent p-[3px]",
       className,

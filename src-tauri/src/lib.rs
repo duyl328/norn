@@ -1,6 +1,6 @@
 use tauri::{
     menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu},
-    Emitter, Manager,
+    Emitter, Manager, Theme,
 };
 use tauri_plugin_dialog::DialogExt;
 
@@ -1269,6 +1269,12 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            app.handle().set_theme(Some(Theme::Light));
+
+            if let Some(window) = app.get_webview_window("main") {
+                window.set_theme(Some(Theme::Light))?;
+            }
+
             #[cfg(target_os = "macos")]
             {
                 let menu = build_macos_menu(app.handle())?;
