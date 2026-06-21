@@ -78,7 +78,13 @@ export const editorLines = [
   "}",
 ];
 
-export const actionGroups = [
+export type ActionGroup = {
+  label: string;
+  shortcut: string;
+  icon: LucideIcon;
+};
+
+export const actionGroups: ActionGroup[] = [
   { label: "Open Project", shortcut: "Ctrl+Shift+O", icon: FolderOpen },
   { label: "Search Everywhere", shortcut: "Double Shift", icon: Settings },
   { label: "Current Branch", shortcut: "main", icon: GitBranch },
