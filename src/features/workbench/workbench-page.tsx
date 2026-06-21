@@ -2437,7 +2437,7 @@ export function WorkbenchPage() {
             style={{
               "--workbench-left-panel-width": leftPanelOpen ? `${leftPanelWidth}px` : "0px",
               "--workbench-right-panel-width": rightPanelOpen ? `${rightPanelWidth}px` : "0px",
-              gridTemplateColumns: `${leftPanelOpen ? `${leftPanelWidth}px` : "0px"} ${leftPanelOpen ? "12px" : "0px"} minmax(0,1fr) ${
+              gridTemplateColumns: `${leftPanelOpen ? `${leftPanelWidth}px` : "0px"} 0px minmax(0,1fr) ${
                 rightPanelOpen ? "12px" : "0px"
               } ${rightPanelOpen ? `${rightPanelWidth}px` : "0px"}`,
             } as CSSProperties}
@@ -3208,7 +3208,7 @@ function ProjectPanel({
   };
 
   return (
-    <aside className="project-panel frosted-surface frosted-surface-subtle">
+    <aside className="project-panel">
       <div className="project-panel-resizable-stack" ref={panelStackRef}>
         <div className="project-panel-main-region" style={{ flexBasis: `${(1 - scratchPanelRatio) * 100}%` }}>
           <ProjectPanelStart

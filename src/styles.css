@@ -68,7 +68,7 @@
 
   body {
     @apply text-foreground antialiased;
-    background: hsl(var(--background));
+    background: transparent;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     overflow: hidden;
     user-select: none;
@@ -105,35 +105,28 @@
 
 @layer components {
   .frosted-surface {
-    background: hsl(var(--background) / 0.72);
+    background: hsl(var(--background) / 0.38);
     box-shadow: inset 0 -1px 0 hsl(var(--foreground) / 0.035);
   }
 
-  @supports ((backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px))) {
-    .frosted-surface {
-      -webkit-backdrop-filter: saturate(1.02) blur(10px);
-      backdrop-filter: saturate(1.02) blur(10px);
-    }
-  }
-
   .frosted-surface-subtle {
-    background: hsl(var(--background) / 0.58);
+    background: hsl(var(--background) / 0.22);
   }
 
   .frosted-surface-raised {
-    background: hsl(var(--background) / 0.78);
+    background: hsl(var(--background) / 0.52);
   }
 
   .dark .frosted-surface {
-    background: hsl(var(--background) / 0.74);
+    background: hsl(var(--background) / 0.42);
   }
 
   .dark .frosted-surface-subtle {
-    background: hsl(var(--background) / 0.58);
+    background: hsl(var(--background) / 0.28);
   }
 
   .dark .frosted-surface-raised {
-    background: hsl(var(--background) / 0.78);
+    background: hsl(var(--background) / 0.55);
   }
 
   .windows-titlebar {
@@ -528,7 +521,19 @@
   .workbench-panel-resize-handle-left {
     grid-column: 2;
     grid-row: 1;
-    transform: translateX(3px);
+    min-width: 0;
+    width: 0;
+    overflow: visible;
+    background: transparent;
+  }
+
+  .workbench-panel-resize-handle-left::before {
+    left: -8px;
+    right: -8px;
+  }
+
+  .workbench-panel-resize-handle-left::after {
+    left: 0;
   }
 
   .workbench-panel-resize-handle-right {
@@ -586,7 +591,8 @@
   }
 
   .project-panel {
-    @apply flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-background/70;
+    @apply flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden;
+    background: hsl(var(--background) / 0.2);
     box-shadow: none !important;
     border-block: 0;
     background-clip: padding-box;
@@ -1631,7 +1637,7 @@
     --settings-sidebar-width: 280px;
     --settings-sidebar-top-padding: 42px;
     --settings-main-top-padding: 58px;
-    background: #fbfbfa;
+    background: transparent;
   }
 
   .settings-page-mac {
@@ -1648,7 +1654,7 @@
 
   .settings-shell {
     @apply grid h-full min-h-0 overflow-hidden;
-    grid-template-columns: var(--settings-sidebar-width) 12px minmax(0, 1fr);
+    grid-template-columns: var(--settings-sidebar-width) 0px minmax(0, 1fr);
     background: transparent;
     transition: grid-template-columns 520ms cubic-bezier(0.16, 1, 0.3, 1);
   }
@@ -1661,7 +1667,7 @@
   .settings-sidebar {
     @apply flex min-h-0 min-w-0 flex-col px-3 pb-4;
     grid-column: 1;
-    background: transparent;
+    background: hsl(var(--background) / 0.2);
     padding-top: var(--settings-sidebar-top-padding);
   }
 
@@ -1669,17 +1675,27 @@
     position: relative;
     z-index: 20;
     grid-column: 2;
-    min-width: 12px;
+    min-width: 0;
+    width: 0;
+    overflow: visible;
     cursor: col-resize;
     background: transparent;
     touch-action: none;
+  }
+
+  .settings-resize-handle::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: -8px;
+    right: -8px;
   }
 
   .settings-resize-handle::after {
     content: "";
     position: absolute;
     inset-block: 0;
-    left: calc(50% - 0.5px);
+    left: 0;
     width: 1px;
     background: transparent;
     pointer-events: none;
@@ -1695,12 +1711,13 @@
 
   .settings-back-button:hover,
   .settings-back-button:focus-visible {
-    @apply bg-muted text-foreground outline-none;
+    @apply text-foreground outline-none;
+    background: hsl(var(--foreground) / 0.07);
   }
 
   .settings-search {
     @apply mb-5 flex h-8 items-center gap-2 rounded-[6px] border border-border px-2.5 text-[12px] text-muted-foreground;
-    background: #ffffff;
+    background: hsl(var(--background) / 0.6);
   }
 
   .settings-nav {
@@ -1722,12 +1739,12 @@
   .settings-nav-item:hover,
   .settings-nav-item:focus-visible {
     @apply text-foreground outline-none;
-    background: #f0f0ef;
+    background: hsl(var(--foreground) / 0.07);
   }
 
   .settings-nav-item-active {
     @apply text-foreground;
-    background: #ededec;
+    background: hsl(var(--foreground) / 0.1);
   }
 
   .settings-main {
@@ -1859,26 +1876,35 @@
 
   .dark .settings-page,
   .dark .settings-drag-region,
-  .dark .settings-shell,
+  .dark .settings-shell {
+    background: transparent;
+  }
+
+  .dark .settings-sidebar {
+    background: hsl(var(--background) / 0.25);
+  }
+
   .dark .settings-main,
   .dark .settings-list {
     background: hsl(var(--card));
   }
 
-  .dark .settings-sidebar {
-    background: hsl(var(--background));
+  .dark .settings-search {
+    background: hsl(var(--background) / 0.6);
   }
 
-  .dark .settings-search,
   .dark .settings-row-value,
   .dark .settings-note {
     background: hsl(var(--muted));
   }
 
   .dark .settings-nav-item:hover,
-  .dark .settings-nav-item:focus-visible,
+  .dark .settings-nav-item:focus-visible {
+    background: hsl(var(--foreground) / 0.1);
+  }
+
   .dark .settings-nav-item-active {
-    background: hsl(var(--muted));
+    background: hsl(var(--foreground) / 0.13);
   }
 
   .codemirror-shell-frame {
