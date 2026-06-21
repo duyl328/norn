@@ -93,7 +93,7 @@ import { Input } from "@/components/ui/input";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
   FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES,
@@ -5205,100 +5205,106 @@ function EditorSurface({
             } as CSSProperties;
 
             return (
-              <div
-                className={cn(
-                  "editor-file-tab",
-                  active && "editor-file-tab-active",
-                  layout?.side !== "right" && "editor-file-tab-left-sticky",
-                  layout?.side === "right" && "editor-file-tab-right-sticky",
-                  (layout?.hideLeft ?? 0) > 0 && "editor-file-tab-right-stacked",
-                  (layout?.hideRight ?? 0) > 0 && "editor-file-tab-left-stacked",
-                )}
-                key={tab.id}
-                ref={(element) => {
-                  tabButtonRefs.current[tab.id] = element;
-                }}
-                style={tabStyle}
-                role="tab"
-                aria-selected={active}
-                tabIndex={active ? 0 : -1}
-                onClick={() => {
-                  if (tabDocument) {
-                    onSelectDocument(tabDocument);
-                  }
-                }}
-                onDoubleClick={() => {
-                  if (tabDocument) {
-                    onSelectDocument(tabDocument);
-                  }
-                  setEditingPreviewTabId(tab.id);
-                  setEditingPreviewTabName(tab.name);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    if (tabDocument) {
-                      onSelectDocument(tabDocument);
-                    }
-                  }
-                }}
-              >
-                <TabIcon className={cn("editor-file-tab-icon", tabIconClassName)} aria-hidden="true" />
-                {editing ? (
-                  <input
-                    ref={renameInputRef}
-                    className="editor-file-tab-input"
-                    value={editingPreviewTabName}
-                    onChange={(event) => setEditingPreviewTabName(event.target.value)}
-                    onBlur={commitPreviewTabName}
-                    onClick={(event) => event.stopPropagation()}
-                    onDoubleClick={(event) => event.stopPropagation()}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        commitPreviewTabName();
-                      }
-
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        setEditingPreviewTabId(null);
+              <Tooltip key={tab.id}>
+                <TooltipTrigger asChild>
+                  <div
+                    className={cn(
+                      "editor-file-tab",
+                      active && "editor-file-tab-active",
+                      layout?.side !== "right" && "editor-file-tab-left-sticky",
+                      layout?.side === "right" && "editor-file-tab-right-sticky",
+                      (layout?.hideLeft ?? 0) > 0 && "editor-file-tab-right-stacked",
+                      (layout?.hideRight ?? 0) > 0 && "editor-file-tab-left-stacked",
+                    )}
+                    ref={(element) => {
+                      tabButtonRefs.current[tab.id] = element;
+                    }}
+                    style={tabStyle}
+                    role="tab"
+                    aria-selected={active}
+                    tabIndex={active ? 0 : -1}
+                    onClick={() => {
+                      if (tabDocument) {
+                        onSelectDocument(tabDocument);
                       }
                     }}
-                  />
-                ) : (
-                  <span className="truncate">{tab.name}</span>
-                )}
-                {!editing ? (
-                  <span className={cn("editor-file-tab-trailing", hideCloseButton && "editor-file-tab-trailing-hidden")}>
-                    <span className="editor-file-tab-dirty" aria-hidden={!tab.dirty}>
-                      {tab.dirty ? "•" : ""}
-                    </span>
-                    {tab.closable && (
-                      <button
-                        className="editor-file-tab-close"
-                        aria-label={`Close ${tab.name}`}
-                        title={`Close ${tab.name}`}
-                        type="button"
-                        tabIndex={hideCloseButton ? -1 : 0}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
+                    onDoubleClick={() => {
+                      if (tabDocument) {
+                        onSelectDocument(tabDocument);
+                      }
+                      setEditingPreviewTabId(tab.id);
+                      setEditingPreviewTabName(tab.name);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        if (tabDocument) {
+                          onSelectDocument(tabDocument);
+                        }
+                      }
+                    }}
+                  >
+                    <TabIcon className={cn("editor-file-tab-icon", tabIconClassName)} aria-hidden="true" />
+                    {editing ? (
+                      <input
+                        ref={renameInputRef}
+                        className="editor-file-tab-input"
+                        value={editingPreviewTabName}
+                        onChange={(event) => setEditingPreviewTabName(event.target.value)}
+                        onBlur={commitPreviewTabName}
+                        onClick={(event) => event.stopPropagation()}
+                        onDoubleClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            commitPreviewTabName();
+                          }
 
-                          if (!hideCloseButton && tabDocument) {
-                            onCloseDocument(tabDocument);
+                          if (event.key === "Escape") {
+                            event.preventDefault();
+                            setEditingPreviewTabId(null);
                           }
                         }}
-                        onDoubleClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                        }}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
+                      />
+                    ) : (
+                      <span className="truncate">{tab.name}</span>
                     )}
-                  </span>
-                ) : null}
-              </div>
+                    {!editing ? (
+                      <span className={cn("editor-file-tab-trailing", hideCloseButton && "editor-file-tab-trailing-hidden")}>
+                        <span className="editor-file-tab-dirty" aria-hidden={!tab.dirty}>
+                          {tab.dirty ? "•" : ""}
+                        </span>
+                        {tab.closable && (
+                          <button
+                            className="editor-file-tab-close"
+                            aria-label={`Close ${tab.name}`}
+                            title={`Close ${tab.name}`}
+                            type="button"
+                            tabIndex={hideCloseButton ? -1 : 0}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+
+                              if (!hideCloseButton && tabDocument) {
+                                onCloseDocument(tabDocument);
+                              }
+                            }}
+                            onDoubleClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }}
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        )}
+                      </span>
+                    ) : null}
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="editor-file-tab-tooltip" side="bottom" align="start" sideOffset={8}>
+                  <div className="editor-file-tab-tooltip-path">{tabDocument?.path ?? tab.name}</div>
+                </TooltipContent>
+              </Tooltip>
             );
           })}
         </div>
