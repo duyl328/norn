@@ -980,26 +980,30 @@
     @apply z-20;
   }
 
-  .file-tree-scroll [data-radix-scroll-area-scrollbar] {
-    opacity: 0;
+  .project-panel-recent-row {
+    @apply flex min-w-0 items-stretch gap-1;
   }
 
-  .file-tree-scroll [data-radix-scroll-area-scrollbar][data-orientation="horizontal"] {
-    display: none;
+  .project-panel-icon-button {
+    @apply grid h-9 w-8 shrink-0 place-items-center rounded-md border border-border/70 bg-background/60 text-muted-foreground transition-colors;
   }
 
-  .file-tree-scroll:hover [data-radix-scroll-area-scrollbar],
-  .file-tree-scroll.is-scroll-active [data-radix-scroll-area-scrollbar] {
-    opacity: 0.8;
+  .project-panel-icon-button:hover,
+  .project-panel-icon-button:focus-visible {
+    @apply outline-none;
+    background: hsl(var(--accent) / 0.62);
+    color: hsl(var(--foreground));
+  }
+
+  .file-tree-scroll {
+    @apply min-w-0 overflow-y-auto overflow-x-hidden;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.36) transparent;
+    scrollbar-width: thin;
   }
 
   .file-tree-list {
-    @apply grid min-w-0 content-start gap-0.5 overflow-x-hidden;
+    @apply min-w-0 overflow-x-hidden;
     padding: 0.375rem;
-  }
-
-  .file-tree-list-scroll-overflowing {
-    padding-right: 18px !important;
   }
 
   .file-tree-list-flat .tree-row {
@@ -1018,18 +1022,13 @@
     @apply grid min-w-0 gap-0.5;
   }
 
-  .file-tree-children {
-    @apply grid min-w-0 gap-0.5;
+  .file-tree-virtual-inner {
     position: relative;
+    min-width: 0;
   }
 
-  .file-tree-children::before {
-    content: "";
-    position: absolute;
-    inset-block: 1px 3px;
-    left: calc(var(--tree-depth-line, 0px) + 8px);
-    width: 1px;
-    background: hsl(var(--border) / 0.54);
+  .file-tree-virtual-row {
+    @apply absolute left-0 top-0 w-full min-w-0;
   }
 
   .tree-row {
@@ -1055,6 +1054,10 @@
 
   .tree-row-main {
     @apply flex min-w-0 items-center gap-1.5 overflow-hidden;
+  }
+
+  .tree-row-badge-icon {
+    @apply h-3 w-3 shrink-0 text-muted-foreground;
   }
 
   .tree-row-icon {
@@ -1115,8 +1118,55 @@
     @apply text-muted-foreground;
   }
 
+  .tree-row-hidden {
+    opacity: 0.62;
+  }
+
+  .tree-row-readonly .tree-row-name {
+    font-style: italic;
+  }
+
+  .tree-row-drop-target {
+    background: hsl(var(--primary) / 0.14);
+    box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.5);
+  }
+
   .tree-row-active {
     @apply bg-accent text-accent-foreground;
+  }
+
+  .tree-row-error {
+    --tree-depth: 0;
+    --tree-indent: calc(var(--tree-depth) * 14px);
+    @apply truncate py-0.5 pr-2 text-[11px] leading-none text-destructive;
+    padding-left: calc(1.5rem + var(--tree-indent));
+  }
+
+  .file-tree-context-menu {
+    @apply fixed z-50 grid min-w-[190px] gap-0.5 rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg;
+  }
+
+  .file-tree-context-item {
+    @apply flex h-7 items-center gap-2 rounded-sm px-2 text-left text-[12px] text-foreground transition-colors;
+  }
+
+  .file-tree-context-item:hover,
+  .file-tree-context-item:focus-visible {
+    @apply outline-none;
+    background: hsl(var(--accent) / 0.72);
+    color: hsl(var(--accent-foreground));
+  }
+
+  .file-tree-context-item:disabled {
+    @apply pointer-events-none text-muted-foreground opacity-50;
+  }
+
+  .file-tree-context-item-danger {
+    @apply text-destructive;
+  }
+
+  .file-tree-context-separator {
+    @apply my-1 h-px bg-border;
   }
 
   .status-token {

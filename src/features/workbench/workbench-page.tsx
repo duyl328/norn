@@ -1,5 +1,7 @@
 import {
   type CSSProperties,
+  type DragEvent,
+  type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -25,20 +27,26 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDot,
+  ClipboardPaste,
+  Copy,
   Database,
   FileArchive,
   FileCode,
   FileCog,
+  FilePlus,
   FileJson,
   FileSpreadsheet,
   FileTerminal,
   FileText,
   FileType,
   Folder,
+  FolderPlus,
   FolderOpen,
   Image,
+  Link2,
   Menu,
   Minus,
+  Pencil,
   Square,
   X,
   GitBranch,
@@ -46,10 +54,14 @@ import {
   PanelLeft,
   PanelRight,
   Plus,
+  RefreshCw,
   Search,
   Settings,
+  Scissors,
   Terminal,
+  Trash2,
 } from "lucide-react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -166,6 +178,12 @@ type NativeDirectoryEntry = {
   kind: "file" | "directory";
   size?: number | null;
   lastModified?: number | null;
+  isHidden?: boolean;
+  isSymlink?: boolean;
+  targetKind?: "file" | "directory" | null;
+  canonicalPath?: string | null;
+  isReadonly?: boolean;
+  error?: string | null;
 };
 
 type FolderView = {
@@ -184,10 +202,48 @@ type FileTreeNode = {
   kind: "file" | "directory";
   size?: number;
   lastModified?: number;
+  isHidden?: boolean;
+  isSymlink?: boolean;
+  targetKind?: "file" | "directory" | null;
+  canonicalPath?: string | null;
+  isReadonly?: boolean;
   children?: FileTreeNode[];
   childrenLoaded?: boolean;
   expanded?: boolean;
   error?: string;
+};
+
+type FileTreeClipboard = {
+  action: "copy" | "cut";
+  node: FileTreeNode;
+};
+
+type FileTreeNameDialog =
+  | { kind: "create-file"; parentPath: string }
+  | { kind: "create-directory"; parentPath: string }
+  | { kind: "rename"; node: FileTreeNode };
+
+type FileTreeContextMenuState = {
+  node: FileTreeNode | null;
+  x: number;
+  y: number;
+};
+
+type VisibleTreeRow = {
+  depth: number;
+  ancestorCanonicalPaths: string[];
+  node: FileTreeNode;
+};
+
+type NativeFileOperationError = {
+  kind?: string;
+  message?: string;
+};
+
+type NativeDragDropPayload = {
+  paths?: string[];
+  position?: { x: number; y: number };
+  type: "enter" | "over" | "drop" | "leave" | "cancel";
 };
 
 type PendingFileOpen =
@@ -400,10 +456,24 @@ const toFileTreeNode = (entry: NativeDirectoryEntry): FileTreeNode => ({
   kind: entry.kind,
   size: entry.size ?? undefined,
   lastModified: entry.lastModified ?? undefined,
+  isHidden: Boolean(entry.isHidden),
+  isSymlink: Boolean(entry.isSymlink),
+  targetKind: entry.targetKind ?? null,
+  canonicalPath: entry.canonicalPath ?? null,
+  isReadonly: Boolean(entry.isReadonly),
   children: entry.kind === "directory" ? [] : undefined,
   childrenLoaded: false,
   expanded: false,
+  error: entry.error ?? undefined,
 });
+
+const collapseTreeNodeDeep = (node: FileTreeNode): FileTreeNode => ({
+  ...node,
+  expanded: false,
+  children: node.children?.map(collapseTreeNodeDeep),
+});
+
+const collapseTreeNodesDeep = (nodes: FileTreeNode[]) => nodes.map(collapseTreeNodeDeep);
 
 const updateTreeNode = (
   nodes: FileTreeNode[],
@@ -421,6 +491,50 @@ const updateTreeNode = (
 
     return node;
   });
+
+const flattenVisibleTreeRows = (
+  nodes: FileTreeNode[],
+  depth = 0,
+  ancestorCanonicalPaths: string[] = [],
+): VisibleTreeRow[] =>
+  nodes.flatMap((node) => {
+    const row: VisibleTreeRow = { depth, ancestorCanonicalPaths, node };
+    const nodeCanonicalPath = node.canonicalPath ?? node.path;
+    const nextAncestors =
+      node.kind === "directory" ? [...ancestorCanonicalPaths, nodeCanonicalPath] : ancestorCanonicalPaths;
+
+    if (node.kind !== "directory" || !node.expanded || !node.children) {
+      return [row];
+    }
+
+    return [row, ...flattenVisibleTreeRows(node.children, depth + 1, nextAncestors)];
+  });
+
+const isPathInsideOrEqual = (path: string, possibleParent: string) => {
+  const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  const normalizedParent = possibleParent.replace(/\\/g, "/").replace(/\/+$/, "");
+
+  return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}/`);
+};
+
+const getNativeFileOperationError = (error: unknown): NativeFileOperationError => {
+  if (error && typeof error === "object") {
+    return error as NativeFileOperationError;
+  }
+
+  return { message: error instanceof Error ? error.message : String(error) };
+};
+
+const getTreeDropPathFromPoint = (position?: { x: number; y: number }) => {
+  if (!position) {
+    return null;
+  }
+
+  const element = globalThis.document.elementFromPoint(position.x, position.y);
+  const dropTarget = element?.closest<HTMLElement>("[data-tree-drop-path]");
+
+  return dropTarget?.dataset.treeDropPath ?? null;
+};
 
 const getEditorScrollbarGeometry = (
   orientation: EditorScrollbarOrientation,
@@ -702,8 +816,16 @@ export function WorkbenchPage() {
   const [recentFolders, setRecentFolders] = useState<RecentFolder[]>(() => loadRecentFolders());
   const [pendingFileOpen, setPendingFileOpen] = useState<PendingFileOpen | null>(null);
   const [saveConflict, setSaveConflict] = useState<SaveConflict | null>(null);
+  const [fileTreeClipboard, setFileTreeClipboard] = useState<FileTreeClipboard | null>(null);
+  const [fileTreeContextMenu, setFileTreeContextMenu] = useState<FileTreeContextMenuState | null>(null);
+  const [fileTreeNameDialog, setFileTreeNameDialog] = useState<FileTreeNameDialog | null>(null);
+  const [fileTreeNameValue, setFileTreeNameValue] = useState("");
+  const [fileTreeTrashTarget, setFileTreeTrashTarget] = useState<FileTreeNode | null>(null);
+  const [draggedTreeNode, setDraggedTreeNode] = useState<FileTreeNode | null>(null);
+  const [dropTargetPath, setDropTargetPath] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [searchOpen, setSearchOpen] = useState(false);
+  const dropTargetPathRef = useRef<string | null>(null);
   const showWindowsTitlebar = useMemo(() => navigator.userAgent.includes("Windows") && isTauriRuntime(), []);
   const showMacTitlebar = useMemo(() => navigator.userAgent.includes("Mac") && isTauriRuntime(), []);
   const isDirty = document.content !== document.savedContent;
@@ -858,6 +980,87 @@ export function WorkbenchPage() {
     const entries = await invoke<NativeDirectoryEntry[]>("list_directory", { path });
 
     return entries.map(toFileTreeNode);
+  };
+
+  const setFileTreeError = (error: unknown, fallback: string) => {
+    const operationError = getNativeFileOperationError(error);
+    setFileError(operationError.message ?? fallback);
+  };
+
+  const refreshFolderPath = async (path: string, options: { collapseChildren?: boolean } = {}) => {
+    if (!folderView) {
+      return;
+    }
+
+    const collapseChildren = options.collapseChildren ?? true;
+
+    setFolderView((currentView) => (currentView ? { ...currentView, loadingPath: path, error: null } : currentView));
+
+    try {
+      const children = await readFolderEntries(path);
+      const nextChildren = collapseChildren ? collapseTreeNodesDeep(children) : children;
+
+      setFolderView((currentView) => {
+        if (!currentView) {
+          return currentView;
+        }
+
+        if (path === currentView.rootPath) {
+          return {
+            ...currentView,
+            nodes: nextChildren,
+            loadingPath: null,
+            error: null,
+          };
+        }
+
+        return {
+          ...currentView,
+          loadingPath: null,
+          error: null,
+          nodes: updateTreeNode(currentView.nodes, path, (currentNode) => ({
+            ...currentNode,
+            children: nextChildren,
+            childrenLoaded: true,
+            expanded: true,
+            error: undefined,
+          })),
+        };
+      });
+    } catch (error) {
+      setFolderView((currentView) => {
+        if (!currentView) {
+          return currentView;
+        }
+
+        if (path === currentView.rootPath) {
+          return {
+            ...currentView,
+            loadingPath: null,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+
+        return {
+          ...currentView,
+          loadingPath: null,
+          nodes: updateTreeNode(currentView.nodes, path, (currentNode) => ({
+            ...currentNode,
+            childrenLoaded: true,
+            expanded: true,
+            error: error instanceof Error ? error.message : String(error),
+          })),
+        };
+      });
+    }
+  };
+
+  const refreshNodeParent = async (node: FileTreeNode) => {
+    if (!folderView) {
+      return;
+    }
+
+    await refreshFolderPath(getParentPath(node.path) ?? folderView.rootPath);
   };
 
   const openNativeFile = async (path: string, options: { clearFolderView?: boolean; size?: number } = {}) => {
@@ -1164,7 +1367,7 @@ export function WorkbenchPage() {
           ? {
               ...currentView,
               nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
-                ...currentNode,
+                ...(currentNode.expanded ? collapseTreeNodeDeep(currentNode) : currentNode),
                 expanded: !currentNode.expanded,
               })),
             }
@@ -1229,6 +1432,227 @@ export function WorkbenchPage() {
     }
 
     requestFileOpen({ kind: "path", path: node.path, size: node.size });
+  };
+
+  const openFileTreeNameDialog = (dialog: FileTreeNameDialog) => {
+    setFileTreeContextMenu(null);
+    setFileTreeNameDialog(dialog);
+    setFileTreeNameValue(dialog.kind === "rename" ? dialog.node.name : "");
+  };
+
+  const closeFileTreeNameDialog = () => {
+    setFileTreeNameDialog(null);
+    setFileTreeNameValue("");
+  };
+
+  const submitFileTreeNameDialog = async () => {
+    if (!folderView || !fileTreeNameDialog) {
+      return;
+    }
+
+    const name = fileTreeNameValue.trim();
+
+    if (!name) {
+      setFileError("Enter a name.");
+      return;
+    }
+
+    setFileError(null);
+
+    try {
+      if (fileTreeNameDialog.kind === "create-file") {
+        const entry = await invoke<NativeDirectoryEntry>("create_file", {
+          workspaceRoot: folderView.rootPath,
+          parentPath: fileTreeNameDialog.parentPath,
+          name,
+        });
+
+        await refreshFolderPath(fileTreeNameDialog.parentPath);
+        closeFileTreeNameDialog();
+        requestFileOpen({ kind: "path", path: entry.path, size: entry.size ?? undefined });
+        return;
+      }
+
+      if (fileTreeNameDialog.kind === "create-directory") {
+        await invoke<NativeDirectoryEntry>("create_directory", {
+          workspaceRoot: folderView.rootPath,
+          parentPath: fileTreeNameDialog.parentPath,
+          name,
+        });
+
+        await refreshFolderPath(fileTreeNameDialog.parentPath);
+        closeFileTreeNameDialog();
+        return;
+      }
+
+      const node = fileTreeNameDialog.node;
+      const renamedEntry = await invoke<NativeDirectoryEntry>("rename_path", {
+        workspaceRoot: folderView.rootPath,
+        path: node.path,
+        newName: name,
+      });
+
+      await refreshNodeParent(node);
+
+      if (node.path === document.path) {
+        setDocument((currentDocument) => ({
+          ...currentDocument,
+          id: getFileOpenId(renamedEntry.path, renamedEntry.lastModified),
+          name: renamedEntry.name,
+          path: renamedEntry.path,
+          lastModified: renamedEntry.lastModified ?? currentDocument.lastModified,
+        }));
+      }
+
+      closeFileTreeNameDialog();
+    } catch (error) {
+      setFileTreeError(error, "Unable to update the file tree.");
+    }
+  };
+
+  const copyTreeNode = (node: FileTreeNode) => {
+    setFileTreeClipboard({ action: "copy", node });
+    setFileTreeContextMenu(null);
+  };
+
+  const cutTreeNode = (node: FileTreeNode) => {
+    setFileTreeClipboard({ action: "cut", node });
+    setFileTreeContextMenu(null);
+  };
+
+  const pasteTreeNode = async (targetDirectoryPath: string) => {
+    if (!folderView || !fileTreeClipboard) {
+      return;
+    }
+
+    setFileTreeContextMenu(null);
+    setFileError(null);
+
+    try {
+      if (fileTreeClipboard.action === "cut") {
+        const movedEntry = await invoke<NativeDirectoryEntry>("move_path", {
+          workspaceRoot: folderView.rootPath,
+          sourcePath: fileTreeClipboard.node.path,
+          targetDirectory: targetDirectoryPath,
+        });
+        await refreshNodeParent(fileTreeClipboard.node);
+        await refreshFolderPath(targetDirectoryPath);
+        setFileTreeClipboard(null);
+
+        if (fileTreeClipboard.node.path === document.path) {
+          setDocument((currentDocument) => ({
+            ...currentDocument,
+            id: getFileOpenId(movedEntry.path, movedEntry.lastModified),
+            name: movedEntry.name,
+            path: movedEntry.path,
+            lastModified: movedEntry.lastModified ?? currentDocument.lastModified,
+          }));
+        }
+
+        return;
+      }
+
+      await invoke<NativeDirectoryEntry>("copy_path", {
+        workspaceRoot: folderView.rootPath,
+        sourcePath: fileTreeClipboard.node.path,
+        targetDirectory: targetDirectoryPath,
+      });
+      await refreshFolderPath(targetDirectoryPath);
+    } catch (error) {
+      setFileTreeError(error, "Unable to paste into this folder.");
+    }
+  };
+
+  const requestTrashTreeNode = (node: FileTreeNode) => {
+    setFileTreeContextMenu(null);
+    setFileTreeTrashTarget(node);
+  };
+
+  const confirmTrashTreeNode = async () => {
+    if (!folderView || !fileTreeTrashTarget) {
+      return;
+    }
+
+    const target = fileTreeTrashTarget;
+    setFileTreeTrashTarget(null);
+    setFileError(null);
+
+    try {
+      await invoke("trash_path", {
+        workspaceRoot: folderView.rootPath,
+        path: target.path,
+      });
+      await refreshNodeParent(target);
+
+      if (isPathInsideOrEqual(document.path, target.path) && !isDirty) {
+        setDocument(initialDocument);
+        setSaveState("saved");
+      }
+    } catch (error) {
+      setFileTreeError(error, "Unable to move this item to Trash.");
+    }
+  };
+
+  const moveTreeNodeToDirectory = async (source: FileTreeNode, targetDirectoryPath: string) => {
+    if (!folderView || source.path === targetDirectoryPath || isPathInsideOrEqual(targetDirectoryPath, source.path)) {
+      setDropTargetPath(null);
+      return;
+    }
+
+    setFileError(null);
+
+    try {
+      const movedEntry = await invoke<NativeDirectoryEntry>("move_path", {
+        workspaceRoot: folderView.rootPath,
+        sourcePath: source.path,
+        targetDirectory: targetDirectoryPath,
+      });
+      await refreshNodeParent(source);
+      await refreshFolderPath(targetDirectoryPath);
+
+      if (source.path === document.path) {
+        setDocument((currentDocument) => ({
+          ...currentDocument,
+          id: getFileOpenId(movedEntry.path, movedEntry.lastModified),
+          name: movedEntry.name,
+          path: movedEntry.path,
+          lastModified: movedEntry.lastModified ?? currentDocument.lastModified,
+        }));
+      }
+    } catch (error) {
+      setFileTreeError(error, "Unable to move this item.");
+    } finally {
+      setDraggedTreeNode(null);
+      setDropTargetPath(null);
+      dropTargetPathRef.current = null;
+    }
+  };
+
+  const copyExternalPathsIntoTree = async (sourcePaths: string[], targetDirectoryPath: string) => {
+    if (!folderView || sourcePaths.length === 0) {
+      return;
+    }
+
+    setFileError(null);
+
+    try {
+      await invoke<NativeDirectoryEntry[]>("copy_external_paths", {
+        workspaceRoot: folderView.rootPath,
+        sourcePaths,
+        targetDirectory: targetDirectoryPath,
+      });
+      await refreshFolderPath(targetDirectoryPath);
+    } catch (error) {
+      setFileTreeError(error, "Unable to copy dropped files.");
+    } finally {
+      setDropTargetPath(null);
+      dropTargetPathRef.current = null;
+    }
+  };
+
+  const openFileTreeContextMenu = (node: FileTreeNode | null, event: MouseEvent) => {
+    event.preventDefault();
+    setFileTreeContextMenu({ node, x: event.clientX, y: event.clientY });
   };
 
   const updateDocumentContent = (content: string) => {
@@ -1296,6 +1720,76 @@ export function WorkbenchPage() {
       unlisten?.();
     };
   }, [document.content, document.savedContent, document.path, document.lastModified, document.mode, document.isUntitled, saveState]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    getCurrentWindow()
+      .onDragDropEvent((event) => {
+        const payload = event.payload as NativeDragDropPayload;
+        const targetPath = getTreeDropPathFromPoint(payload.position);
+
+        if (payload.type === "drop") {
+          const destination = targetPath ?? dropTargetPathRef.current ?? folderView?.rootPath;
+
+          if (destination && payload.paths?.length) {
+            void copyExternalPathsIntoTree(payload.paths, destination);
+          }
+          return;
+        }
+
+        if (payload.type === "leave" || payload.type === "cancel") {
+          setDropTargetPath(null);
+          dropTargetPathRef.current = null;
+          return;
+        }
+
+        setDropTargetPath(targetPath);
+        dropTargetPathRef.current = targetPath;
+      })
+      .then((cleanup) => {
+        if (disposed) {
+          cleanup();
+          return;
+        }
+
+        unlisten = cleanup;
+      })
+      .catch(() => {
+        unlisten = undefined;
+      });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [folderView?.rootPath]);
+
+  useEffect(() => {
+    if (!fileTreeContextMenu) {
+      return;
+    }
+
+    const closeContextMenu = () => setFileTreeContextMenu(null);
+    const closeWithEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeContextMenu();
+      }
+    };
+
+    window.addEventListener("click", closeContextMenu);
+    window.addEventListener("keydown", closeWithEscape);
+
+    return () => {
+      window.removeEventListener("click", closeContextMenu);
+      window.removeEventListener("keydown", closeWithEscape);
+    };
+  }, [fileTreeContextMenu]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1367,12 +1861,36 @@ export function WorkbenchPage() {
             >
               <ProjectPanel
                 activePath={document.path}
+                clipboard={fileTreeClipboard}
+                contextMenu={fileTreeContextMenu}
+                draggedNode={draggedTreeNode}
+                dropTargetPath={dropTargetPath}
                 folderView={folderView}
                 leftPanelWidth={leftPanelWidth}
+                onContextMenu={openFileTreeContextMenu}
+                onCopyNode={copyTreeNode}
+                onCutNode={cutTreeNode}
+                onDragEnd={() => {
+                  setDraggedTreeNode(null);
+                  setDropTargetPath(null);
+                  dropTargetPathRef.current = null;
+                }}
+                onDragNode={setDraggedTreeNode}
+                onDropNode={moveTreeNodeToDirectory}
+                onDropTargetChange={(path) => {
+                  setDropTargetPath(path);
+                  dropTargetPathRef.current = path;
+                }}
                 onOpenFolder={openFolderPicker}
                 onOpenSettings={openSettingsTool}
                 onOpenRecentFolder={(path) => void openFolderView(path, "open-folder")}
                 onOpenTreeFile={openTreeFile}
+                onPasteNode={pasteTreeNode}
+                onRefreshFolder={(path) => void refreshFolderPath(path)}
+                onRequestCreateDirectory={(parentPath) => openFileTreeNameDialog({ kind: "create-directory", parentPath })}
+                onRequestCreateFile={(parentPath) => openFileTreeNameDialog({ kind: "create-file", parentPath })}
+                onRequestRenameNode={(node) => openFileTreeNameDialog({ kind: "rename", node })}
+                onRequestTrashNode={requestTrashTreeNode}
                 recentFolders={recentFolders}
                 onToggleDirectory={toggleDirectory}
               />
@@ -1444,6 +1962,18 @@ export function WorkbenchPage() {
               setSaveConflict(null);
               void saveDocumentAs(content);
             }}
+          />
+          <FileTreeNameDialogView
+            dialog={fileTreeNameDialog}
+            name={fileTreeNameValue}
+            onCancel={closeFileTreeNameDialog}
+            onNameChange={setFileTreeNameValue}
+            onSubmit={() => void submitFileTreeNameDialog()}
+          />
+          <FileTreeTrashDialog
+            node={fileTreeTrashTarget}
+            onCancel={() => setFileTreeTrashTarget(null)}
+            onConfirm={() => void confirmTrashTreeNode()}
           />
         </div>
       </div>
@@ -1972,22 +2502,56 @@ function QuickSearch({ onClose, open }: { onClose: () => void; open: boolean }) 
 
 function ProjectPanel({
   activePath,
+  clipboard,
+  contextMenu,
+  draggedNode,
+  dropTargetPath,
   folderView,
   leftPanelWidth,
+  onContextMenu,
+  onCopyNode,
+  onCutNode,
+  onDragEnd,
+  onDragNode,
+  onDropNode,
+  onDropTargetChange,
   onOpenFolder,
   onOpenRecentFolder,
   onOpenSettings,
   onOpenTreeFile,
+  onPasteNode,
+  onRefreshFolder,
+  onRequestCreateDirectory,
+  onRequestCreateFile,
+  onRequestRenameNode,
+  onRequestTrashNode,
   recentFolders,
   onToggleDirectory,
 }: {
   activePath: string;
+  clipboard: FileTreeClipboard | null;
+  contextMenu: FileTreeContextMenuState | null;
+  draggedNode: FileTreeNode | null;
+  dropTargetPath: string | null;
   folderView: FolderView | null;
   leftPanelWidth: number;
+  onContextMenu: (node: FileTreeNode | null, event: MouseEvent) => void;
+  onCopyNode: (node: FileTreeNode) => void;
+  onCutNode: (node: FileTreeNode) => void;
+  onDragEnd: () => void;
+  onDragNode: (node: FileTreeNode) => void;
+  onDropNode: (source: FileTreeNode, targetDirectoryPath: string) => void;
+  onDropTargetChange: (path: string | null) => void;
   onOpenFolder: () => void;
   onOpenRecentFolder: (path: string) => void;
   onOpenSettings: () => void;
   onOpenTreeFile: (node: FileTreeNode) => void;
+  onPasteNode: (targetDirectoryPath: string) => void;
+  onRefreshFolder: (path: string) => void;
+  onRequestCreateDirectory: (parentPath: string) => void;
+  onRequestCreateFile: (parentPath: string) => void;
+  onRequestRenameNode: (node: FileTreeNode) => void;
+  onRequestTrashNode: (node: FileTreeNode) => void;
   recentFolders: RecentFolder[];
   onToggleDirectory: (node: FileTreeNode) => void;
 }) {
@@ -1998,13 +2562,31 @@ function ProjectPanel({
         leftPanelWidth={leftPanelWidth}
         onOpenFolder={onOpenFolder}
         onOpenRecentFolder={onOpenRecentFolder}
+        onRefreshFolder={folderView ? () => onRefreshFolder(folderView.rootPath) : undefined}
         recentFolders={recentFolders}
       />
       {folderView ? <div className="project-panel-tree-divider" aria-hidden="true" /> : null}
       <FolderTreePanel
         activePath={activePath}
+        clipboard={clipboard}
+        contextMenu={contextMenu}
+        draggedNode={draggedNode}
+        dropTargetPath={dropTargetPath}
         folderView={folderView}
+        onContextMenu={onContextMenu}
+        onCopyNode={onCopyNode}
+        onCutNode={onCutNode}
+        onDragEnd={onDragEnd}
+        onDragNode={onDragNode}
+        onDropNode={onDropNode}
+        onDropTargetChange={onDropTargetChange}
         onOpenFile={onOpenTreeFile}
+        onPasteNode={onPasteNode}
+        onRefreshFolder={onRefreshFolder}
+        onRequestCreateDirectory={onRequestCreateDirectory}
+        onRequestCreateFile={onRequestCreateFile}
+        onRequestRenameNode={onRequestRenameNode}
+        onRequestTrashNode={onRequestTrashNode}
         onToggleDirectory={onToggleDirectory}
       />
       <ProjectPanelFooter onOpenSettings={onOpenSettings} />
@@ -2017,12 +2599,14 @@ function ProjectPanelStart({
   leftPanelWidth,
   onOpenFolder,
   onOpenRecentFolder,
+  onRefreshFolder,
   recentFolders,
 }: {
   folderView: FolderView | null;
   leftPanelWidth: number;
   onOpenFolder: () => void;
   onOpenRecentFolder: (path: string) => void;
+  onRefreshFolder?: () => void;
   recentFolders: RecentFolder[];
 }) {
   const activeFolderPath = folderView?.rootPath ?? null;
@@ -2063,39 +2647,46 @@ function ProjectPanelStart({
       {folderView ? (
         <div className="project-panel-recent-switcher">
           <div className="project-panel-recent-heading">Recent folders</div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="project-panel-recent-select" type="button">
-                <span className="project-panel-recent-select-avatar" style={activeFolderAccentStyle}>
-                  {getProjectInitials(activeFolderName)}
-                </span>
-                <span className="project-panel-recent-select-text">
-                  <span className="project-panel-recent-select-name">{activeFolderName}</span>
-                  {activeFolderPathLabel ? (
-                    <span className="project-panel-recent-select-path" title={folderView?.rootPath}>
-                      {activeFolderPathLabel}
-                    </span>
-                  ) : null}
-                </span>
-                <span className="project-panel-recent-select-chevron">
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </span>
+          <div className="project-panel-recent-row">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="project-panel-recent-select" type="button">
+                  <span className="project-panel-recent-select-avatar" style={activeFolderAccentStyle}>
+                    {getProjectInitials(activeFolderName)}
+                  </span>
+                  <span className="project-panel-recent-select-text">
+                    <span className="project-panel-recent-select-name">{activeFolderName}</span>
+                    {activeFolderPathLabel ? (
+                      <span className="project-panel-recent-select-path" title={folderView?.rootPath}>
+                        {activeFolderPathLabel}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="project-panel-recent-select-chevron">
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </span>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="project-panel-recent-menu" sideOffset={6}>
+                {currentFolder ? renderRecentFolderItem(currentFolder, true) : null}
+                {currentFolder && inactiveRecentFolders.length > 0 ? (
+                  <DropdownMenuSeparator className="project-panel-recent-menu-separator" />
+                ) : null}
+                {inactiveRecentFolders.length > 0 ? (
+                  inactiveRecentFolders.slice(0, currentFolder ? 7 : 8).map((project) => renderRecentFolderItem(project, false))
+                ) : currentFolder ? null : (
+                  <DropdownMenuItem className="project-panel-recent-menu-item" disabled>
+                    No recent folders yet
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {onRefreshFolder ? (
+              <button className="project-panel-icon-button" type="button" title="Refresh" onClick={onRefreshFolder}>
+                <RefreshCw className="h-3.5 w-3.5" />
               </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="project-panel-recent-menu" sideOffset={6}>
-              {currentFolder ? renderRecentFolderItem(currentFolder, true) : null}
-              {currentFolder && inactiveRecentFolders.length > 0 ? (
-                <DropdownMenuSeparator className="project-panel-recent-menu-separator" />
-              ) : null}
-              {inactiveRecentFolders.length > 0 ? (
-                inactiveRecentFolders.slice(0, currentFolder ? 7 : 8).map((project) => renderRecentFolderItem(project, false))
-              ) : currentFolder ? null : (
-                <DropdownMenuItem className="project-panel-recent-menu-item" disabled>
-                  No recent folders yet
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            ) : null}
+          </div>
         </div>
       ) : (
         <div className="project-panel-recent">
@@ -2125,59 +2716,64 @@ function ProjectPanelStart({
 
 function FolderTreePanel({
   activePath,
+  clipboard,
+  contextMenu,
+  draggedNode,
+  dropTargetPath,
   folderView,
+  onContextMenu,
+  onCopyNode,
+  onCutNode,
+  onDragEnd,
+  onDragNode,
+  onDropNode,
+  onDropTargetChange,
   onOpenFile,
+  onPasteNode,
+  onRefreshFolder,
+  onRequestCreateDirectory,
+  onRequestCreateFile,
+  onRequestRenameNode,
+  onRequestTrashNode,
   onToggleDirectory,
 }: {
   activePath: string;
+  clipboard: FileTreeClipboard | null;
+  contextMenu: FileTreeContextMenuState | null;
+  draggedNode: FileTreeNode | null;
+  dropTargetPath: string | null;
   folderView: FolderView | null;
+  onContextMenu: (node: FileTreeNode | null, event: MouseEvent) => void;
+  onCopyNode: (node: FileTreeNode) => void;
+  onCutNode: (node: FileTreeNode) => void;
+  onDragEnd: () => void;
+  onDragNode: (node: FileTreeNode) => void;
+  onDropNode: (source: FileTreeNode, targetDirectoryPath: string) => void;
+  onDropTargetChange: (path: string | null) => void;
   onOpenFile: (node: FileTreeNode) => void;
+  onPasteNode: (targetDirectoryPath: string) => void;
+  onRefreshFolder: (path: string) => void;
+  onRequestCreateDirectory: (parentPath: string) => void;
+  onRequestCreateFile: (parentPath: string) => void;
+  onRequestRenameNode: (node: FileTreeNode) => void;
+  onRequestTrashNode: (node: FileTreeNode) => void;
   onToggleDirectory: (node: FileTreeNode) => void;
 }) {
-  const treeScrollContentRef = useRef<HTMLDivElement>(null);
-  const [treeScrollOverflowing, setTreeScrollOverflowing] = useState(false);
-
-  useEffect(() => {
-    const content = treeScrollContentRef.current;
-
-    if (!content) {
-      setTreeScrollOverflowing(false);
-      return;
-    }
-
-    const viewport = content.closest("[data-radix-scroll-area-viewport]");
-
-    if (!viewport) {
-      setTreeScrollOverflowing(false);
-      return;
-    }
-
-    const updateOverflow = () => {
-      setTreeScrollOverflowing(viewport.scrollHeight > viewport.clientHeight + 1);
-    };
-
-    const scheduleUpdateOverflow = () => {
-      window.requestAnimationFrame(updateOverflow);
-    };
-
-    scheduleUpdateOverflow();
-
-    const resizeObserver = new ResizeObserver(updateOverflow);
-    resizeObserver.observe(viewport);
-    resizeObserver.observe(content);
-    window.addEventListener("resize", scheduleUpdateOverflow);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener("resize", scheduleUpdateOverflow);
-    };
-  }, [folderView?.rootPath, folderView?.nodes, folderView?.loadingPath]);
+  const scrollParentRef = useRef<HTMLDivElement>(null);
+  const rows = useMemo(() => (folderView ? flattenVisibleTreeRows(folderView.nodes) : []), [folderView?.nodes]);
+  const treeVirtualizer = useVirtualizer({
+    count: rows.length,
+    estimateSize: () => 28,
+    getScrollElement: () => scrollParentRef.current,
+    overscan: 12,
+  });
 
   if (!folderView) {
     return <div className="min-h-0 flex-1" />;
   }
 
   const hasRootDirectories = folderView.nodes.some((node) => node.kind === "directory");
+  const targetDirectory = contextMenu?.node?.kind === "directory" ? contextMenu.node.path : folderView.rootPath;
 
   return (
     <>
@@ -2186,35 +2782,77 @@ function FolderTreePanel({
           {folderView.error}
         </div>
       ) : null}
-      <ScrollArea className="file-tree-scroll min-h-0 flex-1" type="auto">
+      <div
+        className="file-tree-scroll min-h-0 flex-1"
+        ref={scrollParentRef}
+        onContextMenu={(event) => onContextMenu(null, event)}
+      >
         <div
           className={cn(
             "file-tree-list",
             !hasRootDirectories && "file-tree-list-flat",
-            treeScrollOverflowing && "file-tree-list-scroll-overflowing",
           )}
-          ref={treeScrollContentRef}
           role="tree"
           aria-label={folderView.rootName}
+          data-tree-drop-path={folderView.rootPath}
         >
           {folderView.loadingPath === folderView.rootPath && folderView.nodes.length === 0 ? (
             <div className="px-2 py-2 text-[12px] text-muted-foreground">Loading folder...</div>
           ) : null}
-          {folderView.nodes.map((node) => (
-            <FileTreeRow
-              activePath={activePath}
-              key={node.path}
-              loadingPath={folderView.loadingPath}
-              node={node}
-              onOpenFile={onOpenFile}
-              onToggleDirectory={onToggleDirectory}
-            />
-          ))}
+          <div
+            className="file-tree-virtual-inner"
+            style={{ height: `${treeVirtualizer.getTotalSize()}px` }}
+          >
+            {treeVirtualizer.getVirtualItems().map((virtualRow) => {
+              const row = rows[virtualRow.index];
+
+              return (
+                <div
+                  className="file-tree-virtual-row"
+                  key={row.node.path}
+                  style={{ transform: `translateY(${virtualRow.start}px)` }}
+                >
+                  <FileTreeRow
+                    activePath={activePath}
+                    ancestorCanonicalPaths={row.ancestorCanonicalPaths}
+                    depth={row.depth}
+                    draggedNode={draggedNode}
+                    dropTargetPath={dropTargetPath}
+                    loadingPath={folderView.loadingPath}
+                    node={row.node}
+                    onContextMenu={onContextMenu}
+                    onDragEnd={onDragEnd}
+                    onDragNode={onDragNode}
+                    onDropNode={onDropNode}
+                    onDropTargetChange={onDropTargetChange}
+                    onOpenFile={onOpenFile}
+                    onToggleDirectory={onToggleDirectory}
+                  />
+                </div>
+              );
+            })}
+          </div>
           {folderView.nodes.length === 0 && folderView.loadingPath !== folderView.rootPath && !folderView.error ? (
             <div className="px-2 py-2 text-[12px] text-muted-foreground">No files in this folder.</div>
           ) : null}
         </div>
-      </ScrollArea>
+      </div>
+      {contextMenu ? (
+        <FileTreeContextMenu
+          clipboard={clipboard}
+          node={contextMenu.node}
+          onCopyNode={onCopyNode}
+          onCutNode={onCutNode}
+          onPasteNode={() => onPasteNode(targetDirectory)}
+          onRefresh={() => onRefreshFolder(contextMenu.node?.kind === "directory" ? contextMenu.node.path : folderView.rootPath)}
+          onRequestCreateDirectory={() => onRequestCreateDirectory(targetDirectory)}
+          onRequestCreateFile={() => onRequestCreateFile(targetDirectory)}
+          onRequestRenameNode={onRequestRenameNode}
+          onRequestTrashNode={onRequestTrashNode}
+          x={contextMenu.x}
+          y={contextMenu.y}
+        />
+      ) : null}
     </>
   );
 }
@@ -2236,35 +2874,107 @@ function ProjectPanelFooter({ onOpenSettings }: { onOpenSettings: () => void }) 
 
 function FileTreeRow({
   activePath,
+  ancestorCanonicalPaths,
   depth = 0,
+  draggedNode,
+  dropTargetPath,
   loadingPath,
   node,
+  onContextMenu,
+  onDragEnd,
+  onDragNode,
+  onDropNode,
+  onDropTargetChange,
   onOpenFile,
   onToggleDirectory,
 }: {
   activePath: string;
+  ancestorCanonicalPaths: string[];
   depth?: number;
+  draggedNode: FileTreeNode | null;
+  dropTargetPath: string | null;
   loadingPath: string | null;
   node: FileTreeNode;
+  onContextMenu: (node: FileTreeNode | null, event: MouseEvent) => void;
+  onDragEnd: () => void;
+  onDragNode: (node: FileTreeNode) => void;
+  onDropNode: (source: FileTreeNode, targetDirectoryPath: string) => void;
+  onDropTargetChange: (path: string | null) => void;
   onOpenFile: (node: FileTreeNode) => void;
   onToggleDirectory: (node: FileTreeNode) => void;
 }) {
   const isDirectory = node.kind === "directory";
   const isActive = node.path === activePath;
   const isLoading = loadingPath === node.path;
+  const isDropTarget = isDirectory && dropTargetPath === node.path;
+  const canonicalPath = node.canonicalPath ?? node.path;
+  const wouldCycle = isDirectory && node.isSymlink && ancestorCanonicalPaths.includes(canonicalPath);
   const { className: iconClassName, Icon } = getFileTreeIcon(node);
+
+  const handleOpen = () => {
+    if (!isDirectory) {
+      onOpenFile(node);
+      return;
+    }
+
+    if (wouldCycle) {
+      return;
+    }
+
+    onToggleDirectory(node);
+  };
+
+  const handleDragStart = (event: DragEvent<HTMLButtonElement>) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", node.path);
+    onDragNode(node);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLButtonElement>) => {
+    if (!isDirectory || !draggedNode || draggedNode.path === node.path || isPathInsideOrEqual(node.path, draggedNode.path)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    onDropTargetChange(node.path);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLButtonElement>) => {
+    if (!isDirectory || !draggedNode) {
+      return;
+    }
+
+    event.preventDefault();
+    onDropNode(draggedNode, node.path);
+  };
 
   return (
     <div className="file-tree-node" role="none">
       <button
         aria-expanded={isDirectory ? Boolean(node.expanded) : undefined}
         aria-selected={isActive}
-        className={cn("tree-row w-full text-left", isActive && "tree-row-active", node.error && "tree-row-muted")}
+        className={cn(
+          "tree-row w-full text-left",
+          isActive && "tree-row-active",
+          (node.error || wouldCycle) && "tree-row-muted",
+          node.isHidden && "tree-row-hidden",
+          node.isReadonly && "tree-row-readonly",
+          isDropTarget && "tree-row-drop-target",
+        )}
+        data-tree-drop-path={isDirectory ? node.path : undefined}
+        draggable
         role="treeitem"
         style={{ "--tree-depth": depth } as CSSProperties}
         type="button"
-        title={node.path}
-        onClick={() => (isDirectory ? onToggleDirectory(node) : onOpenFile(node))}
+        title={wouldCycle ? `${node.path}\nSymlink loop blocked.` : node.path}
+        onClick={handleOpen}
+        onContextMenu={(event) => onContextMenu(node, event)}
+        onDragEnd={onDragEnd}
+        onDragLeave={() => (isDropTarget ? onDropTargetChange(null) : undefined)}
+        onDragOver={handleDragOver}
+        onDragStart={handleDragStart}
+        onDrop={handleDrop}
       >
         <span className="tree-row-toggle">
           {isDirectory ? (
@@ -2278,32 +2988,173 @@ function FileTreeRow({
         <span className="tree-row-main">
           <Icon className={cn("tree-row-icon", iconClassName)} />
           <span className="tree-row-name">{node.name}</span>
+          {node.isSymlink ? <Link2 className="tree-row-badge-icon" /> : null}
         </span>
         <span className="tree-row-size">
-          {isLoading ? "..." : isDirectory ? "" : formatFileSize(node.size)}
+          {isLoading ? "..." : wouldCycle ? "loop" : isDirectory ? "" : formatFileSize(node.size)}
         </span>
       </button>
-      {node.error ? <div className="px-2 py-1 text-[11px] text-destructive">{node.error}</div> : null}
-      {node.expanded && node.children ? (
-        <div
-          className="file-tree-children"
-          role="group"
-          style={{ "--tree-depth-line": `${(depth + 1) * 14}px` } as CSSProperties}
-        >
-          {node.children.map((child) => (
-            <FileTreeRow
-              activePath={activePath}
-              depth={depth + 1}
-              key={child.path}
-              loadingPath={loadingPath}
-              node={child}
-              onOpenFile={onOpenFile}
-              onToggleDirectory={onToggleDirectory}
-            />
-          ))}
+      {node.error || wouldCycle ? (
+        <div className="tree-row-error" style={{ "--tree-depth": depth } as CSSProperties}>
+          {wouldCycle ? "Symlink loop blocked." : node.error}
         </div>
       ) : null}
     </div>
+  );
+}
+
+function FileTreeContextMenu({
+  clipboard,
+  node,
+  onCopyNode,
+  onCutNode,
+  onPasteNode,
+  onRefresh,
+  onRequestCreateDirectory,
+  onRequestCreateFile,
+  onRequestRenameNode,
+  onRequestTrashNode,
+  x,
+  y,
+}: {
+  clipboard: FileTreeClipboard | null;
+  node: FileTreeNode | null;
+  onCopyNode: (node: FileTreeNode) => void;
+  onCutNode: (node: FileTreeNode) => void;
+  onPasteNode: () => void;
+  onRefresh: () => void;
+  onRequestCreateDirectory: () => void;
+  onRequestCreateFile: () => void;
+  onRequestRenameNode: (node: FileTreeNode) => void;
+  onRequestTrashNode: (node: FileTreeNode) => void;
+  x: number;
+  y: number;
+}) {
+  const menuStyle = {
+    left: Math.min(x, window.innerWidth - 220),
+    top: Math.min(y, window.innerHeight - 260),
+  } satisfies CSSProperties;
+
+  return (
+    <div className="file-tree-context-menu" role="menu" style={menuStyle} onClick={(event) => event.stopPropagation()}>
+      <button className="file-tree-context-item" type="button" onClick={onRequestCreateFile}>
+        <FilePlus className="h-3.5 w-3.5" />
+        New File
+      </button>
+      <button className="file-tree-context-item" type="button" onClick={onRequestCreateDirectory}>
+        <FolderPlus className="h-3.5 w-3.5" />
+        New Folder
+      </button>
+      <button className="file-tree-context-item" type="button" onClick={onRefresh}>
+        <RefreshCw className="h-3.5 w-3.5" />
+        Refresh
+      </button>
+      <div className="file-tree-context-separator" />
+      <button className="file-tree-context-item" disabled={!node} type="button" onClick={() => node && onRequestRenameNode(node)}>
+        <Pencil className="h-3.5 w-3.5" />
+        Rename
+      </button>
+      <button className="file-tree-context-item" disabled={!node} type="button" onClick={() => node && onCopyNode(node)}>
+        <Copy className="h-3.5 w-3.5" />
+        Copy
+      </button>
+      <button className="file-tree-context-item" disabled={!node} type="button" onClick={() => node && onCutNode(node)}>
+        <Scissors className="h-3.5 w-3.5" />
+        Cut
+      </button>
+      <button className="file-tree-context-item" disabled={!clipboard} type="button" onClick={onPasteNode}>
+        <ClipboardPaste className="h-3.5 w-3.5" />
+        Paste
+      </button>
+      <div className="file-tree-context-separator" />
+      <button
+        className="file-tree-context-item file-tree-context-item-danger"
+        disabled={!node}
+        type="button"
+        onClick={() => node && onRequestTrashNode(node)}
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+        Move to Trash
+      </button>
+    </div>
+  );
+}
+
+function FileTreeNameDialogView({
+  dialog,
+  name,
+  onCancel,
+  onNameChange,
+  onSubmit,
+}: {
+  dialog: FileTreeNameDialog | null;
+  name: string;
+  onCancel: () => void;
+  onNameChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const title =
+    dialog?.kind === "create-file" ? "New File" : dialog?.kind === "create-directory" ? "New Folder" : "Rename";
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    onSubmit();
+  };
+
+  return (
+    <Dialog open={Boolean(dialog)} onOpenChange={(nextOpen) => (!nextOpen ? onCancel() : undefined)}>
+      <DialogContent>
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>Enter a name for this file tree item.</DialogDescription>
+          </DialogHeader>
+          <Input
+            autoFocus
+            className="mt-4"
+            value={name}
+            onChange={(event) => onNameChange(event.target.value)}
+          />
+          <DialogFooter className="mt-4">
+            <Button type="button" variant="ghost" onClick={onCancel}>
+              Cancel
+            </Button>
+            <Button type="submit">{dialog?.kind === "rename" ? "Rename" : "Create"}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FileTreeTrashDialog({
+  node,
+  onCancel,
+  onConfirm,
+}: {
+  node: FileTreeNode | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={Boolean(node)} onOpenChange={(nextOpen) => (!nextOpen ? onCancel() : undefined)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Move to Trash?</DialogTitle>
+          <DialogDescription>
+            {node ? `${node.name} will be moved to the system Trash.` : "This item will be moved to the system Trash."}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={onConfirm}>
+            Move to Trash
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

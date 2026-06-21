@@ -6,7 +6,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use serde::Serialize;
 use std::{
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
@@ -32,16 +32,6 @@ const MENU_CHECK_FOR_UPDATES: &str = "menu-check-for-updates";
 const MENU_COMMUNITY: &str = "menu-community";
 const MENU_PRIVACY_STATEMENT: &str = "menu-privacy-statement";
 const MENU_ABOUT_NORN: &str = "menu-about-norn";
-const IGNORED_DIRECTORY_NAMES: &[&str] = &[
-    ".git",
-    "node_modules",
-    "target",
-    "dist",
-    "build",
-    "out",
-    ".gradle",
-];
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TextFile {
@@ -103,7 +93,7 @@ enum SaveTextFileErrorKind {
     Permission,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DirectoryEntry {
     name: String,
@@ -112,13 +102,38 @@ struct DirectoryEntry {
     kind: DirectoryEntryKind,
     size: Option<u64>,
     last_modified: Option<u64>,
+    is_hidden: bool,
+    is_symlink: bool,
+    target_kind: Option<DirectoryEntryKind>,
+    canonical_path: Option<String>,
+    is_readonly: bool,
+    error: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 enum DirectoryEntryKind {
     File,
     Directory,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileOperationError {
+    kind: FileOperationErrorKind,
+    message: String,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum FileOperationErrorKind {
+    Conflict,
+    InvalidPath,
+    Io,
+    NotFound,
+    Permission,
+    RootOperation,
+    WouldNest,
 }
 
 #[tauri::command]
@@ -204,7 +219,10 @@ fn save_text_file(
         if error.kind() == std::io::ErrorKind::NotFound {
             return save_error(
                 SaveTextFileErrorKind::Deleted,
-                format!("{} no longer exists. Choose a new location to save this file.", path.display()),
+                format!(
+                    "{} no longer exists. Choose a new location to save this file.",
+                    path.display()
+                ),
             );
         }
 
@@ -267,7 +285,10 @@ fn save_text_file_as(path: String, content: String) -> Result<SavedTextFile, Sav
     {
         return Err(save_error(
             SaveTextFileErrorKind::InvalidPath,
-            format!("{} is a directory. Choose a file path instead.", path.display()),
+            format!(
+                "{} is a directory. Choose a file path instead.",
+                path.display()
+            ),
         ));
     }
 
@@ -287,8 +308,8 @@ fn inspect_text_file(path: String) -> Result<TextFileInspection, String> {
         return Err(format!("{} is not a file", path.display()));
     }
 
-    let mut file =
-        File::open(&path).map_err(|error| format_file_error("Unable to open file", &path, error))?;
+    let mut file = File::open(&path)
+        .map_err(|error| format_file_error("Unable to open file", &path, error))?;
     let mut buffer = vec![0; SAMPLE_BYTES.min(metadata.len() as usize)];
     let bytes_read = file
         .read(&mut buffer)
@@ -333,14 +354,16 @@ fn read_text_file_range(path: String, offset: u64, length: u64) -> Result<TextFi
 
     let file_size = metadata.len();
     let requested_offset = offset.min(file_size);
-    let read_length = length.min(MAX_RANGE_BYTES).min(file_size.saturating_sub(requested_offset));
+    let read_length = length
+        .min(MAX_RANGE_BYTES)
+        .min(file_size.saturating_sub(requested_offset));
     let start_offset = align_range_start(&path, requested_offset)?;
     let target_end_offset = requested_offset.saturating_add(read_length).min(file_size);
     let end_offset = align_range_end(&path, target_end_offset, file_size)?;
     let byte_count = end_offset.saturating_sub(start_offset);
 
-    let mut file =
-        File::open(&path).map_err(|error| format_file_error("Unable to open file", &path, error))?;
+    let mut file = File::open(&path)
+        .map_err(|error| format_file_error("Unable to open file", &path, error))?;
     file.seek(SeekFrom::Start(start_offset))
         .map_err(|error| format_file_error("Unable to seek file", &path, error))?;
 
@@ -387,27 +410,7 @@ fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String> {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
 
-        if should_ignore_entry(&path, &name) {
-            continue;
-        }
-
-        let metadata = entry.metadata().map_err(|error| {
-            format_file_error("Unable to read directory entry metadata", &path, error)
-        })?;
-        let kind = if metadata.is_dir() {
-            DirectoryEntryKind::Directory
-        } else {
-            DirectoryEntryKind::File
-        };
-
-        entries.push(DirectoryEntry {
-            relative_path: name.clone(),
-            name,
-            path: path.to_string_lossy().into_owned(),
-            kind,
-            size: metadata.is_file().then_some(metadata.len()),
-            last_modified: modified_time_millis(&metadata),
-        });
+        entries.push(directory_entry_from_path(&path, &name));
     }
 
     entries.sort_by(|left, right| match (&left.kind, &right.kind) {
@@ -419,8 +422,379 @@ fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String> {
     Ok(entries)
 }
 
-fn should_ignore_entry(path: &Path, name: &str) -> bool {
-    path.is_dir() && IGNORED_DIRECTORY_NAMES.contains(&name)
+#[tauri::command]
+fn create_file(
+    workspace_root: String,
+    parent_path: String,
+    name: String,
+) -> Result<DirectoryEntry, FileOperationError> {
+    let parent = writable_directory_in_workspace(&workspace_root, &parent_path)?;
+    validate_child_name(&name)?;
+    let target = parent.join(&name);
+    ensure_absent(&target)?;
+
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&target)
+        .map_err(|error| operation_error_from_io("Unable to create file", &target, error))?;
+
+    Ok(directory_entry_from_path(&target, &name))
+}
+
+#[tauri::command]
+fn create_directory(
+    workspace_root: String,
+    parent_path: String,
+    name: String,
+) -> Result<DirectoryEntry, FileOperationError> {
+    let parent = writable_directory_in_workspace(&workspace_root, &parent_path)?;
+    validate_child_name(&name)?;
+    let target = parent.join(&name);
+    ensure_absent(&target)?;
+
+    fs::create_dir(&target)
+        .map_err(|error| operation_error_from_io("Unable to create directory", &target, error))?;
+
+    Ok(directory_entry_from_path(&target, &name))
+}
+
+#[tauri::command]
+fn rename_path(
+    workspace_root: String,
+    path: String,
+    new_name: String,
+) -> Result<DirectoryEntry, FileOperationError> {
+    let source = writable_path_in_workspace(&workspace_root, &path)?;
+    ensure_not_workspace_root(&workspace_root, &source)?;
+    validate_child_name(&new_name)?;
+
+    let parent = source.parent().ok_or_else(|| {
+        operation_error(
+            FileOperationErrorKind::InvalidPath,
+            format!("{} does not have a parent directory", source.display()),
+        )
+    })?;
+    let target = parent.join(&new_name);
+    ensure_absent(&target)?;
+
+    fs::rename(&source, &target)
+        .map_err(|error| operation_error_from_io("Unable to rename path", &source, error))?;
+
+    Ok(directory_entry_from_path(&target, &new_name))
+}
+
+#[tauri::command]
+fn move_path(
+    workspace_root: String,
+    source_path: String,
+    target_directory: String,
+) -> Result<DirectoryEntry, FileOperationError> {
+    let source = writable_path_in_workspace(&workspace_root, &source_path)?;
+    ensure_not_workspace_root(&workspace_root, &source)?;
+    let target_parent = writable_directory_in_workspace(&workspace_root, &target_directory)?;
+    ensure_not_descendant_move(&source, &target_parent)?;
+
+    let name = path_file_name(&source)?;
+    let target = target_parent.join(&name);
+    ensure_absent(&target)?;
+
+    fs::rename(&source, &target)
+        .map_err(|error| operation_error_from_io("Unable to move path", &source, error))?;
+
+    Ok(directory_entry_from_path(&target, &name))
+}
+
+#[tauri::command]
+fn copy_path(
+    workspace_root: String,
+    source_path: String,
+    target_directory: String,
+) -> Result<DirectoryEntry, FileOperationError> {
+    let source = writable_path_in_workspace(&workspace_root, &source_path)?;
+    let target_parent = writable_directory_in_workspace(&workspace_root, &target_directory)?;
+    let name = path_file_name(&source)?;
+    let target = target_parent.join(&name);
+    ensure_absent(&target)?;
+
+    copy_path_recursive(&source, &target)?;
+
+    Ok(directory_entry_from_path(&target, &name))
+}
+
+#[tauri::command]
+fn copy_external_paths(
+    workspace_root: String,
+    source_paths: Vec<String>,
+    target_directory: String,
+) -> Result<Vec<DirectoryEntry>, FileOperationError> {
+    let target_parent = writable_directory_in_workspace(&workspace_root, &target_directory)?;
+    let mut copied_entries = Vec::new();
+
+    for source_path in source_paths {
+        let source = PathBuf::from(source_path);
+        if !source.exists() {
+            return Err(operation_error(
+                FileOperationErrorKind::NotFound,
+                format!("{} does not exist", source.display()),
+            ));
+        }
+
+        let name = path_file_name(&source)?;
+        let target = target_parent.join(&name);
+        ensure_absent(&target)?;
+        copy_path_recursive(&source, &target)?;
+        copied_entries.push(directory_entry_from_path(&target, &name));
+    }
+
+    Ok(copied_entries)
+}
+
+#[tauri::command]
+fn trash_path(workspace_root: String, path: String) -> Result<(), FileOperationError> {
+    let target = writable_path_in_workspace(&workspace_root, &path)?;
+    ensure_not_workspace_root(&workspace_root, &target)?;
+
+    trash::delete(&target).map_err(|error| {
+        operation_error(
+            FileOperationErrorKind::Io,
+            format!("Unable to move {} to Trash: {error}", target.display()),
+        )
+    })
+}
+
+fn directory_entry_from_path(path: &Path, name: &str) -> DirectoryEntry {
+    let symlink_metadata = fs::symlink_metadata(path);
+    let target_metadata = fs::metadata(path);
+    let is_symlink = symlink_metadata
+        .as_ref()
+        .map(|metadata| metadata.file_type().is_symlink())
+        .unwrap_or(false);
+    let metadata = target_metadata
+        .as_ref()
+        .ok()
+        .or(symlink_metadata.as_ref().ok());
+    let kind = target_metadata
+        .as_ref()
+        .map(|metadata| {
+            if metadata.is_dir() {
+                DirectoryEntryKind::Directory
+            } else {
+                DirectoryEntryKind::File
+            }
+        })
+        .unwrap_or(DirectoryEntryKind::File);
+    let target_kind = if is_symlink {
+        target_metadata.as_ref().ok().map(|metadata| {
+            if metadata.is_dir() {
+                DirectoryEntryKind::Directory
+            } else {
+                DirectoryEntryKind::File
+            }
+        })
+    } else {
+        None
+    };
+    let error = target_metadata
+        .as_ref()
+        .err()
+        .map(|error| format!("Unable to read metadata: {error}"));
+
+    DirectoryEntry {
+        relative_path: name.to_string(),
+        name: name.to_string(),
+        path: path.to_string_lossy().into_owned(),
+        kind,
+        size: metadata.and_then(|metadata| metadata.is_file().then_some(metadata.len())),
+        last_modified: metadata.and_then(modified_time_millis),
+        is_hidden: is_hidden_path(path, name),
+        is_symlink,
+        target_kind,
+        canonical_path: fs::canonicalize(path)
+            .ok()
+            .map(|path| path.to_string_lossy().into_owned()),
+        is_readonly: metadata
+            .map(|metadata| metadata.permissions().readonly())
+            .unwrap_or(false),
+        error,
+    }
+}
+
+fn is_hidden_path(_path: &Path, name: &str) -> bool {
+    name.starts_with('.')
+}
+
+fn writable_directory_in_workspace(
+    workspace_root: &str,
+    path: &str,
+) -> Result<PathBuf, FileOperationError> {
+    let target = writable_path_in_workspace(workspace_root, path)?;
+    let metadata = fs::metadata(&target).map_err(|error| {
+        operation_error_from_io("Unable to read directory metadata", &target, error)
+    })?;
+
+    if !metadata.is_dir() {
+        return Err(operation_error(
+            FileOperationErrorKind::InvalidPath,
+            format!("{} is not a directory", target.display()),
+        ));
+    }
+
+    Ok(target)
+}
+
+fn writable_path_in_workspace(
+    workspace_root: &str,
+    path: &str,
+) -> Result<PathBuf, FileOperationError> {
+    let root = canonicalize_path(Path::new(workspace_root), "Unable to read workspace root")?;
+    let raw_target = PathBuf::from(path);
+    let target = canonicalize_path(&raw_target, "Unable to read path")?;
+
+    if !target.starts_with(&root) {
+        return Err(operation_error(
+            FileOperationErrorKind::InvalidPath,
+            format!("{} is outside the active workspace", target.display()),
+        ));
+    }
+
+    Ok(raw_target)
+}
+
+fn ensure_not_workspace_root(workspace_root: &str, path: &Path) -> Result<(), FileOperationError> {
+    let root = canonicalize_path(Path::new(workspace_root), "Unable to read workspace root")?;
+    let target = canonicalize_path(path, "Unable to read path")?;
+
+    if target == root {
+        return Err(operation_error(
+            FileOperationErrorKind::RootOperation,
+            "The workspace root cannot be renamed, moved, or deleted.".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_child_name(name: &str) -> Result<(), FileOperationError> {
+    let trimmed = name.trim();
+
+    if trimmed.is_empty()
+        || trimmed == "."
+        || trimmed == ".."
+        || trimmed.contains('/')
+        || trimmed.contains('\\')
+        || trimmed.contains('\0')
+    {
+        return Err(operation_error(
+            FileOperationErrorKind::InvalidPath,
+            "Enter a valid name without path separators.".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn ensure_absent(path: &Path) -> Result<(), FileOperationError> {
+    if path
+        .try_exists()
+        .map_err(|error| operation_error_from_io("Unable to check destination path", path, error))?
+    {
+        return Err(operation_error(
+            FileOperationErrorKind::Conflict,
+            format!("{} already exists", path.display()),
+        ));
+    }
+
+    Ok(())
+}
+
+fn ensure_not_descendant_move(
+    source: &Path,
+    target_parent: &Path,
+) -> Result<(), FileOperationError> {
+    let source_metadata = fs::metadata(source).map_err(|error| {
+        operation_error_from_io("Unable to read source metadata", source, error)
+    })?;
+
+    if !source_metadata.is_dir() {
+        return Ok(());
+    }
+
+    let source = canonicalize_path(source, "Unable to read source path")?;
+    let target_parent = canonicalize_path(target_parent, "Unable to read target directory")?;
+
+    if target_parent == source || target_parent.starts_with(&source) {
+        return Err(operation_error(
+            FileOperationErrorKind::WouldNest,
+            "A directory cannot be moved into itself or one of its descendants.".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+fn copy_path_recursive(source: &Path, target: &Path) -> Result<(), FileOperationError> {
+    let metadata = fs::metadata(source).map_err(|error| {
+        operation_error_from_io("Unable to read source metadata", source, error)
+    })?;
+
+    if metadata.is_dir() {
+        fs::create_dir(target).map_err(|error| {
+            operation_error_from_io("Unable to create destination directory", target, error)
+        })?;
+
+        for entry in fs::read_dir(source).map_err(|error| {
+            operation_error_from_io("Unable to read source directory", source, error)
+        })? {
+            let entry = entry.map_err(|error| {
+                operation_error_from_io("Unable to read source directory entry", source, error)
+            })?;
+            let child_source = entry.path();
+            let child_target = target.join(entry.file_name());
+            copy_path_recursive(&child_source, &child_target)?;
+        }
+
+        return Ok(());
+    }
+
+    fs::copy(source, target)
+        .map_err(|error| operation_error_from_io("Unable to copy file", source, error))?;
+    Ok(())
+}
+
+fn canonicalize_path(path: &Path, context: &str) -> Result<PathBuf, FileOperationError> {
+    fs::canonicalize(path).map_err(|error| operation_error_from_io(context, path, error))
+}
+
+fn path_file_name(path: &Path) -> Result<String, FileOperationError> {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.to_string())
+        .ok_or_else(|| {
+            operation_error(
+                FileOperationErrorKind::InvalidPath,
+                format!("{} does not have a valid file name", path.display()),
+            )
+        })
+}
+
+fn operation_error(kind: FileOperationErrorKind, message: String) -> FileOperationError {
+    FileOperationError { kind, message }
+}
+
+fn operation_error_from_io(
+    context: &str,
+    path: &Path,
+    error: std::io::Error,
+) -> FileOperationError {
+    let kind = match error.kind() {
+        std::io::ErrorKind::AlreadyExists => FileOperationErrorKind::Conflict,
+        std::io::ErrorKind::NotFound => FileOperationErrorKind::NotFound,
+        std::io::ErrorKind::PermissionDenied => FileOperationErrorKind::Permission,
+        _ => FileOperationErrorKind::Io,
+    };
+
+    operation_error(kind, format_file_error(context, path, error))
 }
 
 fn align_range_start(path: &Path, offset: u64) -> Result<u64, String> {
@@ -461,7 +835,9 @@ fn align_range_end(path: &Path, offset: u64, file_size: u64) -> Result<u64, Stri
     let mut file =
         File::open(path).map_err(|error| format_file_error("Unable to open file", path, error))?;
     let mut position = offset;
-    let stop_at = offset.saturating_add(MAX_ALIGNMENT_SCAN_BYTES).min(file_size);
+    let stop_at = offset
+        .saturating_add(MAX_ALIGNMENT_SCAN_BYTES)
+        .min(file_size);
     let mut byte = [0; 1];
 
     while position < stop_at {
@@ -536,7 +912,13 @@ fn atomic_write_text_file(path: &Path, content: &str) -> Result<(), SaveTextFile
             Some(metadata.permissions())
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => return Err(save_error_from_io("Unable to read existing file metadata", path, error)),
+        Err(error) => {
+            return Err(save_error_from_io(
+                "Unable to read existing file metadata",
+                path,
+                error,
+            ))
+        }
     };
 
     let file_name = path
@@ -573,17 +955,31 @@ fn atomic_write_text_file(path: &Path, content: &str) -> Result<(), SaveTextFile
                 last_create_error = Some(error);
                 continue;
             }
-            Err(error) => return Err(save_error_from_io("Unable to create temporary save file", &temp_path, error)),
+            Err(error) => {
+                return Err(save_error_from_io(
+                    "Unable to create temporary save file",
+                    &temp_path,
+                    error,
+                ))
+            }
         };
 
         if let Err(error) = file.write_all(content.as_bytes()) {
             let _ = fs::remove_file(&temp_path);
-            return Err(save_error_from_io("Unable to write temporary save file", &temp_path, error));
+            return Err(save_error_from_io(
+                "Unable to write temporary save file",
+                &temp_path,
+                error,
+            ));
         }
 
         if let Err(error) = file.sync_all() {
             let _ = fs::remove_file(&temp_path);
-            return Err(save_error_from_io("Unable to flush temporary save file", &temp_path, error));
+            return Err(save_error_from_io(
+                "Unable to flush temporary save file",
+                &temp_path,
+                error,
+            ));
         }
 
         drop(file);
@@ -591,13 +987,21 @@ fn atomic_write_text_file(path: &Path, content: &str) -> Result<(), SaveTextFile
         if let Some(permissions) = existing_permissions.clone() {
             if let Err(error) = fs::set_permissions(&temp_path, permissions) {
                 let _ = fs::remove_file(&temp_path);
-                return Err(save_error_from_io("Unable to preserve file permissions while saving", &temp_path, error));
+                return Err(save_error_from_io(
+                    "Unable to preserve file permissions while saving",
+                    &temp_path,
+                    error,
+                ));
             }
         }
 
         if let Err(error) = fs::rename(&temp_path, path) {
             let _ = fs::remove_file(&temp_path);
-            return Err(save_error_from_io("Unable to replace file while saving", path, error));
+            return Err(save_error_from_io(
+                "Unable to replace file while saving",
+                path,
+                error,
+            ));
         }
 
         return Ok(());
@@ -606,7 +1010,8 @@ fn atomic_write_text_file(path: &Path, content: &str) -> Result<(), SaveTextFile
     Err(save_error_from_io(
         "Unable to create a unique temporary save file",
         parent,
-        last_create_error.unwrap_or_else(|| std::io::Error::from(std::io::ErrorKind::AlreadyExists)),
+        last_create_error
+            .unwrap_or_else(|| std::io::Error::from(std::io::ErrorKind::AlreadyExists)),
     ))
 }
 
@@ -854,7 +1259,128 @@ pub fn run() {
             save_text_file,
             save_text_file_as,
             list_directory,
+            create_file,
+            create_directory,
+            rename_path,
+            move_path,
+            copy_path,
+            copy_external_paths,
+            trash_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running norn");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TestWorkspace {
+        root: PathBuf,
+    }
+
+    impl TestWorkspace {
+        fn new() -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock should be available")
+                .as_nanos();
+            let root = std::env::temp_dir().join(format!(
+                "norn-file-tree-test-{}-{unique}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&root).expect("test workspace should be created");
+
+            Self {
+                root: root
+                    .canonicalize()
+                    .expect("test workspace should be canonicalized"),
+            }
+        }
+
+        fn root_string(&self) -> String {
+            self.root.to_string_lossy().into_owned()
+        }
+
+        fn path_string(&self, path: &Path) -> String {
+            path.to_string_lossy().into_owned()
+        }
+    }
+
+    impl Drop for TestWorkspace {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    fn create_file_rejects_existing_destination() {
+        let workspace = TestWorkspace::new();
+        fs::write(workspace.root.join("notes.txt"), "hello").expect("seed file should be written");
+
+        let error = create_file(
+            workspace.root_string(),
+            workspace.root_string(),
+            "notes.txt".to_string(),
+        )
+        .expect_err("existing destination should be rejected");
+
+        assert_eq!(error.kind, FileOperationErrorKind::Conflict);
+    }
+
+    #[test]
+    fn move_path_rejects_descendant_destination() {
+        let workspace = TestWorkspace::new();
+        let source = workspace.root.join("source");
+        let child = source.join("child");
+        fs::create_dir_all(&child).expect("nested directories should be created");
+
+        let error = move_path(
+            workspace.root_string(),
+            workspace.path_string(&source),
+            workspace.path_string(&child),
+        )
+        .expect_err("moving a directory into a descendant should be rejected");
+
+        assert_eq!(error.kind, FileOperationErrorKind::WouldNest);
+    }
+
+    #[test]
+    fn trash_path_rejects_workspace_root() {
+        let workspace = TestWorkspace::new();
+
+        let error = trash_path(workspace.root_string(), workspace.root_string())
+            .expect_err("workspace root should not be moved to trash");
+
+        assert_eq!(error.kind, FileOperationErrorKind::RootOperation);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_entry_marks_symlink_and_canonical_target() {
+        use std::os::unix::fs::symlink;
+
+        let workspace = TestWorkspace::new();
+        let real_dir = workspace.root.join("real");
+        let linked_dir = workspace.root.join("linked");
+        fs::create_dir_all(&real_dir).expect("real directory should be created");
+        symlink(&real_dir, &linked_dir).expect("symlink should be created");
+
+        let entry = directory_entry_from_path(&linked_dir, "linked");
+
+        assert!(entry.is_symlink);
+        assert_eq!(entry.kind, DirectoryEntryKind::Directory);
+        assert_eq!(entry.target_kind, Some(DirectoryEntryKind::Directory));
+        assert_eq!(
+            entry.canonical_path,
+            Some(
+                real_dir
+                    .canonicalize()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            )
+        );
+    }
 }
