@@ -771,13 +771,42 @@
   }
 
   .editor-file-tabs {
-    @apply relative flex h-8 min-w-0 items-end overflow-hidden text-muted-foreground;
+    @apply relative flex h-9 min-w-0 items-end overflow-hidden text-muted-foreground;
     background: hsl(var(--editor-background));
   }
 
+  .editor-file-tabs::before,
+  .editor-file-tabs::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    z-index: 30000;
+    width: 22px;
+    height: 100%;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .editor-file-tabs::before {
+    left: 0;
+    background: linear-gradient(90deg, hsl(var(--editor-background)) 0%, hsl(var(--editor-background) / 0) 100%);
+  }
+
+  .editor-file-tabs::after {
+    right: 32px;
+    background: linear-gradient(270deg, hsl(var(--editor-background)) 0%, hsl(var(--editor-background) / 0) 100%);
+  }
+
+  .editor-file-tabs-has-left::before,
+  .editor-file-tabs-has-right::after {
+    opacity: 1;
+  }
+
   .editor-file-tabs-scroll {
+    --tab-left-stack-step: 30px;
+    --tab-stack-step: 20px;
     @apply flex min-w-0 flex-1 items-end overflow-x-auto overflow-y-hidden;
-    scroll-behavior: smooth;
     scrollbar-width: none;
   }
 
@@ -786,183 +815,191 @@
   }
 
   .editor-file-tab {
-    @apply inline-flex h-7 max-w-[220px] shrink-0 items-center gap-2 rounded-t-[0.45rem] border-0 bg-transparent px-2.5 text-[12px] font-medium text-muted-foreground shadow-none transition-colors;
+    @apply inline-flex h-8 max-w-[220px] shrink-0 items-center gap-2 rounded-t-[0.45rem] border px-2.5 text-[12px] font-medium text-muted-foreground shadow-none;
+    position: sticky;
+    min-width: 92px;
+    background: hsl(var(--editor-background));
+    border-color: hsl(var(--editor-background));
+    transform-origin: center bottom;
+    transition:
+      background-color 150ms ease,
+      border-color 150ms ease,
+      box-shadow 220ms cubic-bezier(0.2, 0.84, 0.22, 1),
+      color 150ms ease,
+      filter 220ms cubic-bezier(0.2, 0.84, 0.22, 1);
+    -webkit-mask-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      transparent var(--hide-left, 0%),
+      #000 var(--hide-left, 0%),
+      #000 calc(100% - var(--hide-right, 0%)),
+      transparent calc(100% - var(--hide-right, 0%)),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      transparent var(--hide-left, 0%),
+      #000 var(--hide-left, 0%),
+      #000 calc(100% - var(--hide-right, 0%)),
+      transparent calc(100% - var(--hide-right, 0%)),
+      transparent 100%
+    );
   }
 
   .editor-file-tab:first-child {
     border-top-left-radius: 0;
   }
 
-  .editor-file-tab-dot {
-    @apply h-2 w-2 shrink-0 rounded-full;
+  .editor-file-tab-left-sticky {
+    left: var(--sticky-left, 0px);
+    right: auto;
+  }
+
+  .editor-file-tab-right-sticky {
+    left: auto;
+    right: var(--sticky-right, 0px);
+  }
+
+  .editor-file-tab-icon {
+    @apply h-3.5 w-3.5 shrink-0;
+    transition:
+      opacity 240ms ease,
+      transform 240ms cubic-bezier(0.2, 0.84, 0.22, 1);
+  }
+
+  .editor-file-tab .truncate,
+  .editor-file-tab-trailing {
+    transition:
+      opacity 240ms ease,
+      transform 240ms cubic-bezier(0.2, 0.84, 0.22, 1);
+  }
+
+  .editor-file-tab-trailing {
+    display: inline-flex;
+    width: 30px;
+    min-width: 30px;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+  }
+
+  .editor-file-tab-trailing-hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(2px) scale(0.92);
+  }
+
+  .editor-file-tab-dirty {
+    display: inline-grid;
+    width: 8px;
+    place-items: center;
+    color: hsl(var(--muted-foreground));
   }
 
   .editor-file-tab:hover {
-    background: hsl(var(--muted) / 0.42);
+    background: hsl(var(--muted));
+    border-color: var(--editor-tab-border-accent, hsl(var(--border) / 0.54));
     color: hsl(var(--foreground));
+  }
+
+  .editor-file-tab-left-stacked,
+  .editor-file-tab-right-stacked {
+    border-color: var(--editor-tab-border-accent, hsl(var(--border)));
+    box-shadow:
+      inset 0 0 0 1px hsl(var(--editor-background)),
+      0 1px 2px hsl(var(--foreground) / 0.08);
   }
 
   .editor-file-tab-active {
     background: hsl(var(--background));
+    border-color: var(--editor-tab-border-accent, hsl(var(--border) / 0.62));
     color: hsl(var(--foreground));
     box-shadow:
-      inset 0 2px 0 hsl(var(--primary) / 0.82),
+      inset 0 2px 0 var(--editor-tab-accent, hsl(var(--primary) / 0.82)),
       inset 1px 0 0 hsl(var(--border) / 0.42),
       inset -1px 0 0 hsl(var(--border) / 0.42),
-      0 -1px 0 hsl(var(--border) / 0.28);
+      0 -1px 0 hsl(var(--border) / 0.28),
+      0 5px 12px hsl(var(--foreground) / 0.07);
   }
 
   .editor-file-tab-input {
     @apply h-5 min-w-[72px] max-w-[170px] bg-transparent p-0 text-[12px] font-medium text-foreground outline-none;
   }
 
+  .editor-file-tab-close {
+    @apply grid h-5 w-5 shrink-0 place-items-center rounded-[0.25rem] text-muted-foreground;
+    animation: editor-tab-control-in 260ms cubic-bezier(0.2, 0.84, 0.22, 1) both;
+    opacity: 0.62;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease,
+      opacity 120ms ease;
+  }
+
+  .editor-file-tab-close:hover {
+    background: hsl(var(--muted));
+    color: hsl(var(--foreground));
+    opacity: 1;
+  }
+
+  .editor-file-tab-active .editor-file-tab-close,
+  .editor-file-tab:hover .editor-file-tab-close {
+    opacity: 1;
+  }
+
+  @keyframes editor-tab-control-in {
+    from {
+      opacity: 0;
+      transform: translateY(2px) scale(0.86);
+    }
+
+    to {
+      opacity: 0.62;
+      transform: translateY(0) scale(1);
+    }
+  }
+
   .editor-file-tab-add {
-    @apply grid h-7 w-8 shrink-0 place-items-center rounded-t-[0.45rem] border-0 bg-transparent p-0 text-muted-foreground transition-colors;
+    @apply relative z-[30001] grid h-8 w-8 shrink-0 place-items-center rounded-t-[0.45rem] border-0 bg-transparent p-0 text-muted-foreground transition-colors;
   }
 
   .editor-file-tab-add:hover {
-    background: hsl(var(--muted) / 0.42);
+    background: hsl(var(--muted));
     color: hsl(var(--foreground));
   }
 
-  .editor-file-tabs-fold-stack {
-    @apply pointer-events-none absolute bottom-0 z-20 h-7 w-8 overflow-visible;
-    opacity: 0;
-    transition: opacity 110ms ease-out;
-  }
-
-  .editor-file-tabs-fold-stack-left {
-    left: 0;
-  }
-
-  .editor-file-tabs-fold-stack-right {
-    right: 32px;
-  }
-
-  .editor-file-tabs-fold-stack-visible {
-    opacity: 1;
-  }
-
-  .editor-file-tabs-fold-card {
-    --tab-fold-color: hsl(var(--primary));
-    @apply absolute bottom-0 block h-7 rounded-t-[0.5rem];
-    background:
-      radial-gradient(circle at 100% 0, var(--tab-fold-color) 0 5px, transparent 5.5px),
-      linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--muted) / 0.82) 100%);
+  .editor-file-tab-tooltip {
+    display: grid;
+    max-width: min(460px, calc(100vw - 32px));
+    gap: 2px;
+    border-radius: 12px;
+    border-color: hsl(var(--border) / 0.72);
+    background: hsl(var(--popover));
+    padding: 7px 9px;
     box-shadow:
-      inset 0 1px 0 hsl(var(--background) / 0.82),
-      inset 1px 0 0 hsl(var(--border) / 0.34),
-      inset -1px 0 0 hsl(var(--border) / 0.24),
-      0 1px 2px hsl(var(--foreground) / 0.06);
-    opacity: 1;
-    transition:
-      transform 190ms cubic-bezier(0.2, 0.8, 0.2, 1),
-      width 190ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      0 10px 26px hsl(var(--foreground) / 0.13),
+      0 2px 7px hsl(var(--foreground) / 0.08);
   }
 
-  .editor-file-tabs-fold-stack-left .editor-file-tabs-fold-card {
-    left: 0;
-    transform-origin: left bottom;
-  }
-
-  .editor-file-tabs-fold-stack-right .editor-file-tabs-fold-card {
-    right: 0;
-    transform-origin: right bottom;
-    background:
-      radial-gradient(circle at 0 0, var(--tab-fold-color) 0 5px, transparent 5.5px),
-      linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--muted) / 0.82) 100%);
-  }
-
-  .editor-file-tabs-fold-card:nth-child(1) {
-    z-index: 1;
-    width: 16px;
-    opacity: 0.88;
-  }
-
-  .editor-file-tabs-fold-card:nth-child(2) {
-    z-index: 2;
-    width: 18px;
-    opacity: 0.94;
-  }
-
-  .editor-file-tabs-fold-card:nth-child(3) {
-    z-index: 3;
-    width: 20px;
-    opacity: 1;
-  }
-
-  .editor-file-tabs-fold-stack-left .editor-file-tabs-fold-card:nth-child(1) {
-    transform: translateX(0) scaleX(0.72) rotateY(28deg);
-  }
-
-  .editor-file-tabs-fold-stack-left .editor-file-tabs-fold-card:nth-child(2) {
-    transform: translateX(5px) scaleX(0.78) rotateY(18deg);
-  }
-
-  .editor-file-tabs-fold-stack-left .editor-file-tabs-fold-card:nth-child(3) {
-    transform: translateX(10px) scaleX(0.86) rotateY(8deg);
-  }
-
-  .editor-file-tabs-fold-stack-right .editor-file-tabs-fold-card:nth-child(1) {
-    transform: translateX(0) scaleX(0.72) rotateY(-28deg);
-  }
-
-  .editor-file-tabs-fold-stack-right .editor-file-tabs-fold-card:nth-child(2) {
-    transform: translateX(-5px) scaleX(0.78) rotateY(-18deg);
-  }
-
-  .editor-file-tabs-fold-stack-right .editor-file-tabs-fold-card:nth-child(3) {
-    transform: translateX(-10px) scaleX(0.86) rotateY(-8deg);
-  }
-
-  .editor-file-tabs-fold-stack-left.editor-file-tabs-fold-stack-open .editor-file-tabs-fold-card:nth-child(1) {
-    transform: translateX(1px) scaleX(0.82) rotateY(20deg);
-    transition-delay: 0ms;
-  }
-
-  .editor-file-tabs-fold-stack-left.editor-file-tabs-fold-stack-open .editor-file-tabs-fold-card:nth-child(2) {
-    transform: translateX(9px) scaleX(0.92) rotateY(10deg);
-    transition-delay: 26ms;
-  }
-
-  .editor-file-tabs-fold-stack-left.editor-file-tabs-fold-stack-open .editor-file-tabs-fold-card:nth-child(3) {
-    transform: translateX(18px) scaleX(1) rotateY(0deg);
-    transition-delay: 52ms;
-  }
-
-  .editor-file-tabs-fold-stack-right.editor-file-tabs-fold-stack-open .editor-file-tabs-fold-card:nth-child(1) {
-    transform: translateX(-1px) scaleX(0.82) rotateY(-20deg);
-    transition-delay: 0ms;
-  }
-
-  .editor-file-tabs-fold-stack-right.editor-file-tabs-fold-stack-open .editor-file-tabs-fold-card:nth-child(2) {
-    transform: translateX(-9px) scaleX(0.92) rotateY(-10deg);
-    transition-delay: 26ms;
-  }
-
-  .editor-file-tabs-fold-stack-right.editor-file-tabs-fold-stack-open .editor-file-tabs-fold-card:nth-child(3) {
-    transform: translateX(-18px) scaleX(1) rotateY(0deg);
-    transition-delay: 52ms;
-  }
-
-  .editor-file-tabs-fold-stack-visible:not(.editor-file-tabs-fold-stack-open) .editor-file-tabs-fold-card:nth-child(3) {
-    transition-delay: 0ms;
-  }
-
-  .editor-file-tabs-fold-stack-visible:not(.editor-file-tabs-fold-stack-open) .editor-file-tabs-fold-card:nth-child(2) {
-    transition-delay: 24ms;
-  }
-
-  .editor-file-tabs-fold-stack-visible:not(.editor-file-tabs-fold-stack-open) .editor-file-tabs-fold-card:nth-child(1) {
-    transition-delay: 48ms;
+  .editor-file-tab-tooltip-path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 10px;
+    line-height: 1.35;
+    color: hsl(var(--muted-foreground));
   }
 
   @media (prefers-reduced-motion: reduce) {
     .workbench-layout,
     .workbench-side-panel,
     .workbench-panel-separator,
-    .editor-file-tabs-fold-stack,
-    .editor-file-tabs-fold-card {
+    .editor-file-tab,
+    .editor-file-tabs::before,
+    .editor-file-tabs::after {
       transition-duration: 0.01ms;
     }
 
