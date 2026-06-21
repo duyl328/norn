@@ -23,7 +23,7 @@
     --border: 220 13% 82%;
     --input: 220 13% 78%;
     --ring: 214 84% 46%;
-    --radius: 0.25rem;
+    --radius: 0.1875rem;
     --editor-background: 220 18% 98%;
     --editor-gutter: 220 14% 94%;
     --diff-add: 146 45% 91%;
@@ -68,9 +68,11 @@
 
   body {
     @apply text-foreground antialiased;
-    background: rgb(248 249 251 / 0.48);
+    background: hsl(var(--background));
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   button,
@@ -78,47 +80,67 @@
   textarea {
     font: inherit;
   }
+
+  input,
+  textarea,
+  [contenteditable="true"],
+  .cm-editor,
+  .cm-content,
+  .cm-line {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  * {
+    scrollbar-color: hsl(var(--muted-foreground) / 0.38) transparent;
+  }
+
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-track-piece,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+    border-color: transparent;
+  }
 }
 
 @layer components {
   .frosted-surface {
-    background: rgb(247 248 250 / 0.29);
-    box-shadow:
-      inset 0 1px 0 hsl(var(--background) / 0.2),
-      inset 0 -1px 0 hsl(var(--foreground) / 0.035);
+    background: hsl(var(--background) / 0.72);
+    box-shadow: inset 0 -1px 0 hsl(var(--foreground) / 0.035);
   }
 
   @supports ((backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px))) {
     .frosted-surface {
-      -webkit-backdrop-filter: saturate(1.08) blur(16px);
-      backdrop-filter: saturate(1.08) blur(16px);
+      -webkit-backdrop-filter: saturate(1.02) blur(10px);
+      backdrop-filter: saturate(1.02) blur(10px);
     }
   }
 
   .frosted-surface-subtle {
-    background: rgb(247 248 250 / 0.24);
+    background: hsl(var(--background) / 0.58);
   }
 
   .frosted-surface-raised {
-    background: rgb(248 249 251 / 0.35);
+    background: hsl(var(--background) / 0.78);
   }
 
   .dark .frosted-surface {
-    background: rgb(24 26 30 / 0.29);
+    background: hsl(var(--background) / 0.74);
   }
 
   .dark .frosted-surface-subtle {
-    background: rgb(24 26 30 / 0.24);
+    background: hsl(var(--background) / 0.58);
   }
 
   .dark .frosted-surface-raised {
-    background: rgb(26 28 32 / 0.35);
+    background: hsl(var(--background) / 0.78);
   }
 
   .windows-titlebar {
     @apply grid h-9 shrink-0 grid-cols-[minmax(360px,auto)_minmax(80px,1fr)_minmax(260px,430px)_minmax(80px,1fr)_auto] items-center border-b border-border text-foreground;
     position: relative;
     user-select: none;
+    background: hsl(var(--card));
   }
 
   .windows-titlebar-left {
@@ -126,12 +148,12 @@
   }
 
   .panel-toggle-button {
-    @apply relative grid h-6 w-6 shrink-0 place-items-center rounded-sm border-0 bg-transparent p-0 text-muted-foreground transition-colors;
+    @apply relative grid h-6 w-6 shrink-0 place-items-center rounded-[3px] border-0 bg-transparent p-0 text-muted-foreground transition-colors;
   }
 
   .panel-toggle-button:hover,
   .panel-toggle-button-active {
-    @apply bg-accent text-accent-foreground;
+    @apply bg-muted text-foreground;
   }
 
   .panel-toggle-badge {
@@ -143,41 +165,31 @@
   }
 
   .mac-panel-toggle-button {
-    @apply h-[30px] w-[30px];
-    border-radius: 10px;
+    @apply h-7 w-7;
+    border-radius: 6px;
   }
 
   .mac-panel-toggle-button:hover,
   .mac-panel-toggle-button.panel-toggle-button-active {
-    background: rgb(248 249 251 / 0.48);
-    color: hsl(var(--accent-foreground));
+    background: hsl(var(--foreground) / 0.06);
+    color: hsl(var(--foreground));
   }
 
   .mac-panel-toggle-button::before {
-    content: "";
-    position: absolute;
-    inset: 1.8px;
-    border-radius: 10px;
-    background: rgb(248 249 251 / 0.52);
-    transition: background-color 150ms ease;
-  }
-
-  .mac-panel-toggle-button:hover::before,
-  .mac-panel-toggle-button.panel-toggle-button-active::before {
-    background: hsl(var(--accent) / 0.8);
+    content: none;
   }
 
   .mac-panel-toggle-button svg {
-    @apply h-[19px] w-[19px];
+    @apply h-[17px] w-[17px];
   }
 
   .sidebar-panel-svg {
-    @apply relative z-10 block h-[19px] w-[19px] shrink-0;
-    transform: translateY(-1px);
+    @apply relative z-10 block h-[17px] w-[17px] shrink-0;
+    transform: translateY(0);
   }
 
   .sidebar-panel-svg-right {
-    transform: translateY(-1px) scaleX(-1);
+    transform: scaleX(-1);
   }
 
   .mac-panel-toggle-button .panel-toggle-badge {
@@ -186,15 +198,15 @@
   }
 
   .windows-titlebar-menu-button {
-    @apply grid h-7 w-7 shrink-0 place-items-center rounded-sm border-0 bg-transparent p-0 text-muted-foreground transition-colors;
+    @apply grid h-7 w-7 shrink-0 place-items-center rounded-[3px] border-0 bg-transparent p-0 text-muted-foreground transition-colors;
   }
 
   .windows-titlebar-menu-button:hover {
-    @apply bg-accent text-accent-foreground;
+    @apply bg-muted text-foreground;
   }
 
   .windows-titlebar-menu-button-active {
-    @apply bg-accent text-accent-foreground;
+    @apply bg-muted text-foreground;
   }
 
   .windows-titlebar-project {
@@ -206,12 +218,12 @@
   }
 
   .windows-titlebar-folder {
-    @apply flex h-7 max-w-[260px] items-center gap-1.5 rounded-sm border-0 bg-transparent px-1.5 pr-2 text-left text-[12px] font-semibold transition-colors;
+    @apply flex h-7 max-w-[260px] items-center gap-1.5 rounded-[3px] border-0 bg-transparent px-1.5 pr-2 text-left text-[12px] font-medium transition-colors;
   }
 
   .windows-titlebar-folder:hover,
   .windows-titlebar-folder-active {
-    @apply bg-accent text-accent-foreground;
+    @apply bg-muted text-foreground;
   }
 
   .windows-titlebar-folder-icon {
@@ -225,14 +237,11 @@
   }
 
   .windows-titlebar-folder-menu {
-    @apply absolute left-0 top-full z-50 mt-1 grid w-[320px] gap-0 rounded-[0.4125rem] border border-border p-1 text-popover-foreground shadow-lg;
-    background: transparent;
-    -webkit-backdrop-filter: saturate(1.12) blur(14px);
-    backdrop-filter: saturate(1.12) blur(14px);
+    @apply absolute left-0 top-full z-50 mt-1 grid w-[320px] gap-0 rounded-[6px] border border-border bg-popover p-1 text-popover-foreground shadow-sm;
   }
 
   .windows-titlebar-folder-menu-item {
-    @apply h-7 rounded-[0.35rem] border-0 bg-transparent px-2 text-left text-[12px] text-muted-foreground;
+    @apply h-7 rounded-[3px] border-0 bg-transparent px-2 text-left text-[12px] text-muted-foreground;
   }
 
   .windows-titlebar-folder-menu-item:hover {
@@ -244,7 +253,7 @@
   }
 
   .windows-titlebar-recent-project {
-    @apply grid min-w-0 grid-cols-[22px_minmax(0,1fr)] items-center gap-2 rounded-[0.35rem] border-0 bg-transparent px-2 py-1.5 text-left;
+    @apply grid min-w-0 grid-cols-[22px_minmax(0,1fr)] items-center gap-2 rounded-[3px] border-0 bg-transparent px-2 py-1.5 text-left;
   }
 
   .windows-titlebar-recent-project:hover {
@@ -278,25 +287,22 @@
   }
 
   .windows-titlebar-parent-menu-button {
-    @apply flex h-full items-center rounded-sm border-0 bg-transparent px-2.5 text-[12px] text-muted-foreground transition-colors;
+    @apply flex h-full items-center rounded-[3px] border-0 bg-transparent px-2.5 text-[12px] text-muted-foreground transition-colors;
   }
 
   .windows-titlebar-parent-menu-button:hover,
   .windows-titlebar-parent-menu-button-active {
-    @apply bg-accent text-accent-foreground;
+    @apply bg-muted text-foreground;
   }
 
   .windows-titlebar-submenu {
-    @apply absolute left-0 top-full z-50 mt-1 grid min-w-[168px] gap-0 rounded-[0.4125rem] border border-border p-1 text-popover-foreground shadow-lg;
-    background: transparent;
-    -webkit-backdrop-filter: saturate(1.12) blur(14px);
-    backdrop-filter: saturate(1.12) blur(14px);
+    @apply absolute left-0 top-full z-50 mt-1 grid min-w-[168px] gap-0 rounded-[6px] border border-border bg-popover p-1 text-popover-foreground shadow-sm;
     transition: transform 105ms cubic-bezier(0.22, 1, 0.36, 1);
     will-change: transform;
   }
 
   .windows-titlebar-submenu-item {
-    @apply h-7 rounded-[0.35rem] border-0 bg-transparent px-2 text-left text-[12px] text-muted-foreground;
+    @apply h-7 rounded-[3px] border-0 bg-transparent px-2 text-left text-[12px] text-muted-foreground;
   }
 
   .windows-titlebar-submenu-item:hover {
@@ -324,11 +330,11 @@
   }
 
   .windows-titlebar-search-button {
-    @apply flex h-7 w-full items-center justify-center gap-2 rounded-sm border border-border bg-background/45 px-3 text-[12px] text-muted-foreground outline-none transition-colors;
+    @apply flex h-7 w-full items-center justify-center gap-2 rounded-[5px] border border-border bg-background/70 px-3 text-[12px] text-muted-foreground outline-none transition-colors;
   }
 
   .windows-titlebar-search-button:hover {
-    @apply border-ring bg-background/65 text-foreground;
+    @apply border-input bg-background text-foreground;
   }
 
   .mac-titlebar {
@@ -354,11 +360,11 @@
   }
 
   .mac-titlebar-search-button {
-    @apply flex h-7 w-full items-center justify-center gap-2 rounded-sm border border-border bg-background/45 px-3 text-[12px] text-muted-foreground outline-none transition-colors;
+    @apply flex h-7 w-full items-center justify-center gap-2 rounded-[6px] border border-border/70 bg-background/50 px-3 text-[12px] text-muted-foreground outline-none transition-colors;
   }
 
   .mac-titlebar-search-button:hover {
-    @apply border-ring bg-background/65 text-foreground;
+    @apply border-border bg-background/75 text-foreground;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -432,7 +438,22 @@
   }
 
   .workbench-layout {
-    transition: grid-template-columns 170ms cubic-bezier(0.22, 1, 0.36, 1);
+    position: relative;
+    --workbench-main-corner-radius: 0px;
+    --workspace-panel-border: 0.5px solid hsl(var(--border) / 0.72);
+    --workbench-main-top-padding: var(--mac-titlebar-content-offset, 0px);
+    grid-template-rows: minmax(0, 1fr);
+    transition: grid-template-columns 520ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .workbench-layout-left-open {
+    --workbench-main-corner-radius: 18px;
+  }
+
+  .workspace-view,
+  .settings-page {
+    animation: view-enter 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    transform-origin: 50% 48%;
   }
 
   .workbench-layout-resizing {
@@ -440,26 +461,50 @@
     transition: none;
   }
 
+  @keyframes view-enter {
+    from {
+      opacity: 0;
+      filter: blur(8px);
+      transform: translateY(36px) scale(0.955);
+    }
+
+    to {
+      opacity: 1;
+      filter: blur(0);
+      transform: translateY(0) scale(1);
+    }
+  }
+
   .workbench-side-panel {
     @apply min-h-0 min-w-0 overflow-hidden;
     opacity: 1;
     transform: translateX(0);
     transition:
-      opacity 150ms cubic-bezier(0.22, 1, 0.36, 1),
-      transform 170ms cubic-bezier(0.22, 1, 0.36, 1);
+      opacity 420ms cubic-bezier(0.16, 1, 0.3, 1),
+      transform 520ms cubic-bezier(0.16, 1, 0.3, 1);
     will-change: opacity, transform;
   }
 
   .workbench-left-panel.workbench-side-panel-closed {
     opacity: 0;
     pointer-events: none;
-    transform: translateX(-8px);
+    transform: translateX(-24px);
+  }
+
+  .workbench-left-panel {
+    grid-column: 1;
+    grid-row: 1;
   }
 
   .workbench-right-panel.workbench-side-panel-closed {
     opacity: 0;
     pointer-events: none;
-    transform: translateX(8px);
+    transform: translateX(24px);
+  }
+
+  .workbench-right-panel {
+    grid-column: 5;
+    grid-row: 1;
   }
 
   .workbench-panel-separator {
@@ -468,37 +513,66 @@
 
   .workbench-panel-resize-handle {
     position: relative;
-    z-index: 20;
-    min-width: 1px;
+    align-self: stretch;
+    z-index: 80;
+    min-width: 12px;
     cursor: col-resize;
-    background: hsl(var(--border) / 0.44);
+    background: transparent;
     opacity: 1;
     transition:
       background-color 140ms ease,
-      box-shadow 140ms ease,
       opacity 140ms ease;
     touch-action: none;
+  }
+
+  .workbench-panel-resize-handle-left {
+    grid-column: 2;
+    grid-row: 1;
+    transform: translateX(3px);
+  }
+
+  .workbench-panel-resize-handle-right {
+    grid-column: 4;
+    grid-row: 1;
   }
 
   .workbench-panel-resize-handle::before {
     content: "";
     position: absolute;
     inset-block: 0;
-    width: 10px;
+    inset-inline: 0;
   }
 
-  .workbench-panel-resize-handle-left::before {
-    left: -5px;
-  }
-
-  .workbench-panel-resize-handle-right::before {
-    right: -5px;
+  .workbench-panel-resize-handle::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: calc(50% - 0.5px);
+    width: 1px;
+    background: transparent;
+    pointer-events: none;
+    transition: background-color 140ms ease;
   }
 
   .workbench-panel-resize-handle:hover,
   .workbench-panel-resize-handle:focus-visible,
   .workbench-layout-resizing .workbench-panel-resize-handle {
+    background: transparent;
     outline: none;
+  }
+
+  .workbench-layout-resize-hints-visible .workbench-panel-resize-handle {
+    background: hsl(var(--primary) / 0.14);
+  }
+
+  .workbench-panel-resize-handle:hover::after,
+  .workbench-panel-resize-handle:focus-visible::after,
+  .workbench-layout-resizing .workbench-panel-resize-handle::after {
+    background: transparent;
+  }
+
+  .workbench-layout-resize-hints-visible .workbench-panel-resize-handle::after {
+    background: hsl(var(--primary) / 0.72);
   }
 
   .workbench-panel-resize-handle-hidden {
@@ -512,10 +586,23 @@
   }
 
   .project-panel {
-    @apply flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden;
-    box-shadow: inset -1px 0 0 hsl(var(--border) / 0.32) !important;
+    @apply flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-background/70;
+    box-shadow: none !important;
     border-block: 0;
     background-clip: padding-box;
+  }
+
+  .editor-surface-panel {
+    grid-column: 3;
+    grid-row: 1;
+    position: relative;
+    height: 100%;
+    border-left: var(--workspace-panel-border);
+    border-right: var(--workspace-panel-border);
+    border-top: var(--workspace-panel-border);
+    border-top-left-radius: var(--workbench-main-corner-radius);
+    background-clip: padding-box;
+    transition: border-top-left-radius 520ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .mac-titlebar-overlay-layout .project-panel {
@@ -523,13 +610,13 @@
   }
 
   .mac-titlebar-overlay-layout .editor-surface-panel,
-  .mac-titlebar-overlay-layout .git-surface-panel {
+  .mac-titlebar-overlay-layout .right-task-panel {
     padding-top: var(--mac-titlebar-content-offset);
   }
 
   .project-panel-start {
-    @apply flex shrink-0 flex-col gap-3 px-3 pb-3;
-    padding-top: 2px;
+    @apply flex shrink-0 flex-col gap-2 px-2 pb-2;
+    padding-top: 4px;
   }
 
   .project-panel-resizable-stack {
@@ -570,7 +657,14 @@
 
   .project-panel-divider {
     @apply mx-1 h-px;
-    background: hsl(var(--border) / 0.52);
+    background: hsl(var(--border) / 0.42);
+  }
+
+  .project-panel-tree-divider {
+    height: 1px;
+    width: 100%;
+    margin: 0;
+    background: hsl(var(--border) / 0.45);
   }
 
   .project-panel-recent {
@@ -627,24 +721,25 @@
   }
 
   .project-panel-recent-select {
-    @apply grid min-h-[58px] w-full min-w-0 grid-cols-[32px_minmax(0,1fr)_24px] items-center gap-2 overflow-hidden rounded-[0.75rem] border-0 bg-transparent px-2.5 py-2 text-left outline-none transition-colors;
+    @apply grid min-h-[46px] w-full min-w-0 grid-cols-[28px_minmax(0,1fr)_22px] items-center gap-2 overflow-hidden rounded-[5px] border-0 bg-transparent px-2 py-1.5 text-left outline-none transition-colors;
+    transition:
+      min-height 140ms ease,
+      background-color 140ms ease,
+      box-shadow 140ms ease;
   }
 
   .project-panel-recent-select:hover,
-  .project-panel-recent-select:focus-visible {
-    background: rgb(211 216 224 / 0.72);
-    box-shadow:
-      inset 0 0 0 1px rgb(255 255 255 / 0.68),
-      0 1px 2px rgb(15 23 42 / 0.06);
+  .project-panel-recent-select:focus-visible,
+  .project-panel-recent-select-focused {
+    background: hsl(var(--muted) / 0.72);
+    box-shadow: none;
   }
 
   .project-panel-recent-select-avatar {
-    @apply grid h-8 w-8 place-items-center rounded-[0.6rem] text-[12px] font-bold leading-none;
+    @apply grid h-7 w-7 place-items-center rounded-[4px] text-[11px] font-bold leading-none;
     background: var(--project-color);
     color: var(--project-color-foreground);
-    box-shadow:
-      inset 0 0 0 1px rgb(255 255 255 / 0.32),
-      0 1px 2px rgb(15 23 42 / 0.08);
+    box-shadow: none;
   }
 
   .project-panel-recent-select-text {
@@ -652,7 +747,7 @@
   }
 
   .project-panel-recent-select-name {
-    @apply truncate text-[13px] font-semibold text-foreground/[0.9];
+    @apply truncate text-[12px] font-medium text-foreground/[0.9];
   }
 
   .project-panel-recent-select-path {
@@ -662,33 +757,25 @@
   }
 
   .project-panel-recent-select-chevron {
-    @apply grid h-6 w-6 place-items-center rounded-[0.45rem] text-muted-foreground;
-    background: rgb(255 255 255 / 0.18);
+    @apply grid h-5 w-5 place-items-center rounded-[3px] text-muted-foreground;
+    background: transparent;
   }
 
   .project-panel-recent-menu {
-    @apply w-[294px] border-border/70 p-2;
-    border-radius: 14px !important;
-    background: rgb(247 248 250 / 0.86);
-    -webkit-backdrop-filter: saturate(1.14) blur(18px);
-    backdrop-filter: saturate(1.14) blur(18px);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.72),
-      0 16px 40px rgb(15 23 42 / 0.16),
-      0 2px 8px rgb(15 23 42 / 0.08);
+    @apply w-[294px] border-border bg-popover p-1 shadow-sm;
+    border-radius: 6px !important;
   }
 
   .project-panel-recent-menu-item {
     display: grid !important;
     grid-template-columns: 20px minmax(0, 1fr) !important;
-    min-height: 43px;
+    min-height: 36px;
     gap: 0.5rem;
-    border-radius: 9px !important;
-    padding: 0.4rem 0.55rem !important;
+    border-radius: 3px !important;
+    padding: 0.35rem 0.5rem !important;
     color: hsl(var(--foreground) / 0.82);
     transition:
       background-color 130ms ease,
-      box-shadow 130ms ease,
       color 130ms ease;
   }
 
@@ -696,17 +783,15 @@
   .project-panel-recent-menu-item[data-highlighted],
   .project-panel-recent-menu-item:focus {
     @apply outline-none;
-    border-radius: 9px !important;
-    background: rgb(211 216 224 / 0.68) !important;
+    border-radius: 3px !important;
+    background: hsl(var(--muted) / 0.82) !important;
     color: hsl(var(--foreground)) !important;
-    box-shadow:
-      inset 0 0 0 1px rgb(255 255 255 / 0.38),
-      0 1px 1px rgb(15 23 42 / 0.025);
+    box-shadow: none;
   }
 
   .project-panel-recent-menu-item-selected {
-    border-radius: 9px !important;
-    background: rgb(211 216 224 / 0.48) !important;
+    border-radius: 3px !important;
+    background: hsl(var(--muted) / 0.62) !important;
     color: hsl(var(--foreground)) !important;
   }
 
@@ -735,10 +820,10 @@
   }
 
   .project-panel-recent-menu-avatar {
-    @apply mt-0.5 grid h-5 w-5 place-items-center rounded-[0.4rem] text-[9px] font-bold leading-none;
+    @apply mt-0.5 grid h-5 w-5 place-items-center rounded-[3px] text-[9px] font-bold leading-none;
     background: var(--project-color);
     color: var(--project-color-foreground);
-    box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.28);
+    box-shadow: none;
   }
 
   .project-panel-footer {
@@ -747,17 +832,15 @@
   }
 
   .project-panel-action-button {
-    @apply flex h-9 w-full items-center gap-3 rounded-[0.65rem] border-0 bg-transparent px-3 text-left text-[14px] font-medium text-muted-foreground transition-colors;
+    @apply flex h-8 w-full items-center gap-2 rounded-[4px] border-0 bg-transparent px-2 text-left text-[12px] font-medium text-muted-foreground transition-colors;
     background-clip: padding-box;
   }
 
   .project-panel-action-button:hover,
   .project-panel-action-button:focus-visible {
     @apply text-foreground outline-none;
-    background: rgb(211 216 224 / 0.94);
-    box-shadow:
-      inset 0 0 0 1px rgb(255 255 255 / 0.78),
-      0 1px 3px rgb(15 23 42 / 0.11);
+    background: hsl(var(--muted) / 0.82);
+    box-shadow: none;
   }
 
   .dark .project-panel-recent-item:hover,
@@ -1002,10 +1085,24 @@
   @media (prefers-reduced-motion: reduce) {
     .workbench-layout,
     .workbench-side-panel,
+    .editor-surface-panel,
+    .settings-shell,
     .workbench-panel-separator,
+    .workspace-view,
+    .settings-page,
     .editor-file-tabs-fold-stack,
-    .editor-file-tabs-fold-card {
+    .editor-file-tabs-fold-card,
+    .editor-file-tab,
+    .editor-file-tabs::before,
+    .editor-file-tabs::after {
+      animation-duration: 0.01ms;
       transition-duration: 0.01ms;
+    }
+
+    .workspace-view,
+    .settings-page {
+      filter: none;
+      transform: none;
     }
 
     .editor-file-tabs-scroll {
@@ -1193,6 +1290,16 @@
     padding-left: calc(1.5rem + var(--tree-indent));
   }
 
+  .status-bar {
+    @apply flex h-[22px] shrink-0 items-center justify-between border-t border-border bg-card px-2;
+  }
+
+  .file-tree-empty-message {
+    --tree-empty-depth: 1;
+    @apply py-1 text-[11px] text-muted-foreground;
+    padding-left: calc(1.5rem + var(--tree-empty-depth) * 14px);
+  }
+
   .file-tree-context-menu {
     @apply fixed grid min-w-[188px] gap-[1px] rounded-[14px] border p-1.5 text-popover-foreground;
     border-color: hsl(var(--border) / 0.42);
@@ -1298,7 +1405,480 @@
   }
 
   .status-token {
-    @apply inline-flex h-5 items-center gap-1 whitespace-nowrap font-mono text-[11px] text-muted-foreground;
+    @apply inline-flex h-5 items-center gap-1 whitespace-nowrap font-mono text-[10px] text-muted-foreground;
+  }
+
+  .right-task-panel {
+    @apply flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-card text-card-foreground;
+    border-left: 0.5px solid hsl(var(--border) / 0.72);
+  }
+
+  .right-task-panel-header {
+    @apply flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border px-2.5;
+  }
+
+  .right-task-panel-eyebrow {
+    @apply text-[10px] font-semibold uppercase tracking-wide text-muted-foreground;
+    letter-spacing: 0;
+  }
+
+  .right-task-panel-title {
+    @apply truncate text-[13px] font-semibold leading-4;
+  }
+
+  .right-task-panel-badge {
+    @apply shrink-0;
+  }
+
+  .right-task-panel-toolbar {
+    @apply flex h-8 shrink-0 items-center justify-end gap-1 border-b border-border bg-muted/20 px-2;
+  }
+
+  .right-task-panel-content {
+    @apply min-h-0 flex-1;
+  }
+
+  .right-task-panel-footer {
+    @apply shrink-0 border-t border-border bg-card p-2;
+  }
+
+  .git-panel-body {
+    @apply grid min-w-0 content-start gap-1.5 p-2;
+  }
+
+  .git-repository-card {
+    @apply flex min-w-0 items-center justify-between gap-2 rounded-[4px] border border-border/70 bg-background/75 px-2 py-1.5;
+  }
+
+  .git-repository-main {
+    @apply flex min-w-0 items-center gap-2;
+  }
+
+  .git-repository-icon {
+    @apply grid h-6 w-6 shrink-0 place-items-center rounded-[4px] bg-primary/10 text-primary;
+  }
+
+  .git-repository-name {
+    @apply truncate text-[12px] font-semibold leading-4;
+  }
+
+  .git-repository-meta {
+    @apply truncate text-[11px] leading-4 text-muted-foreground;
+  }
+
+  .git-summary-grid {
+    @apply grid grid-cols-3 gap-1;
+  }
+
+  .git-summary-tile {
+    @apply min-w-0 rounded-[4px] border border-border/70 bg-background/60 px-2 py-1;
+  }
+
+  .git-summary-label {
+    @apply truncate font-mono text-[10px] leading-3 text-muted-foreground;
+  }
+
+  .git-summary-value {
+    @apply font-mono text-[13px] font-semibold leading-4;
+  }
+
+  .git-state-preview-grid {
+    @apply grid gap-1;
+  }
+
+  .git-state-preview {
+    @apply min-w-0 rounded-[4px] border border-dashed border-border/70 bg-muted/15 px-2 py-1;
+  }
+
+  .git-state-preview-title {
+    @apply truncate text-[11px] font-medium leading-4;
+  }
+
+  .git-state-preview-description {
+    @apply truncate text-[10px] leading-4 text-muted-foreground;
+  }
+
+  .git-panel-section {
+    @apply min-w-0 rounded-[4px] border border-border/70 bg-background/70;
+  }
+
+  .git-panel-section-danger {
+    border-color: hsl(var(--destructive) / 0.28);
+  }
+
+  .git-panel-section-heading {
+    @apply flex h-8 items-center justify-between gap-2 border-b border-border/70 px-2;
+  }
+
+  .git-panel-section-title {
+    @apply flex min-w-0 items-center gap-1.5 text-[12px] font-semibold;
+  }
+
+  .git-change-list {
+    @apply grid min-w-0 gap-0.5 p-1;
+  }
+
+  .git-panel-section-empty {
+    @apply h-8 rounded-sm px-2 py-2 text-[11px] text-muted-foreground;
+  }
+
+  .git-change-row {
+    @apply grid min-h-8 min-w-0 grid-cols-[18px_minmax(0,1fr)_auto_50px] items-center gap-2 rounded-[3px] border border-transparent bg-transparent px-1.5 py-0.5 text-left transition-colors;
+  }
+
+  .git-change-row:hover {
+    @apply bg-muted/80 text-foreground;
+  }
+
+  .git-change-row-selected {
+    @apply border-primary/35 bg-primary/10 text-foreground;
+  }
+
+  .git-change-status {
+    @apply grid h-[18px] w-[18px] place-items-center rounded-sm border font-mono text-[10px] font-semibold leading-none;
+  }
+
+  .git-change-status-added,
+  .git-change-status-untracked {
+    @apply border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300;
+  }
+
+  .git-change-status-modified,
+  .git-change-status-renamed {
+    @apply border-sky-500/35 bg-sky-500/10 text-sky-700 dark:text-sky-300;
+  }
+
+  .git-change-status-deleted,
+  .git-change-status-conflict {
+    @apply border-red-500/35 bg-red-500/10 text-red-700 dark:text-red-300;
+  }
+
+  .git-change-main {
+    @apply grid min-w-0 gap-0.5;
+  }
+
+  .git-change-path {
+    @apply truncate font-mono text-[11px] leading-4;
+  }
+
+  .git-change-description {
+    @apply truncate text-[10px] leading-3 text-muted-foreground;
+  }
+
+  .git-change-row:hover .git-change-description,
+  .git-change-row-selected .git-change-description {
+    color: hsl(var(--muted-foreground));
+  }
+
+  .git-change-diff {
+    @apply flex shrink-0 items-center gap-1 font-mono text-[10px] leading-none;
+  }
+
+  .git-change-additions {
+    @apply text-emerald-700 dark:text-emerald-300;
+  }
+
+  .git-change-deletions {
+    @apply text-red-700 dark:text-red-300;
+  }
+
+  .git-change-action {
+    @apply flex h-5 shrink-0 items-center justify-center rounded-[3px] border border-border/70 bg-card px-1.5 text-[10px] font-medium text-muted-foreground;
+  }
+
+  .git-change-row:hover .git-change-action,
+  .git-change-row-selected .git-change-action {
+    @apply border-border/80 text-foreground;
+  }
+
+  .git-commit-box {
+    @apply grid min-w-0 gap-2;
+  }
+
+  .git-commit-summary {
+    @apply h-8 text-[12px];
+  }
+
+  .git-commit-body {
+    @apply min-h-[66px] resize-none text-[12px];
+  }
+
+  .git-commit-actions {
+    @apply flex min-w-0 items-center justify-between gap-2;
+  }
+
+  .git-commit-hint {
+    @apply min-w-0 truncate text-[11px] text-muted-foreground;
+  }
+
+  .git-workspace-notice {
+    @apply grid gap-2 rounded-[4px] border border-dashed border-border/70 bg-muted/15 p-3;
+  }
+
+  .git-workspace-notice-title {
+    @apply text-[12px] font-semibold;
+  }
+
+  .git-workspace-notice-description {
+    @apply text-[11px] leading-5 text-muted-foreground;
+  }
+
+  .settings-page {
+    @apply relative h-full min-h-0 overflow-hidden text-foreground;
+    --settings-drag-height: 42px;
+    --settings-main-corner-radius: 18px;
+    --settings-panel-border: 0.5px solid hsl(var(--border) / 0.72);
+    --settings-sidebar-width: 280px;
+    --settings-sidebar-top-padding: 42px;
+    --settings-main-top-padding: 58px;
+    background: #fbfbfa;
+  }
+
+  .settings-page-mac {
+    --settings-drag-height: 50px;
+    --settings-sidebar-top-padding: 48px;
+    --settings-main-top-padding: 64px;
+  }
+
+  .settings-drag-region {
+    @apply absolute inset-x-0 top-0 z-10;
+    height: var(--settings-drag-height);
+    background: transparent;
+  }
+
+  .settings-shell {
+    @apply grid h-full min-h-0 overflow-hidden;
+    grid-template-columns: var(--settings-sidebar-width) 12px minmax(0, 1fr);
+    background: transparent;
+    transition: grid-template-columns 520ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .settings-shell-resizing {
+    cursor: col-resize;
+    transition: none;
+  }
+
+  .settings-sidebar {
+    @apply flex min-h-0 min-w-0 flex-col px-3 pb-4;
+    grid-column: 1;
+    background: transparent;
+    padding-top: var(--settings-sidebar-top-padding);
+  }
+
+  .settings-resize-handle {
+    position: relative;
+    z-index: 20;
+    grid-column: 2;
+    min-width: 12px;
+    cursor: col-resize;
+    background: transparent;
+    touch-action: none;
+  }
+
+  .settings-resize-handle::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: calc(50% - 0.5px);
+    width: 1px;
+    background: transparent;
+    pointer-events: none;
+  }
+
+  .settings-resize-handle:focus-visible {
+    @apply outline-none;
+  }
+
+  .settings-back-button {
+    @apply mb-4 flex h-8 w-full items-center gap-2 rounded-[6px] border-0 bg-transparent px-2 text-left text-[13px] font-medium text-muted-foreground transition-colors;
+  }
+
+  .settings-back-button:hover,
+  .settings-back-button:focus-visible {
+    @apply bg-muted text-foreground outline-none;
+  }
+
+  .settings-search {
+    @apply mb-5 flex h-8 items-center gap-2 rounded-[6px] border border-border px-2.5 text-[12px] text-muted-foreground;
+    background: #ffffff;
+  }
+
+  .settings-nav {
+    @apply min-h-0 overflow-y-auto;
+  }
+
+  .settings-nav-group {
+    @apply mb-5 grid gap-1;
+  }
+
+  .settings-nav-heading {
+    @apply px-2 pb-1 text-[11px] font-medium text-muted-foreground;
+  }
+
+  .settings-nav-item {
+    @apply flex h-9 min-w-0 items-center gap-2 rounded-[6px] border-0 bg-transparent px-2 text-left text-[13px] font-medium text-foreground/80 transition-colors;
+  }
+
+  .settings-nav-item:hover,
+  .settings-nav-item:focus-visible {
+    @apply text-foreground outline-none;
+    background: #f0f0ef;
+  }
+
+  .settings-nav-item-active {
+    @apply text-foreground;
+    background: #ededec;
+  }
+
+  .settings-main {
+    @apply min-h-0 min-w-0 overflow-y-auto;
+    grid-column: 3;
+    border-left: var(--settings-panel-border);
+    border-top: var(--settings-panel-border);
+    border-top-left-radius: var(--settings-main-corner-radius);
+    background: #ffffff;
+    padding: var(--settings-main-top-padding) clamp(36px, 7vw, 120px) 72px;
+  }
+
+  .settings-panel {
+    @apply mx-auto grid w-full max-w-[780px] gap-8;
+  }
+
+  .settings-panel-header {
+    @apply grid gap-2;
+  }
+
+  .settings-panel-header h1 {
+    @apply text-[24px] font-semibold leading-8;
+  }
+
+  .settings-panel-header p {
+    @apply max-w-[640px] text-[14px] leading-6 text-muted-foreground;
+  }
+
+  .settings-panel-body {
+    @apply grid gap-8;
+  }
+
+  .settings-choice-grid {
+    @apply grid grid-cols-2 gap-3;
+  }
+
+  .settings-choice {
+    @apply flex min-h-[68px] items-center gap-4 rounded-[8px] border border-border bg-background px-4 text-left transition-colors;
+  }
+
+  .settings-choice:hover,
+  .settings-choice:focus-visible {
+    @apply border-input bg-muted/35 outline-none;
+  }
+
+  .settings-choice-active {
+    @apply bg-muted/70;
+  }
+
+  .settings-choice span {
+    @apply grid gap-1;
+  }
+
+  .settings-choice strong {
+    @apply text-[13px] font-semibold;
+  }
+
+  .settings-choice small {
+    @apply text-[12px] text-muted-foreground;
+  }
+
+  .settings-list {
+    @apply overflow-hidden rounded-[8px] border border-border;
+    background: #ffffff;
+  }
+
+  .settings-row {
+    @apply flex min-h-[72px] items-center justify-between gap-4 border-b border-border px-4 py-3;
+  }
+
+  .settings-row:last-child {
+    @apply border-b-0;
+  }
+
+  .settings-row-button {
+    @apply w-full bg-transparent text-left transition-colors;
+  }
+
+  .settings-row-button:hover,
+  .settings-row-button:focus-visible {
+    @apply bg-muted/35 outline-none;
+  }
+
+  .settings-row-copy {
+    @apply grid min-w-0 gap-1;
+  }
+
+  .settings-row-title {
+    @apply text-[13px] font-medium;
+  }
+
+  .settings-row-description {
+    @apply max-w-[560px] text-[12px] leading-5 text-muted-foreground;
+  }
+
+  .settings-row-value {
+    @apply max-w-[320px] truncate rounded-[6px] px-3 py-1.5 text-right text-[12px] text-foreground/85;
+    background: #f3f3f2;
+  }
+
+  .settings-toggle {
+    @apply relative h-[22px] w-[38px] shrink-0 rounded-full bg-muted;
+  }
+
+  .settings-toggle::after {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    height: 16px;
+    width: 16px;
+    border-radius: 999px;
+    background: hsl(var(--background));
+    box-shadow: 0 1px 2px hsl(var(--foreground) / 0.16);
+  }
+
+  .settings-toggle-on {
+    @apply bg-primary;
+  }
+
+  .settings-toggle-on::after {
+    left: 19px;
+  }
+
+  .settings-note {
+    @apply rounded-[6px] px-3 py-2 text-[12px] leading-5 text-muted-foreground;
+    background: #f7f7f6;
+  }
+
+  .dark .settings-page,
+  .dark .settings-drag-region,
+  .dark .settings-shell,
+  .dark .settings-main,
+  .dark .settings-list {
+    background: hsl(var(--card));
+  }
+
+  .dark .settings-sidebar {
+    background: hsl(var(--background));
+  }
+
+  .dark .settings-search,
+  .dark .settings-row-value,
+  .dark .settings-note {
+    background: hsl(var(--muted));
+  }
+
+  .dark .settings-nav-item:hover,
+  .dark .settings-nav-item:focus-visible,
+  .dark .settings-nav-item-active {
+    background: hsl(var(--muted));
   }
 
   .codemirror-shell-frame {
