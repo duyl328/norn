@@ -68,11 +68,17 @@
 
   body {
     @apply text-foreground antialiased;
-    background: transparent;
+    /* 默认不透明(Windows / Linux / 浏览器):窗口走实心背景,不依赖原生 vibrancy。 */
+    background: hsl(var(--background));
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;
+  }
+
+  /* 仅 macOS:窗口透明,让原生 sidebar vibrancy 透出(配合 tauri.conf 的 transparent/windowEffects)。 */
+  .platform-mac body {
+    background: transparent;
   }
 
   button,
@@ -592,10 +598,16 @@
 
   .project-panel {
     @apply flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden;
-    background: hsl(var(--background) / 0.2);
+    /* 默认实心:半透明面板会让文字抗锯齿失去稳定背景(WebView2 下关闭 ClearType)→ 发虚/重影。 */
+    background: hsl(var(--background));
     box-shadow: none !important;
     border-block: 0;
     background-clip: padding-box;
+  }
+
+  /* 仅 macOS:保留 vibrancy 半透明。 */
+  .platform-mac .project-panel {
+    background: hsl(var(--background) / 0.2);
   }
 
   .editor-surface-panel {
@@ -687,6 +699,10 @@
 
   .project-panel-scratch {
     @apply flex min-h-0 min-w-0 shrink-0 flex-col py-1;
+    background: hsl(var(--background));
+  }
+
+  .platform-mac .project-panel-scratch {
     background: hsl(var(--background) / 0.1);
   }
 
@@ -1274,8 +1290,17 @@
 
   .file-tree-scroll {
     @apply min-w-0 overflow-y-auto overflow-x-hidden;
+    /* 滚动容器会被提升为 GPU 合成滚动层。Chromium/WebView2 仅在该层背景"已知不透明"时
+       才启用 ClearType 子像素抗锯齿;无背景(透明)→ 退化为灰度抗锯齿 → 文字发虚/重影。
+       给滚动层一个不透明背景即可让文字恢复锐利。 */
+    background: hsl(var(--background));
     scrollbar-color: hsl(var(--muted-foreground) / 0.36) transparent;
     scrollbar-width: thin;
+  }
+
+  /* mac 走 vibrancy 半透明;macOS 不使用子像素抗锯齿,透明不影响锐利度。 */
+  .platform-mac .file-tree-scroll {
+    background: transparent;
   }
 
   .file-tree-root {

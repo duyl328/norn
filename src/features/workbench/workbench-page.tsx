@@ -23,6 +23,7 @@ import {
 import { useDocumentSession } from "./hooks/use-document-session";
 import { usePanelLayout } from "./hooks/use-panel-layout";
 import { useWorkspaceTree } from "./hooks/use-workspace-tree";
+import { isMac, isWindows } from "./platform";
 import { useWorkbenchStore } from "./store/workbench-store";
 import { isDocumentDirty, isTauriRuntime } from "./workbench-utils";
 
@@ -61,8 +62,8 @@ export function WorkbenchPage() {
   const setDropTarget = useWorkbenchStore((state) => state.setDropTarget);
   const saveState = useWorkbenchStore((state) => state.saveState);
   const searchOpen = useWorkbenchStore((state) => state.searchOpen);
-  const showWindowsTitlebar = useMemo(() => navigator.userAgent.includes("Windows") && isTauriRuntime(), []);
-  const showMacTitlebar = useMemo(() => navigator.userAgent.includes("Mac") && isTauriRuntime(), []);
+  const showWindowsTitlebar = useMemo(() => isWindows(), []);
+  const showMacTitlebar = useMemo(() => isMac(), []);
   const isDirty = isDocumentDirty(document);
 
   const {

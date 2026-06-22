@@ -1,5 +1,15 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Menu, Minus, PanelLeft, PanelRight, Search, Square, X } from "lucide-react";
+import {
+  Menu,
+  Minus,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Search,
+  Square,
+  X,
+} from "lucide-react";
 import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -427,7 +437,9 @@ export function PanelToggleButton({
   side: "left" | "right";
   useLocalSidebarIcon?: boolean;
 }) {
-  const Icon = side === "left" ? PanelLeft : PanelRight;
+  // Windows(非 useLocalSidebarIcon)用随面板开合切换箭头的 lucide 图标;mac 仍用本地自绘 SVG。
+  const StatefulIcon =
+    side === "left" ? (open ? PanelLeftClose : PanelLeftOpen) : open ? PanelRightClose : PanelRightOpen;
 
   return (
     <button
@@ -438,7 +450,7 @@ export function PanelToggleButton({
       aria-pressed={open}
       onClick={onClick}
     >
-      {useLocalSidebarIcon ? <SidebarPanelIcon side={side} /> : <Icon className="h-3 w-3" />}
+      {useLocalSidebarIcon ? <SidebarPanelIcon side={side} /> : <StatefulIcon className="h-3 w-3" />}
       {showBadge ? <span className="panel-toggle-badge">4</span> : null}
     </button>
   );

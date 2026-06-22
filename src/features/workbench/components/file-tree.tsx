@@ -145,7 +145,9 @@ export function FileTreePanel({
                 <div
                   className="file-tree-virtual-row"
                   key={row.node.path}
-                  style={{ transform: `translateY(${virtualRow.start}px)` }}
+                  // 用 top 而非 transform 定位:transform 会把行提升为 GPU 合成层,
+                  // 在 Windows/WebView2 上该层会关闭 ClearType 子像素抗锯齿 → 文字发虚/重影。
+                  style={{ top: `${virtualRow.start}px` }}
                 >
                   <FileTreeRow
                     activePath={activePath}

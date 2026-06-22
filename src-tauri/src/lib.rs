@@ -1419,6 +1419,16 @@ pub fn run() {
                 window.set_decorations(false)?;
             }
 
+            // 窗口初始 visible:false(避免启动透明框),正常情况下前端挂载后会调用 show()。
+            // 兜底:万一前端加载/渲染失败,这里在短延时后也强制显示窗口,避免永久空白卡死。
+            let show_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(3000));
+                if let Some(window) = show_handle.get_webview_window("main") {
+                    let _ = window.show();
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

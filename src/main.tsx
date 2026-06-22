@@ -4,10 +4,12 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import { App } from "@/app";
+import { applyPlatformClass } from "@/features/workbench/platform";
 
 document.documentElement.classList.remove("dark");
 document.documentElement.dataset.theme = "light";
 document.documentElement.style.colorScheme = "light";
+applyPlatformClass();
 
 const root = document.getElementById("root");
 
