@@ -10,10 +10,15 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "html"],
       thresholds: {
-        branches: 7,
-        functions: 6,
-        lines: 7,
-        statements: 7,
+        // 基线按当前实测覆盖率略向下取整设定（实测约 stmts 20.5% / branches 17.8% /
+        // functions 22.1% / lines 19.9%），作为“防回退”地板：低于此值 CI 失败。
+        // autoUpdate 实现“只升不降”——本地跑覆盖率时若实测更高，会自动把这里的
+        // 数值抬高并写回本文件，提交后地板随之上移。补充测试是抬高基线的唯一途径。
+        autoUpdate: true,
+        branches: 17,
+        functions: 21,
+        lines: 19,
+        statements: 20,
       },
     },
     environment: "node",

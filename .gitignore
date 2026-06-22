@@ -1,4 +1,5 @@
 node_modules
+.pnpm-store/
 .npm-cache
 dist
 dist-ssr
@@ -9,6 +10,11 @@ src-tauri/target
 *.log
 dev-server.err
 dev-server.log
+
+# Local workspace files
+.claude/
+_tmp_*
+tmp/
 
 # Playwright
 test-results/

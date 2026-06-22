@@ -46,4 +46,48 @@ describe("useWorkbenchStore", () => {
     expect(useWorkbenchStore.getState().openDocuments).toHaveLength(2);
     expect(useWorkbenchStore.getState().openDocuments[1].id).toBe("doc-2");
   });
+
+  it("所有 setter 都能写入对应字段", () => {
+    const store = useWorkbenchStore.getState();
+
+    store.setDocument({ ...initialDocument, id: "doc-x" });
+    store.setPendingCloseDocument({ ...initialDocument, id: "pending" });
+    store.setSaveConflict({ kind: "disk-changed" } as never);
+    store.setRightPanelOpen(true);
+    store.setRightPanelWidth(320);
+    store.setResizingPanel("left");
+    store.setResizeHandleHintsVisible(true);
+    store.setScratchPanelHeight(180);
+    store.setSettingsOpen(true);
+    store.setSearchOpen(true);
+    store.setFileError("oops");
+    store.setFolderView({ kind: "folder" } as never);
+    store.setGitWorkspace({ kind: "loading" } as never);
+    store.setRecentFolders([{ path: "/p", name: "p" } as never]);
+    store.setScratchFolder({ path: "/s", name: "s" } as never);
+    store.setScratchFolderView((view) => ({ ...view, loading: true }));
+    store.setFileTreeClipboard({ mode: "copy" } as never);
+    store.setFileTreeContextMenu({ x: 1, y: 2 } as never);
+    store.setFileTreeNameDialog({ mode: "create" } as never);
+    store.setFileTreeNameValue("new-name.ts");
+    store.setFileTreeTrashTarget({ path: "/t" } as never);
+    store.setDraggedTreeNode({ path: "/d" } as never);
+    store.setDropTarget({ path: "/drop", scope: "main" });
+
+    const next = useWorkbenchStore.getState();
+    expect(next.document.id).toBe("doc-x");
+    expect(next.pendingCloseDocument?.id).toBe("pending");
+    expect(next.rightPanelOpen).toBe(true);
+    expect(next.rightPanelWidth).toBe(320);
+    expect(next.resizingPanel).toBe("left");
+    expect(next.resizeHandleHintsVisible).toBe(true);
+    expect(next.scratchPanelHeight).toBe(180);
+    expect(next.settingsOpen).toBe(true);
+    expect(next.searchOpen).toBe(true);
+    expect(next.fileError).toBe("oops");
+    expect(next.recentFolders).toHaveLength(1);
+    expect(next.scratchFolderView.loading).toBe(true);
+    expect(next.fileTreeNameValue).toBe("new-name.ts");
+    expect(next.dropTarget).toEqual({ path: "/drop", scope: "main" });
+  });
 });
