@@ -22,9 +22,8 @@ import {
 
 import { cn } from "@/lib/utils";
 
-import { recentProjects, type WindowsTitlebarMenuId, windowsTitlebarMenus } from "../constants";
+import { type WindowsTitlebarMenuId, windowsTitlebarMenus } from "../constants";
 import type { EditorTabPreview } from "../types";
-import { getProjectAccentStyle, getProjectInitials } from "../workbench-utils";
 
 export function WindowsTitleBar({
   leftPanelOpen,
@@ -58,23 +57,12 @@ export function WindowsTitleBar({
   variant?: "workbench" | "settings";
 }) {
   const appWindow = getCurrentWindow();
-  const [projectName, setProjectName] = useState<string>(recentProjects[0].name);
-  const projectInitials = getProjectInitials(projectName);
-  const projectAccentStyle = getProjectAccentStyle(projectName);
   const menuRef = useRef<HTMLDivElement>(null);
-  const projectMenuRef = useRef<HTMLDivElement>(null);
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [menuExpanded, setMenuExpanded] = useState(false);
   const [activeMenu, setActiveMenu] = useState<WindowsTitlebarMenuId | null>(null);
   const [submenuLeft, setSubmenuLeft] = useState(0);
 
-  const selectProject = (name: string) => {
-    setProjectName(name);
-    setProjectMenuOpen(false);
-  };
-
   const openMenu = () => {
-    setProjectMenuOpen(false);
     setMenuExpanded(true);
   };
 
@@ -87,40 +75,6 @@ export function WindowsTitleBar({
     setSubmenuLeft(menuElement.offsetLeft);
     setActiveMenu(menuId);
   };
-
-  useEffect(() => {
-    if (!projectMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (projectMenuRef.current?.contains(event.target as Node)) {
-        return;
-      }
-
-      setProjectMenuOpen(false);
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setProjectMenuOpen(false);
-      }
-    };
-
-    const handleWindowBlur = () => {
-      setProjectMenuOpen(false);
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown, true);
-    document.addEventListener("keydown", handleKeyDown, true);
-    window.addEventListener("blur", handleWindowBlur);
-
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown, true);
-      document.removeEventListener("keydown", handleKeyDown, true);
-      window.removeEventListener("blur", handleWindowBlur);
-    };
-  }, [projectMenuOpen]);
 
   useEffect(() => {
     if (!menuExpanded) {
@@ -279,58 +233,6 @@ export function WindowsTitleBar({
             ) : null}
           </nav>
         )}
-        {variant === "workbench" && !menuExpanded ? (
-          <div className="windows-titlebar-project">
-            <div className="windows-titlebar-project-picker" ref={projectMenuRef}>
-              <button
-                className={cn("windows-titlebar-folder", projectMenuOpen && "windows-titlebar-folder-active")}
-                type="button"
-                aria-expanded={projectMenuOpen}
-                onClick={() => setProjectMenuOpen((value) => !value)}
-              >
-                <span className="windows-titlebar-folder-icon" style={projectAccentStyle}>
-                  {projectInitials}
-                </span>
-                <span className="windows-titlebar-folder-name">{projectName}</span>
-              </button>
-              {projectMenuOpen ? (
-                <div className="windows-titlebar-folder-menu">
-                  <button className="windows-titlebar-folder-menu-item" type="button" onClick={onOpenFolder}>
-                    Open Folder
-                  </button>
-                  <button
-                    className="windows-titlebar-folder-menu-item"
-                    type="button"
-                    onClick={() => setProjectMenuOpen(false)}
-                  >
-                    Add Folder
-                  </button>
-                  <div className="windows-titlebar-folder-menu-section">
-                    {recentProjects.map((project) => (
-                      <button
-                        className="windows-titlebar-recent-project"
-                        key={project.path}
-                        type="button"
-                        onClick={() => selectProject(project.name)}
-                      >
-                        <span
-                          className="windows-titlebar-recent-project-icon"
-                          style={getProjectAccentStyle(project.name)}
-                        >
-                          {getProjectInitials(project.name)}
-                        </span>
-                        <span className="windows-titlebar-recent-project-text">
-                          <span className="windows-titlebar-recent-project-name">{project.name}</span>
-                          <span className="windows-titlebar-recent-project-path">{project.path}</span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
       </div>
       <div className="windows-titlebar-drag-fill" data-tauri-drag-region />
       {variant === "workbench" ? (

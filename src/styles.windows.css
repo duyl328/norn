@@ -22,14 +22,26 @@
 .platform-windows .windows-titlebar {
   background: hsl(var(--muted));
   border-bottom: 0;
+  height: 30px; /* 原 36px,降低 */
 }
 
-/* ───────────────────────── 左侧目录树区域 ─────────────────────────
-   灰底。file-tree-scroll 必须不透明,否则丢 ClearType 导致文字发虚。 */
-.platform-windows .project-panel,
+/* ───────────────────────── 左侧文件树:同款白卡 ─────────────────────────
+   统一成和编辑 / Git 一样的白卡(新版 IDEA 风格):白底 + 圆角 + 边框,wrapper padding 内缩。
+   右侧不额外内缩(贴着编辑卡的左边距),让 树↔编辑 间隙和 编辑↔Git 一致。
+   file-tree-scroll 保持不透明,否则丢 ClearType 导致文字发虚。 */
+.platform-windows .workbench-left-panel {
+  padding: 8px 0 8px 8px;
+}
+
+.platform-windows .project-panel {
+  background: hsl(var(--editor-background));
+  border: var(--workspace-panel-border);
+  border-radius: 10px;
+}
+
 .platform-windows .file-tree-scroll,
 .platform-windows .project-panel-scratch {
-  background: hsl(var(--muted));
+  background: hsl(var(--editor-background));
 }
 
 /* ───────────────────────── 右侧 Git 面板:同款白卡(小框) ─────────────────────────
@@ -85,20 +97,29 @@
   --settings-main-corner-radius: 8px; /* 比默认 18px 小 */
 }
 
+/* 主网格顶部多留 4px,让三张卡离顶栏更远一点(总顶距 = 4px + 卡片自身 8px = 12px)。 */
+.platform-windows .workbench-layout {
+  padding-top: 4px;
+}
+
 /* ───────────────────────── 编辑区:灰框里的白卡 ─────────────────────────
    把白色编辑区做成一张"悬浮在灰色框里的卡片":四角圆角 + 四周内缩留出灰底 + 全边框。
    左侧树 / 右面板 / 顶部栏 / 底部栏的灰自然连成外框,白卡浮在中央。
    height:auto 让 grid 拉伸时为「单元格高度 - margin」,避免 height:100% + margin 溢出。 */
 .platform-windows .editor-surface-panel {
   height: auto;
-  margin: 8px;
+  margin: 8px 4px; /* 上下 8px;左右默认 4px = 面板收起时与窗口边的小间隙 */
   border: var(--workspace-panel-border);
   border-radius: 10px;
 }
 
-/* 右面板打开时,编辑卡右边贴着拖拽手柄(不再额外留 8px),
-   与 Git 卡之间只剩 12px 手柄做间隙,缩小两卡的灰沟。
-   面板关闭时仍保留 8px 右边距,让编辑卡浮在窗口右边。 */
+/* 左面板打开时,编辑卡左边与树卡留 8px(收起时回到上面的 4px)。 */
+.platform-windows .workbench-layout-left-open .editor-surface-panel {
+  margin-left: 8px;
+}
+
+/* 右面板打开时,编辑卡右边贴着拖拽手柄(margin-right 归 0),与 Git 卡之间只剩 7px 手柄间隙;
+   收起时回到上面的 4px,让编辑卡离窗口右边更近。 */
 .platform-windows .workbench-layout-right-open .editor-surface-panel {
   margin-right: 0;
 }
