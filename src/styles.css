@@ -612,9 +612,33 @@
     background-clip: padding-box;
   }
 
-  /* 仅 macOS:保留 vibrancy 半透明。 */
+  /* 仅 macOS:文件树「一体化」—— 不加框、不浮起,直接是窗口左侧 vibrancy 区的一部分。
+     背景透明,与四周留白、底部状态栏同为原生 vibrancy → 文件树、缝隙、地面连成一片,无色阶。
+     全窗唯一浮起的独立模块,是右侧的「编辑+Git」卡(见下)。 */
   .platform-mac .project-panel {
-    background: hsl(var(--background) / 0.2);
+    background: transparent;
+  }
+
+  /* Git 展开时,右侧 grid 项只补底部离地缝(margin-bottom);右侧贴窗口边、不留缝。
+     margin 加在 grid 项上(不在 w-full 子元素上)不会溢出。 */
+  .platform-mac .workbench-layout-right-open .workbench-right-panel {
+    margin-bottom: 8px;
+  }
+
+  /* 仅 macOS:编辑+Git 合成一张卡,横向贴边——左贴文件树、右贴窗口边,左右都不留缝。
+     只在底部抬离地面(margin-bottom)并把「搁在地面上」的底部两角做成圆角;顶/左/右贴边不圆。
+     Git 收起时编辑卡独占整块;Git 展开时解开右边与 Git 拼成同一张卡,中缝由 Git 左边框分隔。 */
+  .platform-mac .editor-surface-panel {
+    height: auto; /* 配合 margin-bottom:grid 把它拉伸为「行高 − 下边距」,避免 height:100% + margin 溢出。 */
+    margin-bottom: 8px;
+    border-bottom: var(--workspace-panel-border);
+    border-right: var(--workspace-panel-border);
+    border-radius: 0 0 10px 10px; /* 仅底部两角(左下/右下)圆角,顶部与左右贴边为直角。 */
+  }
+
+  .platform-mac .workbench-layout-right-open .editor-surface-panel {
+    border-right: 0;
+    border-bottom-right-radius: 0; /* 右下角交给 Git(编辑卡只保留左下圆角)。 */
   }
 
   .editor-surface-panel {
@@ -1481,6 +1505,15 @@
     @apply flex h-[22px] shrink-0 items-center justify-between border-t border-border bg-card px-2;
   }
 
+  /* 仅 macOS:底部状态栏作为「窗口底座」——透出与透明 titlebar 同源的原生 vibrancy,
+     且不画任何顶边线。这样它是一整层无缝底座:左侧文件树(半透明 vibrancy)直接融下来;
+     右侧编辑区是不透明 editor-background,其底边与透明底座之间靠材质过渡自然成边,无需画线。
+     Windows 走 styles.windows.css 的另一套(灰底、无边框、17px)。 */
+  .platform-mac .status-bar {
+    background: transparent;
+    border-top: 0;
+  }
+
   .file-tree-empty-message {
     --tree-empty-depth: 1;
     @apply py-1 text-ui-md text-muted-foreground;
@@ -1601,11 +1634,18 @@
     background: hsl(var(--editor-background));
   }
 
-  /* 仅 macOS:编辑区 ↔ Git 之间的竖线分隔,归属 Git 面板(画在它的左边框上)。
-     间隙为 0 + 编辑区无右边框 → 这条就是两者之间唯一的一道分界线。
-     Windows 不用这条,走 styles.windows.css 的浮动卡片那套配置。 */
+  /* 仅 macOS:Git 是「编辑+Git」合成卡的右半。
+     - border-left:与编辑区之间的中缝分隔(归属 Git);
+     - 上/下/右边框 + 右下角圆角:与编辑卡拼成同一张卡的右边,右侧贴窗口边;
+     - 离地缝由外层 .workbench-right-panel 的 margin-bottom 提供
+       (w-full 子元素直接加 margin 会溢出,所以放在 grid 项上)。
+     Windows 不用这套,走 styles.windows.css 的浮动卡片配置。 */
   .platform-mac .right-task-panel {
+    border-top: var(--workspace-panel-border);
+    border-bottom: var(--workspace-panel-border);
     border-left: var(--workspace-panel-border);
+    border-right: var(--workspace-panel-border);
+    border-bottom-right-radius: 10px; /* 仅右下角圆角:贴窗口右边、搁在地面上。 */
   }
 
   .right-task-panel-header {
