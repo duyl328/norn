@@ -337,7 +337,8 @@
   }
 
   .mac-titlebar {
-    @apply pointer-events-none absolute inset-x-0 top-0 z-30 grid h-10 grid-cols-[minmax(116px,1fr)_minmax(252px,420px)_minmax(116px,1fr)] items-center px-3 text-foreground;
+    /* 中列改 auto:搜索框已绝对定位脱离网格,中列空着不再占固定宽,左右两侧开关靠边即可。 */
+    @apply pointer-events-none absolute inset-x-0 top-0 z-30 grid h-10 grid-cols-[minmax(116px,1fr)_auto_minmax(116px,1fr)] items-center px-3 text-foreground;
     user-select: none;
   }
 
@@ -345,17 +346,33 @@
     @apply pointer-events-auto flex h-full min-w-0 items-center;
   }
 
+  /* 搜索框已绝对定位脱离网格流,顶栏只剩两个开关在流内;显式锁定到第 1 / 第 3 列,
+     否则网格自动布局会把右开关塞进中列(Git 按钮跑到中间)。 */
   .mac-titlebar-side-left {
     @apply justify-start;
+    grid-column: 1;
     padding-left: 68px;
   }
 
   .mac-titlebar-side-right {
     @apply justify-end;
+    grid-column: 3;
   }
 
+  /* 搜索框「跟随编辑区」:绝对定位,水平中心 = 编辑区中心
+     = (左面板占用 + (窗宽 − 右面板占用)) / 2;100% 即顶栏宽 = 窗宽。
+     面板开合时变量变化 → 随之平移(520ms 缓动,与下方布局动画一致);收起时退化为整窗居中。 */
   .mac-titlebar-search {
-    @apply pointer-events-auto min-w-0 px-2;
+    @apply pointer-events-auto min-w-0;
+    position: absolute;
+    top: 50%;
+    left: calc((var(--titlebar-editor-left, 0px) + 100% - var(--titlebar-editor-right, 0px)) / 2);
+    width: min(420px, calc(100% - var(--titlebar-editor-left, 0px) - var(--titlebar-editor-right, 0px) - 24px));
+    padding-inline: 0.5rem;
+    transform: translate(-50%, -50%);
+    transition:
+      left 520ms cubic-bezier(0.16, 1, 0.3, 1),
+      width 520ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .mac-titlebar-search-button {

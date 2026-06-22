@@ -252,10 +252,12 @@ export function WorkbenchPage() {
             {showMacTitlebar ? (
               <MacTitlebar
                 leftPanelOpen={leftPanelOpen}
+                leftPanelWidth={leftPanelWidth}
                 onCloseSearch={closeSearchTool}
                 onOpenSearch={openSearchTool}
                 onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
                 rightPanelOpen={rightPanelOpen}
+                rightPanelWidth={rightPanelWidth}
                 onToggleLeftPanel={toggleFilesTool}
                 searchOpen={searchOpen}
               />

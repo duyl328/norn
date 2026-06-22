@@ -288,23 +288,35 @@ export function WindowsTitleBar({
 
 export function MacTitlebar({
   leftPanelOpen,
+  leftPanelWidth,
   onCloseSearch,
   onOpenSearch,
   onToggleLeftPanel,
   onToggleRightPanel,
   rightPanelOpen,
+  rightPanelWidth,
   searchOpen,
 }: {
   leftPanelOpen: boolean;
+  leftPanelWidth: number;
   onCloseSearch: () => void;
   onOpenSearch: () => void;
   onToggleLeftPanel: () => void;
   onToggleRightPanel: () => void;
   rightPanelOpen: boolean;
+  rightPanelWidth: number;
   searchOpen: boolean;
 }) {
+  // 搜索框跟随「编辑区」:把左/右面板占用的横向区间作为 CSS 变量传给 CSS,
+  // 由 .mac-titlebar-search 用 calc 居中到「左面板右沿 ↔ 右面板左沿」之间(即编辑区)。
+  // 面板收起时对应区间为 0 → 退化为整窗居中。
+  const editorRegionStyle = {
+    "--titlebar-editor-left": `${leftPanelOpen ? leftPanelWidth : 0}px`,
+    "--titlebar-editor-right": `${rightPanelOpen ? rightPanelWidth : 0}px`,
+  } as CSSProperties;
+
   return (
-    <header className="mac-titlebar" data-tauri-drag-region>
+    <header className="mac-titlebar" data-tauri-drag-region style={editorRegionStyle}>
       <div className="mac-titlebar-side mac-titlebar-side-left" data-tauri-drag-region>
         <PanelToggleButton
           className="titlebar-panel-button mac-panel-toggle-button"
