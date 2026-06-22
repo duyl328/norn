@@ -62,6 +62,8 @@ export function ProjectPanel({
   onToggleScratchRootDirectory,
   onToggleDirectory,
   onToggleRootDirectory,
+  onExpandAll,
+  onCollapseAll,
 }: {
   activePath: string;
   clipboard: FileTreeClipboard | null;
@@ -94,6 +96,8 @@ export function ProjectPanel({
   onToggleScratchRootDirectory: () => void;
   onToggleDirectory: (node: FileTreeNode) => void;
   onToggleRootDirectory: () => void;
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
 }) {
   const scratchPanelMinRatio = 0.1;
   const scratchPanelMaxRatio = 0.6;
@@ -186,6 +190,8 @@ export function ProjectPanel({
             onRequestTrashNode={onRequestTrashNode}
             onToggleDirectory={onToggleDirectory}
             onToggleRootDirectory={onToggleRootDirectory}
+            onExpandAll={onExpandAll}
+            onCollapseAll={onCollapseAll}
           />
         </div>
         <div

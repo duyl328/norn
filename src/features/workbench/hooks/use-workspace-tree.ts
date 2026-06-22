@@ -35,7 +35,9 @@ import {
   applyFolderNodeChildren,
   applyScratchEntries,
   applyScratchError,
+  collapseAllFolderNodes,
   collapseScratchNode,
+  expandAllFolderNodes,
   expandLoadedScratchNode,
   markFolderLoading,
   markFolderNodeExpanding,
@@ -329,6 +331,14 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
 
   const toggleRootDirectory = () => {
     setFolderView((currentView) => (currentView ? toggleFolderRoot(currentView) : currentView));
+  };
+
+  const collapseAllDirectories = () => {
+    setFolderView((currentView) => (currentView ? collapseAllFolderNodes(currentView) : currentView));
+  };
+
+  const expandAllDirectories = () => {
+    setFolderView((currentView) => (currentView ? expandAllFolderNodes(currentView) : currentView));
   };
 
   const openTreeFile = async (node: FileTreeNode) => {
@@ -741,6 +751,8 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     openFolderPicker,
     toggleDirectory,
     toggleRootDirectory,
+    collapseAllDirectories,
+    expandAllDirectories,
     toggleScratchDirectory,
     toggleScratchRootDirectory,
     refreshTreePath,

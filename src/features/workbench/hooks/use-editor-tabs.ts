@@ -585,10 +585,19 @@ export function useEditorTabs({ openDocuments, document, onCreateFile, viewRef }
     tabScroll.addEventListener("wheel", handleTabWheel, { passive: false });
     window.addEventListener("resize", scheduleTabLayout);
 
+    // 开合 / 拖拽文件树或 Git 面板会改变 Tab 栏可视宽度,但不触发 window resize,
+    // 折叠布局因此不重算 → 左右折叠区错位、被覆盖。用 ResizeObserver 观测 Tab 栏宽度变化
+    // (面板开合动画的逐帧变化也涵盖)主动重算,scheduleTabLayout 内部已用 rAF 节流。
+    const tabResizeObserver = new ResizeObserver(() => {
+      scheduleTabLayout();
+    });
+    tabResizeObserver.observe(tabScroll);
+
     return () => {
       tabScroll.removeEventListener("scroll", handleTabScroll);
       tabScroll.removeEventListener("wheel", handleTabWheel);
       window.removeEventListener("resize", scheduleTabLayout);
+      tabResizeObserver.disconnect();
 
       if (tabWheelFrameRef.current !== null) {
         window.cancelAnimationFrame(tabWheelFrameRef.current);

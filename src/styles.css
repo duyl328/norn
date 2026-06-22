@@ -834,7 +834,11 @@
   }
 
   .project-panel-recent-menu {
-    @apply w-[294px] border-border bg-popover p-1 shadow-sm;
+    @apply border-border bg-popover p-1 shadow-sm;
+    /* 按内容自适应宽度,不再写死 294px(太宽);上限收窄,过长路径在条目内截断(name/path 均 truncate)。 */
+    width: max-content;
+    min-width: 196px;
+    max-width: 264px;
     border-radius: 6px !important;
   }
 
@@ -1354,8 +1358,30 @@
   }
 
   .file-tree-root {
-    @apply shrink-0 px-1.5 pb-0.5 pt-1;
+    @apply relative shrink-0 px-1.5 pb-0.5 pt-1;
     background: transparent;
+  }
+
+  /* 「全部展开 / 全部折叠」操作条:浮在根行右侧,默认隐藏,hover 根行时淡入。 */
+  .file-tree-root-actions {
+    @apply pointer-events-none absolute right-2.5 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 opacity-0;
+    transition: opacity 140ms ease;
+  }
+
+  .file-tree-root:hover .file-tree-root-actions,
+  .file-tree-root:focus-within .file-tree-root-actions {
+    @apply pointer-events-auto opacity-100;
+  }
+
+  .file-tree-root-action {
+    @apply pointer-events-auto grid h-6 w-6 place-items-center rounded-[4px] border-0 bg-transparent text-muted-foreground transition-colors;
+  }
+
+  .file-tree-root-action:hover,
+  .file-tree-root-action:focus-visible {
+    @apply outline-none;
+    background: hsl(var(--accent) / 0.6);
+    color: hsl(var(--foreground));
   }
 
   .file-tree-list {
@@ -1508,7 +1534,10 @@
   }
 
   .tree-row-active {
-    @apply bg-accent text-accent-foreground;
+    /* 选中态更明显:更饱和的主色半透明底 + 1px 主色内描边(替代原本很淡的 bg-accent)。 */
+    background: hsl(var(--primary) / 0.18);
+    color: hsl(var(--foreground));
+    box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.45);
   }
 
   .tree-row-error {

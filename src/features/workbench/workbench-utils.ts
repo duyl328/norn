@@ -213,6 +213,23 @@ export const collapseTreeNodeDeep = (node: FileTreeNode): FileTreeNode => ({
 
 export const collapseTreeNodesDeep = (nodes: FileTreeNode[]) => nodes.map(collapseTreeNodeDeep);
 
+// 「全部展开」:递归把所有「已加载子节点」的目录设为展开。
+// 树是懒加载的(childrenLoaded),从未访问过的目录没有 children,展开它也无内容可显示,
+// 因此这里只展开已加载的目录,不发起递归网络/IO 拉取(避免一次性加载整个仓库)。
+export const expandLoadedTreeNodeDeep = (node: FileTreeNode): FileTreeNode => {
+  if (node.kind !== "directory") {
+    return node;
+  }
+
+  return {
+    ...node,
+    expanded: node.childrenLoaded ? true : node.expanded,
+    children: node.children?.map(expandLoadedTreeNodeDeep),
+  };
+};
+
+export const expandLoadedTreeNodesDeep = (nodes: FileTreeNode[]) => nodes.map(expandLoadedTreeNodeDeep);
+
 export const mergeTreeNodeState = (node: FileTreeNode, previousNode?: FileTreeNode): FileTreeNode => {
   if (!previousNode || node.kind !== "directory") {
     return node;

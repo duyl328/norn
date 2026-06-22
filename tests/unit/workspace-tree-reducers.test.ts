@@ -7,7 +7,9 @@ import {
   applyFolderNodeChildren,
   applyScratchEntries,
   applyScratchError,
+  collapseAllFolderNodes,
   collapseScratchNode,
+  expandAllFolderNodes,
   expandLoadedScratchNode,
   markFolderLoading,
   markFolderNodeExpanding,
@@ -123,6 +125,34 @@ describe("FolderView reducers", () => {
     expect(collapsed.nodes[0].expanded).toBe(false);
 
     expect(toggleFolderRoot(folderView([], { rootExpanded: false })).rootExpanded).toBe(true);
+  });
+
+  it("collapseAllFolderNodes 保持根展开并深折叠所有目录", () => {
+    const view = folderView(
+      [dir("src", "/root/src", [dir("sub", "/root/src/sub", [file("a.ts", "/root/src/sub/a.ts")], true)], true)],
+      { rootExpanded: false },
+    );
+    const collapsed = collapseAllFolderNodes(view);
+
+    expect(collapsed.rootExpanded).toBe(true);
+    expect(collapsed.nodes[0].expanded).toBe(false);
+    expect(collapsed.nodes[0].children?.[0].expanded).toBe(false);
+  });
+
+  it("expandAllFolderNodes 只展开已加载目录且保持未加载目录状态", () => {
+    const loaded = dir("src", "/root/src", [dir("sub", "/root/src/sub", [file("a.ts", "/root/src/sub/a.ts")])]);
+    const unloaded = {
+      ...dir("node_modules", "/root/node_modules", [], false),
+      childrenLoaded: false,
+      children: [],
+    };
+    const view = folderView([loaded, unloaded], { rootExpanded: false });
+    const expanded = expandAllFolderNodes(view);
+
+    expect(expanded.rootExpanded).toBe(true);
+    expect(expanded.nodes[0].expanded).toBe(true);
+    expect(expanded.nodes[0].children?.[0].expanded).toBe(true);
+    expect(expanded.nodes[1].expanded).toBe(false);
   });
 });
 

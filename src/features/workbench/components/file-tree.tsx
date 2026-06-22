@@ -2,6 +2,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   ClipboardPaste,
   Copy,
   FilePlus,
@@ -62,6 +64,8 @@ export function FileTreePanel({
   onRequestTrashNode,
   onToggleDirectory,
   onToggleRootDirectory,
+  onExpandAll,
+  onCollapseAll,
 }: {
   activePath: string;
   clipboard: FileTreeClipboard | null;
@@ -86,6 +90,8 @@ export function FileTreePanel({
   onRequestTrashNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
   onToggleDirectory: (node: FileTreeNode) => void;
   onToggleRootDirectory: () => void;
+  onExpandAll?: () => void;
+  onCollapseAll?: () => void;
 }) {
   const scrollParentRef = useRef<HTMLDivElement>(null);
   const rows = useMemo(
@@ -121,6 +127,8 @@ export function FileTreePanel({
         onContextMenu={onContextMenu}
         onDropTargetChange={onDropTargetChange}
         onToggle={onToggleRootDirectory}
+        onExpandAll={onExpandAll}
+        onCollapseAll={onCollapseAll}
       />
       <div
         className="file-tree-scroll min-h-0 flex-1"
@@ -210,6 +218,8 @@ export function FileTreeRootRow({
   onContextMenu,
   onDropTargetChange,
   onToggle,
+  onExpandAll,
+  onCollapseAll,
 }: {
   dropTarget: TreeDropTarget | null;
   scope: "main" | "scratch";
@@ -217,8 +227,11 @@ export function FileTreeRootRow({
   onContextMenu: (node: FileTreeNode | null, event: MouseEvent, scope?: "main" | "scratch") => void;
   onDropTargetChange: (target: TreeDropTarget | null) => void;
   onToggle: () => void;
+  onExpandAll?: () => void;
+  onCollapseAll?: () => void;
 }) {
   const isDropTarget = dropTarget?.scope === scope && dropTarget.path === treeView.rootPath;
+  const hasActions = Boolean(onExpandAll || onCollapseAll);
 
   return (
     <div className="file-tree-root">
@@ -247,6 +260,32 @@ export function FileTreeRootRow({
         </span>
         <span className="tree-row-size">{treeView.loadingPath === treeView.rootPath ? "..." : ""}</span>
       </button>
+      {hasActions ? (
+        <div className="file-tree-root-actions">
+          {onExpandAll ? (
+            <button
+              className="file-tree-root-action"
+              type="button"
+              title="全部展开"
+              aria-label="Expand all folders"
+              onClick={onExpandAll}
+            >
+              <ChevronsUpDown className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+          {onCollapseAll ? (
+            <button
+              className="file-tree-root-action"
+              type="button"
+              title="全部折叠"
+              aria-label="Collapse all folders"
+              onClick={onCollapseAll}
+            >
+              <ChevronsDownUp className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

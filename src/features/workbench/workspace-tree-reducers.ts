@@ -1,5 +1,11 @@
 import type { FileTreeNode, FolderView, ScratchFolder, ScratchFolderView } from "./types";
-import { collapseTreeNodeDeep, collapseTreeNodesDeep, mergeTreeNodesState, updateTreeNode } from "./workbench-utils";
+import {
+  collapseTreeNodeDeep,
+  collapseTreeNodesDeep,
+  expandLoadedTreeNodesDeep,
+  mergeTreeNodesState,
+  updateTreeNode,
+} from "./workbench-utils";
 
 // 主文件夹树（FolderView）的纯状态变换 —————————————————————————————————————
 
@@ -73,11 +79,7 @@ export const markFolderNodeExpanding = (view: FolderView, path: string): FolderV
   })),
 });
 
-export const applyFolderNodeChildren = (
-  view: FolderView,
-  path: string,
-  children: FileTreeNode[],
-): FolderView => ({
+export const applyFolderNodeChildren = (view: FolderView, path: string, children: FileTreeNode[]): FolderView => ({
   ...view,
   loadingPath: null,
   nodes: updateTreeNode(view.nodes, path, (currentNode) => ({
@@ -96,6 +98,20 @@ export const toggleFolderRoot = (view: FolderView): FolderView => {
 
   return { ...view, rootExpanded: true };
 };
+
+// 「全部折叠」:根保持展开,其下所有目录递归收起。
+export const collapseAllFolderNodes = (view: FolderView): FolderView => ({
+  ...view,
+  rootExpanded: true,
+  nodes: collapseTreeNodesDeep(view.nodes),
+});
+
+// 「全部展开」:根展开,其下所有「已加载」目录递归展开(懒加载未访问的目录不在此展开)。
+export const expandAllFolderNodes = (view: FolderView): FolderView => ({
+  ...view,
+  rootExpanded: true,
+  nodes: expandLoadedTreeNodesDeep(view.nodes),
+});
 
 // scratch 文件夹树（ScratchFolderView）的纯状态变换 ————————————————————————
 

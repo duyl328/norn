@@ -97,6 +97,8 @@ export function WorkbenchPage() {
     openFolderPicker,
     toggleDirectory,
     toggleRootDirectory,
+    collapseAllDirectories,
+    expandAllDirectories,
     toggleScratchDirectory,
     toggleScratchRootDirectory,
     refreshTreePath,
@@ -332,6 +334,8 @@ export function WorkbenchPage() {
                   onToggleScratchRootDirectory={toggleScratchRootDirectory}
                   onToggleDirectory={toggleDirectory}
                   onToggleRootDirectory={toggleRootDirectory}
+                  onExpandAll={expandAllDirectories}
+                  onCollapseAll={collapseAllDirectories}
                 />
               </div>
               <PanelResizeHandle
