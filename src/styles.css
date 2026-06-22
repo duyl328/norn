@@ -620,8 +620,11 @@
     border-right: var(--workspace-panel-border);
     border-top: var(--workspace-panel-border);
     border-top-left-radius: var(--workbench-main-corner-radius);
+    border-bottom-left-radius: var(--workbench-main-corner-radius);
     background-clip: padding-box;
-    transition: border-top-left-radius 520ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition:
+      border-top-left-radius 520ms cubic-bezier(0.16, 1, 0.3, 1),
+      border-bottom-left-radius 520ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .mac-titlebar-overlay-layout .project-panel {
@@ -1926,6 +1929,7 @@
     border-left: var(--settings-panel-border);
     border-top: var(--settings-panel-border);
     border-top-left-radius: var(--settings-main-corner-radius);
+    border-bottom-left-radius: var(--settings-main-corner-radius);
     background: #ffffff;
     padding: var(--settings-main-top-padding) clamp(36px, 7vw, 120px) 72px;
   }

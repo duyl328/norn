@@ -1,0 +1,108 @@
+/*
+ * Windows 专属样式。
+ *
+ * 规则一律写在 `.platform-windows` 作用域下:
+ *   - macOS 根节点没有 platform-windows 类 → 这些规则在 Mac 上永远匹配不到 → 对 Mac 零影响。
+ *   - 在 main.tsx 无条件 import,不需要任何 JS 平台判断。
+ *
+ * 用纯 CSS(不用 @apply),引用 styles.css 里定义的设计变量(--background / --muted / --border 等)。
+ * 未分层 + 高特异性(.platform-windows .x)→ 可靠覆盖共享默认样式。
+ *
+ * 配色基调:整体走灰(--muted),仅"编辑区"与"设置页主内容区"为白。
+ */
+
+/* ───────────────────────── 整体灰底 ─────────────────────────
+   窗口底色 → 灰,覆盖各面板之间的缝隙(resize handle 等)。 */
+.platform-windows body {
+  background: hsl(var(--muted));
+}
+
+/* ───────────────────────── 顶部标题栏 ─────────────────────────
+   背景灰,与下方无分隔线。 */
+.platform-windows .windows-titlebar {
+  background: hsl(var(--muted));
+  border-bottom: 0;
+}
+
+/* ───────────────────────── 左侧目录树区域 ─────────────────────────
+   灰底。file-tree-scroll 必须不透明,否则丢 ClearType 导致文字发虚。 */
+.platform-windows .project-panel,
+.platform-windows .file-tree-scroll,
+.platform-windows .project-panel-scratch {
+  background: hsl(var(--muted));
+}
+
+/* ───────────────────────── 右侧 Git 面板:同款白卡(小框) ─────────────────────────
+   核心功能(编辑 + Git)用白卡突出;文件树(左)保持灰色一体化(临时操作、低侵入)。
+   和中间编辑区一样:白底 + 圆角 + 边框;因为 Git 外面套了一层 wrapper,这里用 wrapper 的
+   padding 来内缩留出灰底(编辑区是直接 grid item,用的是 margin)。 */
+.platform-windows .workbench-right-panel {
+  padding: 8px 8px 8px 0; /* 左边贴着拖拽手柄,不额外内缩 */
+}
+
+.platform-windows .right-task-panel {
+  background: hsl(var(--editor-background));
+  border: var(--workspace-panel-border);
+  border-radius: 10px;
+}
+
+.platform-windows .right-task-panel-header {
+  height: 30px;
+}
+
+/* 编辑卡与 Git 卡之间的拖拽手柄更窄:7px(原 12px),与网格列宽一致,进一步缩小两卡间隙。 */
+.platform-windows .workbench-panel-resize-handle-right {
+  min-width: 7px;
+}
+
+/* ───────────────────────── 底部状态栏 ─────────────────────────
+   灰底,去掉顶部分隔线,并降低高度(原 22px → 更矮,底部更省空间)。
+   设置按钮同步缩小,避免比状态栏还高。 */
+.platform-windows .status-bar {
+  background: hsl(var(--muted));
+  border-top: 0;
+  height: 17px;
+}
+
+.platform-windows .status-bar button {
+  height: 16px;
+  width: 16px;
+}
+
+/* ───────────────────────── 设置页侧边栏 ─────────────────────────
+   灰底(原为半透明 vibrancy 设计)。主内容区(.settings-main)本就是 #fff 白,保持不变。 */
+.platform-windows .settings-sidebar {
+  background: hsl(var(--muted));
+}
+
+/* ───────────────────────── 设置页 ─────────────────────────
+   Windows 设置页顶部已有自绘标题栏(窗口控制 + 汉堡菜单),
+   去掉原本为 overlay 标题栏预留的顶部留白,并关掉冗余的拖拽占位。 */
+.platform-windows .settings-page {
+  --settings-drag-height: 0px;
+  --settings-sidebar-top-padding: 12px;
+  --settings-main-top-padding: 16px;
+  --settings-main-corner-radius: 8px; /* 比默认 18px 小 */
+}
+
+/* ───────────────────────── 编辑区:灰框里的白卡 ─────────────────────────
+   把白色编辑区做成一张"悬浮在灰色框里的卡片":四角圆角 + 四周内缩留出灰底 + 全边框。
+   左侧树 / 右面板 / 顶部栏 / 底部栏的灰自然连成外框,白卡浮在中央。
+   height:auto 让 grid 拉伸时为「单元格高度 - margin」,避免 height:100% + margin 溢出。 */
+.platform-windows .editor-surface-panel {
+  height: auto;
+  margin: 8px;
+  border: var(--workspace-panel-border);
+  border-radius: 10px;
+}
+
+/* 右面板打开时,编辑卡右边贴着拖拽手柄(不再额外留 8px),
+   与 Git 卡之间只剩 12px 手柄做间隙,缩小两卡的灰沟。
+   面板关闭时仍保留 8px 右边距,让编辑卡浮在窗口右边。 */
+.platform-windows .workbench-layout-right-open .editor-surface-panel {
+  margin-right: 0;
+}
+
+/* 白色内容区:
+   - 编辑区 .editor-surface-panel 用 --editor-background(98%≈白),保持不变。
+   - 设置主内容区 .settings-main 已是 #ffffff,保持不变。 */

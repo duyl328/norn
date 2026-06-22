@@ -39,6 +39,7 @@ export function WindowsTitleBar({
   onToggleRightPanel,
   rightPanelOpen,
   searchOpen,
+  variant = "workbench",
 }: {
   leftPanelOpen: boolean;
   onCloseSearch: () => void;
@@ -52,6 +53,9 @@ export function WindowsTitleBar({
   onToggleRightPanel: () => void;
   rightPanelOpen: boolean;
   searchOpen: boolean;
+  // "settings" 变体:仅保留汉堡菜单 + 窗口控制按钮(隐藏搜索 / 面板开关 / 项目选择器),
+  // 用于设置页顶部 —— Windows 无边框窗口,设置页也需要可关闭窗口与访问菜单。
+  variant?: "workbench" | "settings";
 }) {
   const appWindow = getCurrentWindow();
   const [projectName, setProjectName] = useState<string>(recentProjects[0].name);
@@ -200,8 +204,8 @@ export function WindowsTitleBar({
   };
 
   return (
-    <header className="windows-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
-      <div className="windows-titlebar-left" ref={menuRef}>
+    <header className="windows-titlebar" onDoubleClick={handleTitlebarDoubleClick} data-tauri-drag-region>
+      <div className="windows-titlebar-left" ref={menuRef} data-tauri-drag-region>
         {!menuExpanded ? (
           <>
             <button
@@ -213,13 +217,15 @@ export function WindowsTitleBar({
             >
               <Menu className="h-4 w-4" />
             </button>
-            <PanelToggleButton
-              className="titlebar-panel-button"
-              label={leftPanelOpen ? "Hide file tree" : "Show file tree"}
-              open={leftPanelOpen}
-              side="left"
-              onClick={onToggleLeftPanel}
-            />
+            {variant === "workbench" ? (
+              <PanelToggleButton
+                className="titlebar-panel-button"
+                label={leftPanelOpen ? "Hide file tree" : "Show file tree"}
+                open={leftPanelOpen}
+                side="left"
+                onClick={onToggleLeftPanel}
+              />
+            ) : null}
           </>
         ) : (
           <nav className="windows-titlebar-inline-menu" aria-label="Application menu">
@@ -273,7 +279,7 @@ export function WindowsTitleBar({
             ) : null}
           </nav>
         )}
-        {!menuExpanded ? (
+        {variant === "workbench" && !menuExpanded ? (
           <div className="windows-titlebar-project">
             <div className="windows-titlebar-project-picker" ref={projectMenuRef}>
               <button
@@ -327,20 +333,26 @@ export function WindowsTitleBar({
         ) : null}
       </div>
       <div className="windows-titlebar-drag-fill" data-tauri-drag-region />
-      <div className="windows-titlebar-search-entry">
-        <TopSearchButton className="windows-titlebar-search-button" onClick={onOpenSearch} />
-      </div>
-      <QuickSearch open={searchOpen} onClose={onCloseSearch} />
+      {variant === "workbench" ? (
+        <>
+          <div className="windows-titlebar-search-entry">
+            <TopSearchButton className="windows-titlebar-search-button" onClick={onOpenSearch} />
+          </div>
+          <QuickSearch open={searchOpen} onClose={onCloseSearch} />
+        </>
+      ) : null}
       <div className="windows-titlebar-drag-fill windows-titlebar-drag-fill-right" data-tauri-drag-region />
-      <div className="windows-titlebar-right-tools">
-        <PanelToggleButton
-          className="titlebar-panel-button"
-          label={rightPanelOpen ? "Hide Git panel" : "Show Git panel"}
-          open={rightPanelOpen}
-          side="right"
-          showBadge
-          onClick={onToggleRightPanel}
-        />
+      <div className="windows-titlebar-right-tools" data-tauri-drag-region>
+        {variant === "workbench" ? (
+          <PanelToggleButton
+            className="titlebar-panel-button"
+            label={rightPanelOpen ? "Hide Git panel" : "Show Git panel"}
+            open={rightPanelOpen}
+            side="right"
+            showBadge
+            onClick={onToggleRightPanel}
+          />
+        ) : null}
       </div>
       <div className="windows-titlebar-controls" onDoubleClick={(event) => event.stopPropagation()}>
         <button

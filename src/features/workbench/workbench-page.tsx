@@ -180,6 +180,16 @@ export function WorkbenchPage() {
     saveState,
   ]);
 
+  const settingsPageNode = (
+    <SettingsPage
+      gitWorkspace={gitWorkspace}
+      onBack={() => setSettingsOpen(false)}
+      onToggleResizeHandleHints={() => updateResizeHandleHintsVisible(!resizeHandleHintsVisible)}
+      resizeHandleHintsVisible={resizeHandleHintsVisible}
+      showMacTitlebar={showMacTitlebar}
+    />
+  );
+
   return (
     <TooltipProvider delayDuration={250}>
       <div
@@ -189,13 +199,38 @@ export function WorkbenchPage() {
         )}
       >
         {settingsOpen ? (
-          <SettingsPage
-            gitWorkspace={gitWorkspace}
-            onBack={() => setSettingsOpen(false)}
-            onToggleResizeHandleHints={() => updateResizeHandleHintsVisible(!resizeHandleHintsVisible)}
-            resizeHandleHintsVisible={resizeHandleHintsVisible}
-            showMacTitlebar={showMacTitlebar}
-          />
+          showWindowsTitlebar ? (
+            // Windows 无边框窗口:设置页也要有自绘标题栏(窗口控制 + 汉堡菜单),否则无法关闭窗口 / 访问菜单。
+            <div className="flex h-full min-w-0 flex-col">
+              <WindowsTitleBar
+                variant="settings"
+                leftPanelOpen={leftPanelOpen}
+                onCreateFile={() => {
+                  setSettingsOpen(false);
+                  createFile();
+                }}
+                onToggleLeftPanel={toggleFilesTool}
+                onOpenFile={() => {
+                  setSettingsOpen(false);
+                  openFilePicker();
+                }}
+                onOpenFolder={() => {
+                  setSettingsOpen(false);
+                  openFolderPicker();
+                }}
+                onSaveFile={() => void saveDocument()}
+                onSaveFileAs={() => void saveDocumentAs()}
+                onOpenSearch={openSearchTool}
+                onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
+                rightPanelOpen={rightPanelOpen}
+                searchOpen={searchOpen}
+                onCloseSearch={closeSearchTool}
+              />
+              <div className="min-h-0 flex-1">{settingsPageNode}</div>
+            </div>
+          ) : (
+            settingsPageNode
+          )
         ) : (
           <div className="workspace-view flex h-full min-w-0 flex-col">
             {showWindowsTitlebar ? (
@@ -238,7 +273,7 @@ export function WorkbenchPage() {
                   "--workbench-left-panel-width": leftPanelOpen ? `${leftPanelWidth}px` : "0px",
                   "--workbench-right-panel-width": rightPanelOpen ? `${rightPanelWidth}px` : "0px",
                   gridTemplateColumns: `${leftPanelOpen ? `${leftPanelWidth}px` : "0px"} 0px minmax(0,1fr) ${
-                    rightPanelOpen ? "12px" : "0px"
+                    rightPanelOpen ? (showWindowsTitlebar ? "7px" : "12px") : "0px"
                   } ${rightPanelOpen ? `${rightPanelWidth}px` : "0px"}`,
                 } as CSSProperties
               }
