@@ -16,7 +16,6 @@ import type {
   TreeDropTarget,
 } from "../types";
 import {
-  collapseTreeNodeDeep,
   collapseTreeNodesDeep,
   getFileOpenId,
   getNativeFileOperationError,
@@ -27,11 +26,24 @@ import {
   isDocumentDirty,
   isPathInsideOrEqual,
   isTauriRuntime,
-  mergeTreeNodesState,
   saveRecentFolders,
   toFileTreeNode,
-  updateTreeNode,
 } from "../workbench-utils";
+import {
+  applyFolderEntries,
+  applyFolderError,
+  applyFolderNodeChildren,
+  applyScratchEntries,
+  applyScratchError,
+  collapseScratchNode,
+  expandLoadedScratchNode,
+  markFolderLoading,
+  markFolderNodeExpanding,
+  markScratchLoading,
+  toggleFolderNode,
+  toggleFolderRoot,
+  toggleScratchRoot,
+} from "../workspace-tree-reducers";
 
 interface UseWorkspaceTreeParams {
   requestFileOpen: (pendingOpen: PendingFileOpen) => void;
@@ -114,65 +126,19 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     const preserveExpansion = options.preserveExpansion ?? false;
 
     if (!options.silent) {
-      setFolderView((currentView) => (currentView ? { ...currentView, loadingPath: path, error: null } : currentView));
+      setFolderView((currentView) => (currentView ? markFolderLoading(currentView, path) : currentView));
     }
 
     try {
       const children = await readFolderEntries(path);
       const nextChildren = collapseChildren ? collapseTreeNodesDeep(children) : children;
 
-      setFolderView((currentView) => {
-        if (!currentView) {
-          return currentView;
-        }
-
-        if (path === currentView.rootPath) {
-          return {
-            ...currentView,
-            nodes: preserveExpansion ? mergeTreeNodesState(nextChildren, currentView.nodes) : nextChildren,
-            loadingPath: null,
-            error: null,
-          };
-        }
-
-        return {
-          ...currentView,
-          loadingPath: null,
-          error: null,
-          nodes: updateTreeNode(currentView.nodes, path, (currentNode) => ({
-            ...currentNode,
-            children: preserveExpansion ? mergeTreeNodesState(nextChildren, currentNode.children ?? []) : nextChildren,
-            childrenLoaded: true,
-            expanded: preserveExpansion ? currentNode.expanded : true,
-            error: undefined,
-          })),
-        };
-      });
+      setFolderView((currentView) =>
+        currentView ? applyFolderEntries(currentView, path, nextChildren, preserveExpansion) : currentView,
+      );
     } catch (error) {
-      setFolderView((currentView) => {
-        if (!currentView) {
-          return currentView;
-        }
-
-        if (path === currentView.rootPath) {
-          return {
-            ...currentView,
-            loadingPath: null,
-            error: error instanceof Error ? error.message : String(error),
-          };
-        }
-
-        return {
-          ...currentView,
-          loadingPath: null,
-          nodes: updateTreeNode(currentView.nodes, path, (currentNode) => ({
-            ...currentNode,
-            childrenLoaded: true,
-            expanded: true,
-            error: error instanceof Error ? error.message : String(error),
-          })),
-        };
-      });
+      const message = error instanceof Error ? error.message : String(error);
+      setFolderView((currentView) => (currentView ? applyFolderError(currentView, path, message) : currentView));
     }
   };
 
@@ -195,50 +161,15 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     const expand = options.expand ?? true;
     const collapseChildren = options.collapseChildren ?? true;
 
-    setScratchFolderView((currentView) => ({
-      ...currentView,
-      expanded: path === folder.path ? expand : currentView.expanded,
-      loading: true,
-      loadingPath: path,
-      error: null,
-    }));
+    setScratchFolderView((currentView) => markScratchLoading(currentView, folder, path, expand));
 
     try {
       const children = await readFolderEntries(path);
       const nextChildren = collapseChildren ? collapseTreeNodesDeep(children) : children;
-      setScratchFolderView((currentView) => ({
-        ...currentView,
-        nodes:
-          path === folder.path
-            ? nextChildren
-            : updateTreeNode(currentView.nodes, path, (currentNode) => ({
-                ...currentNode,
-                children: nextChildren,
-                childrenLoaded: true,
-                expanded: true,
-                error: undefined,
-              })),
-        expanded: path === folder.path ? expand : currentView.expanded,
-        loading: false,
-        loadingPath: null,
-        error: null,
-      }));
+      setScratchFolderView((currentView) => applyScratchEntries(currentView, folder, path, nextChildren, expand));
     } catch (error) {
-      setScratchFolderView((currentView) => ({
-        ...currentView,
-        loading: false,
-        loadingPath: null,
-        nodes:
-          path === folder.path
-            ? currentView.nodes
-            : updateTreeNode(currentView.nodes, path, (currentNode) => ({
-                ...currentNode,
-                childrenLoaded: true,
-                expanded: true,
-                error: error instanceof Error ? error.message : String(error),
-              })),
-        error: error instanceof Error ? error.message : String(error),
-      }));
+      const message = error instanceof Error ? error.message : String(error);
+      setScratchFolderView((currentView) => applyScratchError(currentView, folder, path, message));
     }
   };
 
@@ -280,20 +211,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   };
 
   const toggleScratchRootDirectory = () => {
-    setScratchFolderView((currentView) => {
-      if (currentView.expanded) {
-        return {
-          ...currentView,
-          expanded: false,
-          nodes: collapseTreeNodesDeep(currentView.nodes),
-        };
-      }
-
-      return {
-        ...currentView,
-        expanded: true,
-      };
-    });
+    setScratchFolderView(toggleScratchRoot);
   };
 
   const toggleScratchDirectory = async (node: FileTreeNode) => {
@@ -302,22 +220,12 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     }
 
     if (node.expanded) {
-      setScratchFolderView((currentView) => ({
-        ...currentView,
-        nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => collapseTreeNodeDeep(currentNode)),
-      }));
+      setScratchFolderView((currentView) => collapseScratchNode(currentView, node.path));
       return;
     }
 
     if (node.childrenLoaded) {
-      setScratchFolderView((currentView) => ({
-        ...currentView,
-        nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
-          ...currentNode,
-          expanded: true,
-          children: collapseTreeNodesDeep(currentNode.children ?? []),
-        })),
-      }));
+      setScratchFolderView((currentView) => expandLoadedScratchNode(currentView, node.path));
       return;
     }
 
@@ -401,89 +309,26 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     }
 
     if (node.childrenLoaded) {
-      setFolderView((currentView) =>
-        currentView
-          ? {
-              ...currentView,
-              nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
-                ...(currentNode.expanded ? collapseTreeNodeDeep(currentNode) : currentNode),
-                expanded: !currentNode.expanded,
-              })),
-            }
-          : currentView,
-      );
+      setFolderView((currentView) => (currentView ? toggleFolderNode(currentView, node.path) : currentView));
       return;
     }
 
-    setFolderView((currentView) =>
-      currentView
-        ? {
-            ...currentView,
-            loadingPath: node.path,
-            nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
-              ...currentNode,
-              expanded: true,
-              error: undefined,
-            })),
-          }
-        : currentView,
-    );
+    setFolderView((currentView) => (currentView ? markFolderNodeExpanding(currentView, node.path) : currentView));
 
     try {
       const children = await readFolderEntries(node.path);
 
       setFolderView((currentView) =>
-        currentView
-          ? {
-              ...currentView,
-              loadingPath: null,
-              nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
-                ...currentNode,
-                children,
-                childrenLoaded: true,
-                expanded: true,
-                error: undefined,
-              })),
-            }
-          : currentView,
+        currentView ? applyFolderNodeChildren(currentView, node.path, children) : currentView,
       );
     } catch (error) {
-      setFolderView((currentView) =>
-        currentView
-          ? {
-              ...currentView,
-              loadingPath: null,
-              nodes: updateTreeNode(currentView.nodes, node.path, (currentNode) => ({
-                ...currentNode,
-                childrenLoaded: true,
-                expanded: true,
-                error: error instanceof Error ? error.message : String(error),
-              })),
-            }
-          : currentView,
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      setFolderView((currentView) => (currentView ? applyFolderError(currentView, node.path, message) : currentView));
     }
   };
 
   const toggleRootDirectory = () => {
-    setFolderView((currentView) => {
-      if (!currentView) {
-        return currentView;
-      }
-
-      if (currentView.rootExpanded) {
-        return {
-          ...currentView,
-          rootExpanded: false,
-          nodes: collapseTreeNodesDeep(currentView.nodes),
-        };
-      }
-
-      return {
-        ...currentView,
-        rootExpanded: true,
-      };
-    });
+    setFolderView((currentView) => (currentView ? toggleFolderRoot(currentView) : currentView));
   };
 
   const openTreeFile = async (node: FileTreeNode) => {
