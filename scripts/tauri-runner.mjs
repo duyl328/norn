@@ -1,9 +1,16 @@
 import { spawn } from "node:child_process";
+import { join } from "node:path";
 
 const args = process.argv.slice(2);
 
+const tauriCli = join("node_modules", "@tauri-apps", "cli", "tauri.js");
+
 const run = (cmd, cmdArgs) => {
   const child = spawn(cmd, cmdArgs, { stdio: "inherit", env: process.env });
+  child.on("error", (error) => {
+    console.error(`Failed to start ${cmd}: ${error.message}`);
+    process.exit(1);
+  });
   child.on("exit", (code, signal) => {
     if (signal) {
       process.kill(process.pid, signal);
@@ -18,5 +25,5 @@ const run = (cmd, cmdArgs) => {
 if (args[0] === "dev" && !args.includes("--config")) {
   run("node", ["scripts/tauri-dev-instance.mjs"]);
 } else {
-  run("tauri", args);
+  run("node", [tauriCli, ...args]);
 }

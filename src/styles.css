@@ -1046,10 +1046,6 @@
       0 5px 12px hsl(var(--foreground) / 0.07);
   }
 
-  .editor-file-tab-input {
-    @apply h-5 min-w-[72px] max-w-[170px] bg-transparent p-0 text-ui font-medium text-foreground outline-none;
-  }
-
   .editor-file-tab-close {
     @apply grid h-5 w-5 shrink-0 place-items-center rounded-[0.25rem] text-muted-foreground;
     animation: editor-tab-control-in 260ms cubic-bezier(0.2, 0.84, 0.22, 1) both;

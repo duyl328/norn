@@ -1,8 +1,9 @@
 import { createServer } from "node:net";
-import { basename, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 
 const cwd = process.cwd();
+const tauriCli = join("node_modules", "@tauri-apps", "cli", "tauri.js");
 
 const hashText = (value) => {
   let hash = 2166136261;
@@ -81,10 +82,15 @@ console.log(`Worktree: ${cwd}`);
 console.log(`Dev URL:  http://127.0.0.1:${port}`);
 console.log(`Bundle:   ${identifier}`);
 
-const child = spawn("pnpm", ["tauri", "dev", "--config", JSON.stringify(config)], {
+const child = spawn("node", [tauriCli, "dev", "--config", JSON.stringify(config)], {
   cwd,
   env: childEnv,
   stdio: "inherit",
+});
+
+child.on("error", (error) => {
+  console.error(`Failed to start Tauri CLI: ${error.message}`);
+  process.exit(1);
 });
 
 child.on("exit", (code, signal) => {
