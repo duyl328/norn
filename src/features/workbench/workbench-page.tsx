@@ -273,7 +273,7 @@ export function WorkbenchPage() {
                   "--workbench-left-panel-width": leftPanelOpen ? `${leftPanelWidth}px` : "0px",
                   "--workbench-right-panel-width": rightPanelOpen ? `${rightPanelWidth}px` : "0px",
                   gridTemplateColumns: `${leftPanelOpen ? `${leftPanelWidth}px` : "0px"} 0px minmax(0,1fr) ${
-                    rightPanelOpen ? (showWindowsTitlebar ? "7px" : "12px") : "0px"
+                    rightPanelOpen ? (showWindowsTitlebar ? "7px" : "0px") : "0px"
                   } ${rightPanelOpen ? `${rightPanelWidth}px` : "0px"}`,
                 } as CSSProperties
               }
