@@ -17,10 +17,12 @@ import type {
 } from "../types";
 import {
   collapseTreeNodesDeep,
+  findTreeNode,
   getFileOpenId,
   getNativeFileOperationError,
   getParentPath,
   getPathName,
+  getTreeAncestorDirectoryPaths,
   getTreeDropTargetFromPoint,
   initialDocument,
   isDocumentDirty,
@@ -38,6 +40,7 @@ import {
   collapseAllFolderNodes,
   collapseScratchNode,
   expandAllFolderNodes,
+  expandFolderNode,
   expandLoadedScratchNode,
   markFolderLoading,
   markFolderNodeExpanding,
@@ -77,6 +80,8 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   const setFileTreeTrashTarget = useWorkbenchStore((state) => state.setFileTreeTrashTarget);
   const setDraggedTreeNode = useWorkbenchStore((state) => state.setDraggedTreeNode);
   const setDropTarget = useWorkbenchStore((state) => state.setDropTarget);
+  const selectedTreePath = useWorkbenchStore((state) => state.selectedTreePath);
+  const setSelectedTreePath = useWorkbenchStore((state) => state.setSelectedTreePath);
 
   const dropTargetRef = useRef<TreeDropTarget | null>(null);
   const isDirty = isDocumentDirty(document);
@@ -339,6 +344,59 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
 
   const expandAllDirectories = () => {
     setFolderView((currentView) => (currentView ? expandAllFolderNodes(currentView) : currentView));
+  };
+
+  // 单击文件树某一行:仅更新「选中行」(高亮),不打开文件、不展开目录。
+  // 选中与编辑区打开的文件解耦——展开/折叠树时高亮始终停在上一次点击处。
+  const selectTreeNode = (node: FileTreeNode) => {
+    setSelectedTreePath(node.path);
+  };
+
+  // 「在文件树中定位当前文件」(类似 IDEA 的 Select Opened File):
+  // 把选中行切到编辑区当前文件,并沿其祖先目录链自浅到深逐级「按需加载 + 展开」直到该文件可见。
+  // 滚动定位由 FileTreePanel 自身完成(对照高亮的 selectedPath 行)。
+  const revealActiveFile = async () => {
+    const view = useWorkbenchStore.getState().folderView;
+    const targetPath = useWorkbenchStore.getState().document.path;
+
+    if (!view || !targetPath || !isPathInsideOrEqual(targetPath, view.rootPath)) {
+      return;
+    }
+
+    // 这是唯一一处「自动选中编辑区打开的文件」的入口。
+    setSelectedTreePath(targetPath);
+
+    // 根必须保持展开,否则整棵树不渲染、无从定位。
+    if (!view.rootExpanded) {
+      setFolderView((currentView) => (currentView ? { ...currentView, rootExpanded: true } : currentView));
+    }
+
+    for (const directoryPath of getTreeAncestorDirectoryPaths(targetPath, view.rootPath)) {
+      const node = findTreeNode(useWorkbenchStore.getState().folderView?.nodes ?? [], directoryPath);
+
+      if (!node || node.kind !== "directory") {
+        // 上层目录尚未加载导致该节点缺失,或路径并非目录:无法继续深入。
+        break;
+      }
+
+      if (node.childrenLoaded) {
+        setFolderView((currentView) => (currentView ? expandFolderNode(currentView, directoryPath) : currentView));
+        continue;
+      }
+
+      try {
+        const children = await readFolderEntries(directoryPath);
+        setFolderView((currentView) =>
+          currentView ? applyFolderNodeChildren(currentView, directoryPath, children) : currentView,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setFolderView((currentView) =>
+          currentView ? applyFolderError(currentView, directoryPath, message) : currentView,
+        );
+        break;
+      }
+    }
   };
 
   const openTreeFile = async (node: FileTreeNode) => {
@@ -753,6 +811,9 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     toggleRootDirectory,
     collapseAllDirectories,
     expandAllDirectories,
+    revealActiveFile,
+    selectedTreePath,
+    selectTreeNode,
     toggleScratchDirectory,
     toggleScratchRootDirectory,
     refreshTreePath,

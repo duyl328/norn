@@ -12,7 +12,7 @@ test("大文件：5MB 到 25MB 打开前确认，取消后不打开", async ({ p
     expect(dialog.message()).toContain("6.0 MB");
     await dialog.dismiss();
   });
-  await page.locator("button.tree-row", { hasText: "large.txt" }).click();
+  await page.locator("button.tree-row", { hasText: "large.txt" }).dblclick();
 
   await expect(page.getByRole("tab", { name: /large\.txt/ })).toHaveCount(0);
 });
@@ -25,7 +25,7 @@ test("大文件：确认后普通大文件仍可编辑保存", async ({ page }) 
   page.once("dialog", async (dialog) => {
     await dialog.accept();
   });
-  await page.locator("button.tree-row", { hasText: "large.txt" }).click();
+  await page.locator("button.tree-row", { hasText: "large.txt" }).dblclick();
 
   await expect(page.getByRole("tab", { name: /large\.txt/ })).toBeVisible();
   await expect(page.locator(".cm-content")).toContainText("large editable file");
@@ -43,7 +43,7 @@ test("大文件：超过 25MB 进入只读 range 模式并禁止保存", async (
   await page.goto("/");
   await openMockFolder(page);
 
-  await page.locator("button.tree-row", { hasText: "huge.log" }).click();
+  await page.locator("button.tree-row", { hasText: "huge.log" }).dblclick();
 
   await expect(page.getByRole("tab", { name: /huge\.log/ })).toBeVisible();
   await expect(page.locator(".cm-content")).toContainText("huge range content");
@@ -68,7 +68,7 @@ test("大文件：超过 100MB 默认读取尾部 range", async ({ page }) => {
   await page.goto("/");
   await openMockFolder(page);
 
-  await page.locator("button.tree-row", { hasText: "massive.log" }).click();
+  await page.locator("button.tree-row", { hasText: "massive.log" }).dblclick();
   await expect(page.getByRole("tab", { name: /massive\.log/ })).toBeVisible();
 
   const calls = await getTauriInvokeCalls(page);

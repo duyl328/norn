@@ -32,6 +32,7 @@ import { FileTreePanel } from "./file-tree";
 
 export function ProjectPanel({
   activePath,
+  selectedPath,
   clipboard,
   contextMenu,
   draggedNode,
@@ -49,6 +50,7 @@ export function ProjectPanel({
   onOpenRecentFolder,
   onOpenSettings,
   onOpenTreeFile,
+  onSelectTreeNode,
   onPasteNode,
   onRefreshFolder,
   onRequestCreateDirectory,
@@ -64,8 +66,10 @@ export function ProjectPanel({
   onToggleRootDirectory,
   onExpandAll,
   onCollapseAll,
+  onRevealActiveFile,
 }: {
   activePath: string;
+  selectedPath: string | null;
   clipboard: FileTreeClipboard | null;
   contextMenu: FileTreeContextMenuState | null;
   draggedNode: FileTreeNode | null;
@@ -83,6 +87,7 @@ export function ProjectPanel({
   onOpenRecentFolder: (path: string) => void;
   onOpenSettings: () => void;
   onOpenTreeFile: (node: FileTreeNode) => void;
+  onSelectTreeNode: (node: FileTreeNode) => void;
   onPasteNode: (targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onRefreshFolder: (path: string, scope?: "main" | "scratch") => void;
   onRequestCreateDirectory: (parentPath: string, scope?: "main" | "scratch") => void;
@@ -98,6 +103,7 @@ export function ProjectPanel({
   onToggleRootDirectory: () => void;
   onExpandAll: () => void;
   onCollapseAll: () => void;
+  onRevealActiveFile: () => void;
 }) {
   const scratchPanelMinRatio = 0.1;
   const scratchPanelMaxRatio = 0.6;
@@ -157,6 +163,7 @@ export function ProjectPanel({
           />
           <FileTreePanel
             activePath={activePath}
+            selectedPath={selectedPath}
             clipboard={clipboard}
             contextMenu={contextMenu}
             draggedNode={draggedNode}
@@ -182,6 +189,7 @@ export function ProjectPanel({
             onDropNode={onDropNode}
             onDropTargetChange={onDropTargetChange}
             onOpenFile={onOpenTreeFile}
+            onSelectNode={onSelectTreeNode}
             onPasteNode={onPasteNode}
             onRefreshFolder={onRefreshFolder}
             onRequestCreateDirectory={onRequestCreateDirectory}
@@ -192,6 +200,7 @@ export function ProjectPanel({
             onToggleRootDirectory={onToggleRootDirectory}
             onExpandAll={onExpandAll}
             onCollapseAll={onCollapseAll}
+            onRevealActiveFile={onRevealActiveFile}
           />
         </div>
         <div
@@ -209,6 +218,7 @@ export function ProjectPanel({
         </div>
         <ProjectPanelScratchFolder
           activePath={activePath}
+          selectedPath={selectedPath}
           clipboard={clipboard}
           contextMenu={contextMenu}
           draggedNode={draggedNode}
@@ -224,6 +234,7 @@ export function ProjectPanel({
           onDropNode={onDropNode}
           onDropTargetChange={onDropTargetChange}
           onOpenFile={onOpenTreeFile}
+          onSelectNode={onSelectTreeNode}
           onPasteNode={onPasteNode}
           onRefreshFolder={onRefreshFolder}
           onRequestCreateDirectory={onRequestCreateDirectory}
@@ -355,6 +366,7 @@ export function ProjectPanelStart({
 
 export function ProjectPanelScratchFolder({
   activePath,
+  selectedPath,
   clipboard,
   contextMenu,
   draggedNode,
@@ -370,6 +382,7 @@ export function ProjectPanelScratchFolder({
   onDropNode,
   onDropTargetChange,
   onOpenFile,
+  onSelectNode,
   onPasteNode,
   onRefreshFolder,
   onRequestCreateDirectory,
@@ -380,6 +393,7 @@ export function ProjectPanelScratchFolder({
   onToggleRootDirectory,
 }: {
   activePath: string;
+  selectedPath: string | null;
   clipboard: FileTreeClipboard | null;
   contextMenu: FileTreeContextMenuState | null;
   draggedNode: FileTreeNode | null;
@@ -395,6 +409,7 @@ export function ProjectPanelScratchFolder({
   onDropNode: (source: FileTreeNode, targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onDropTargetChange: (target: TreeDropTarget | null) => void;
   onOpenFile: (node: FileTreeNode) => void;
+  onSelectNode: (node: FileTreeNode) => void;
   onPasteNode: (targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onRefreshFolder: (path: string, scope?: "main" | "scratch") => void;
   onRequestCreateDirectory: (parentPath: string, scope?: "main" | "scratch") => void;
@@ -420,6 +435,7 @@ export function ProjectPanelScratchFolder({
       <div className="project-panel-scratch-heading">临时文件夹</div>
       <FileTreePanel
         activePath={activePath}
+        selectedPath={selectedPath}
         clipboard={clipboard}
         contextMenu={contextMenu}
         draggedNode={draggedNode}
@@ -434,6 +450,7 @@ export function ProjectPanelScratchFolder({
         onDropNode={onDropNode}
         onDropTargetChange={onDropTargetChange}
         onOpenFile={onOpenFile}
+        onSelectNode={onSelectNode}
         onPasteNode={onPasteNode}
         onRefreshFolder={onRefreshFolder}
         onRequestCreateDirectory={onRequestCreateDirectory}

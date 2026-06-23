@@ -99,6 +99,9 @@ export function WorkbenchPage() {
     toggleRootDirectory,
     collapseAllDirectories,
     expandAllDirectories,
+    revealActiveFile,
+    selectedTreePath,
+    selectTreeNode,
     toggleScratchDirectory,
     toggleScratchRootDirectory,
     refreshTreePath,
@@ -291,6 +294,7 @@ export function WorkbenchPage() {
               >
                 <ProjectPanel
                   activePath={document.path}
+                  selectedPath={selectedTreePath}
                   clipboard={fileTreeClipboard}
                   contextMenu={fileTreeContextMenu}
                   draggedNode={draggedTreeNode}
@@ -315,6 +319,7 @@ export function WorkbenchPage() {
                   onOpenSettings={openSettingsTool}
                   onOpenRecentFolder={(path) => void openFolderView(path, "open-folder")}
                   onOpenTreeFile={openTreeFile}
+                  onSelectTreeNode={selectTreeNode}
                   onPasteNode={pasteTreeNode}
                   onRefreshFolder={(path, scope = "main") => void refreshTreePath(scope, path)}
                   onRequestCreateDirectory={(parentPath, scope = "main") =>
@@ -336,6 +341,7 @@ export function WorkbenchPage() {
                   onToggleRootDirectory={toggleRootDirectory}
                   onExpandAll={expandAllDirectories}
                   onCollapseAll={collapseAllDirectories}
+                  onRevealActiveFile={() => void revealActiveFile()}
                 />
               </div>
               <PanelResizeHandle

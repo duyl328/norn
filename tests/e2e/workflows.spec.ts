@@ -22,10 +22,10 @@ test("流程：打开文件树文件后编辑器显示内容并出现 Tab", asyn
 
   await emitMenu(page, "menu-open-folder");
 
-  // 点击文件树里的 README.md 行（tree-row 按钮）
+  // 双击文件树里的 README.md 行（tree-row 按钮）打开文件（单击仅选中、双击才打开）
   const readmeRow = page.locator("button.tree-row", { hasText: "README.md" });
   await expect(readmeRow).toBeVisible();
-  await readmeRow.click();
+  await readmeRow.dblclick();
 
   // 编辑器渲染 mock 文件内容
   await expect(page.locator(".cm-content")).toContainText("Mock Project");
@@ -45,7 +45,7 @@ test("流程：编辑产生脏标记后保存回到已保存", async ({ page }) 
   await page.goto("/");
 
   await emitMenu(page, "menu-open-folder");
-  await page.locator("button.tree-row", { hasText: "README.md" }).click();
+  await page.locator("button.tree-row", { hasText: "README.md" }).dblclick();
   await expect(page.locator(".cm-content")).toContainText("Mock Project");
 
   // 打开后应为已保存
@@ -77,14 +77,14 @@ test("流程：打开多个文件后切换 Tab 编辑器内容随之变化", asy
   await emitMenu(page, "menu-open-folder");
 
   // 打开 README.md
-  await page.locator("button.tree-row", { hasText: "README.md" }).click();
+  await page.locator("button.tree-row", { hasText: "README.md" }).dblclick();
   await expect(page.locator(".cm-content")).toContainText("Mock Project");
 
   // 展开 src 目录后打开 main.tsx
-  await page.locator("button.tree-row", { hasText: "src" }).click();
+  await page.locator("button.tree-row", { hasText: "src" }).dblclick();
   const mainRow = page.locator("button.tree-row", { hasText: "main.tsx" });
   await expect(mainRow).toBeVisible();
-  await mainRow.click();
+  await mainRow.dblclick();
   await expect(page.locator(".cm-content")).toContainText("hello from mock");
 
   // 两个 Tab 均存在
@@ -111,10 +111,10 @@ test("流程：关闭有未保存改动的文档弹出确认对话框", async ({
   await emitMenu(page, "menu-open-folder");
 
   // 打开两个文件，使 Tab 可关闭（closable 需 openDocuments.length > 1）
-  await page.locator("button.tree-row", { hasText: "README.md" }).click();
+  await page.locator("button.tree-row", { hasText: "README.md" }).dblclick();
   await expect(page.locator(".cm-content")).toContainText("Mock Project");
-  await page.locator("button.tree-row", { hasText: "src" }).click();
-  await page.locator("button.tree-row", { hasText: "main.tsx" }).click();
+  await page.locator("button.tree-row", { hasText: "src" }).dblclick();
+  await page.locator("button.tree-row", { hasText: "main.tsx" }).dblclick();
   await expect(page.locator(".cm-content")).toContainText("hello from mock");
 
   // 在当前活动文档（main.tsx）产生改动

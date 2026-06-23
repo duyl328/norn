@@ -10,12 +10,22 @@ import {
   FolderOpen,
   FolderPlus,
   Link2,
+  LocateFixed,
   Pencil,
   RefreshCw,
   Scissors,
   Trash2,
 } from "lucide-react";
-import { type CSSProperties, type DragEvent, type FormEvent, type MouseEvent, useMemo, useRef } from "react";
+import {
+  type CSSProperties,
+  type DragEvent,
+  type FormEvent,
+  type MouseEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -42,6 +52,7 @@ import { flattenVisibleTreeRows, formatFileSize, getFileTreeIcon, isPathInsideOr
 
 export function FileTreePanel({
   activePath,
+  selectedPath,
   clipboard,
   contextMenu,
   draggedNode,
@@ -56,6 +67,7 @@ export function FileTreePanel({
   onDropNode,
   onDropTargetChange,
   onOpenFile,
+  onSelectNode,
   onPasteNode,
   onRefreshFolder,
   onRequestCreateDirectory,
@@ -66,8 +78,10 @@ export function FileTreePanel({
   onToggleRootDirectory,
   onExpandAll,
   onCollapseAll,
+  onRevealActiveFile,
 }: {
   activePath: string;
+  selectedPath: string | null;
   clipboard: FileTreeClipboard | null;
   contextMenu: FileTreeContextMenuState | null;
   draggedNode: FileTreeNode | null;
@@ -82,6 +96,7 @@ export function FileTreePanel({
   onDropNode: (source: FileTreeNode, targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onDropTargetChange: (target: TreeDropTarget | null) => void;
   onOpenFile: (node: FileTreeNode) => void;
+  onSelectNode: (node: FileTreeNode) => void;
   onPasteNode: (targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onRefreshFolder: (path: string, scope?: "main" | "scratch") => void;
   onRequestCreateDirectory: (parentPath: string, scope?: "main" | "scratch") => void;
@@ -92,6 +107,7 @@ export function FileTreePanel({
   onToggleRootDirectory: () => void;
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
+  onRevealActiveFile?: () => void;
 }) {
   const scrollParentRef = useRef<HTMLDivElement>(null);
   const rows = useMemo(
@@ -104,6 +120,35 @@ export function FileTreePanel({
     getScrollElement: () => scrollParentRef.current,
     overscan: 12,
   });
+
+  // 「定位当前文件」:点击后置位 pending,待祖先目录异步加载/展开使目标行出现在 rows 中,
+  // 再把它滚动到可见区中部。pending 用 ref 记录,滚动一次后清除,避免之后任何树变化都把视图拉回。
+  const pendingRevealRef = useRef(false);
+  const [revealNonce, setRevealNonce] = useState(0);
+  const canRevealActiveFile = Boolean(activePath && treeView && isPathInsideOrEqual(activePath, treeView.rootPath));
+
+  const handleRevealActiveFile = () => {
+    onRevealActiveFile?.();
+    pendingRevealRef.current = true;
+    setRevealNonce((nonce) => nonce + 1);
+  };
+
+  useEffect(() => {
+    if (!pendingRevealRef.current) {
+      return;
+    }
+
+    // 定位按钮已把选中行切到编辑区当前文件;滚动到该选中行。
+    const targetIndex = rows.findIndex((row) => row.node.path === selectedPath);
+
+    if (targetIndex < 0) {
+      // 祖先目录仍在加载,目标行尚未出现;rows 更新后本 effect 会重跑。
+      return;
+    }
+
+    pendingRevealRef.current = false;
+    treeVirtualizer.scrollToIndex(targetIndex, { align: "center" });
+  }, [revealNonce, rows, selectedPath, treeVirtualizer]);
 
   if (!treeView) {
     return <div className="min-h-0 flex-1" />;
@@ -129,6 +174,8 @@ export function FileTreePanel({
         onToggle={onToggleRootDirectory}
         onExpandAll={onExpandAll}
         onCollapseAll={onCollapseAll}
+        onRevealActiveFile={onRevealActiveFile ? handleRevealActiveFile : undefined}
+        canRevealActiveFile={canRevealActiveFile}
       />
       <div
         className="file-tree-scroll min-h-0 flex-1"
@@ -158,7 +205,7 @@ export function FileTreePanel({
                   style={{ top: `${virtualRow.start}px` }}
                 >
                   <FileTreeRow
-                    activePath={activePath}
+                    selectedPath={selectedPath}
                     ancestorCanonicalPaths={row.ancestorCanonicalPaths}
                     depth={row.depth}
                     draggedNode={draggedNode}
@@ -172,6 +219,7 @@ export function FileTreePanel({
                     onDropNode={onDropNode}
                     onDropTargetChange={onDropTargetChange}
                     onOpenFile={onOpenFile}
+                    onSelectNode={onSelectNode}
                     onToggleDirectory={onToggleDirectory}
                   />
                 </div>
@@ -220,6 +268,8 @@ export function FileTreeRootRow({
   onToggle,
   onExpandAll,
   onCollapseAll,
+  onRevealActiveFile,
+  canRevealActiveFile,
 }: {
   dropTarget: TreeDropTarget | null;
   scope: "main" | "scratch";
@@ -229,9 +279,11 @@ export function FileTreeRootRow({
   onToggle: () => void;
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
+  onRevealActiveFile?: () => void;
+  canRevealActiveFile?: boolean;
 }) {
   const isDropTarget = dropTarget?.scope === scope && dropTarget.path === treeView.rootPath;
-  const hasActions = Boolean(onExpandAll || onCollapseAll);
+  const hasActions = Boolean(onExpandAll || onCollapseAll || onRevealActiveFile);
 
   return (
     <div className="file-tree-root">
@@ -262,6 +314,18 @@ export function FileTreeRootRow({
       </button>
       {hasActions ? (
         <div className="file-tree-root-actions">
+          {onRevealActiveFile ? (
+            <button
+              className="file-tree-root-action"
+              type="button"
+              title="定位当前文件"
+              aria-label="Reveal active file in tree"
+              disabled={!canRevealActiveFile}
+              onClick={onRevealActiveFile}
+            >
+              <LocateFixed className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
           {onExpandAll ? (
             <button
               className="file-tree-root-action"
@@ -291,7 +355,7 @@ export function FileTreeRootRow({
 }
 
 export function FileTreeRow({
-  activePath,
+  selectedPath,
   ancestorCanonicalPaths,
   depth = 0,
   draggedNode,
@@ -305,9 +369,10 @@ export function FileTreeRow({
   onDropNode,
   onDropTargetChange,
   onOpenFile,
+  onSelectNode,
   onToggleDirectory,
 }: {
-  activePath: string;
+  selectedPath: string | null;
   ancestorCanonicalPaths: string[];
   depth?: number;
   draggedNode: FileTreeNode | null;
@@ -321,21 +386,39 @@ export function FileTreeRow({
   onDropNode: (source: FileTreeNode, targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onDropTargetChange: (target: TreeDropTarget | null) => void;
   onOpenFile: (node: FileTreeNode) => void;
+  onSelectNode: (node: FileTreeNode) => void;
   onToggleDirectory: (node: FileTreeNode) => void;
 }) {
   const isDirectory = node.kind === "directory";
-  const isActive = node.path === activePath;
+  const isSelected = node.path === selectedPath;
   const isLoading = loadingPath === node.path;
   const isDropTarget = isDirectory && dropTarget?.scope === scope && dropTarget.path === node.path;
   const canonicalPath = node.canonicalPath ?? node.path;
   const wouldCycle = isDirectory && node.isSymlink && ancestorCanonicalPaths.includes(canonicalPath);
   const { className: iconClassName, Icon } = getFileTreeIcon(node);
 
-  const handleOpen = () => {
+  // 单击:仅选中(高亮),不打开文件、不展开目录。
+  const handleSelect = () => {
+    onSelectNode(node);
+  };
+
+  // 双击 / 回车「确认」:文件 → 打开到编辑区;目录 → 展开/折叠。
+  const handleConfirm = () => {
     if (!isDirectory) {
       onOpenFile(node);
       return;
     }
+
+    if (wouldCycle) {
+      return;
+    }
+
+    onToggleDirectory(node);
+  };
+
+  // 仅点箭头时展开/折叠目录:阻止冒泡,避免连带触发整行的「选中」。
+  const handleToggleChevron = (event: MouseEvent) => {
+    event.stopPropagation();
 
     if (wouldCycle) {
       return;
@@ -378,10 +461,10 @@ export function FileTreeRow({
     <div className="file-tree-node" role="none">
       <button
         aria-expanded={isDirectory ? Boolean(node.expanded) : undefined}
-        aria-selected={isActive}
+        aria-selected={isSelected}
         className={cn(
           "tree-row w-full text-left",
-          isActive && "tree-row-active",
+          isSelected && "tree-row-active",
           (node.error || wouldCycle) && "tree-row-muted",
           node.isHidden && "tree-row-hidden",
           node.isReadonly && "tree-row-readonly",
@@ -394,7 +477,14 @@ export function FileTreeRow({
         style={{ "--tree-depth": depth } as CSSProperties}
         type="button"
         title={wouldCycle ? `${node.path}\nSymlink loop blocked.` : node.path}
-        onClick={handleOpen}
+        onClick={handleSelect}
+        onDoubleClick={handleConfirm}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            handleConfirm();
+          }
+        }}
         onContextMenu={(event) => {
           // 阻止冒泡到 .file-tree-scroll 的 onContextMenu（那里会把目标 node 重置为 null，
           // 导致右键文件时 Rename / Copy / Cut / Trash 菜单项被禁用）。
@@ -407,7 +497,8 @@ export function FileTreeRow({
         onDragStart={handleDragStart}
         onDrop={handleDrop}
       >
-        <span className="tree-row-toggle">
+        {/* 箭头仅作鼠标便捷展开/折叠;键盘用户用整行的 Enter(handleConfirm)切换,故不另设交互语义。 */}
+        <span className="tree-row-toggle" onClick={isDirectory ? handleToggleChevron : undefined}>
           {isDirectory ? (
             node.expanded ? (
               <ChevronDown className="h-3 w-3" />

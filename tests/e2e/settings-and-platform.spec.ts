@@ -27,7 +27,7 @@ test("状态栏：打开文件后显示路径、行数、大小和保存状态",
   await page.goto("/");
   await openMockFolder(page);
 
-  await page.locator("button.tree-row", { hasText: "README.md" }).click();
+  await page.locator("button.tree-row", { hasText: "README.md" }).dblclick();
 
   await expect(page.locator(".status-bar")).toContainText("/mock/project/README.md");
   await expect(page.locator(".status-bar")).toContainText("4 lines");

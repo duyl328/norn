@@ -87,6 +87,8 @@ interface WorkbenchState {
   fileTreeTrashTarget: FileTreeTrashTarget | null;
   draggedTreeNode: FileTreeNode | null;
   dropTarget: TreeDropTarget | null;
+  // 文件树「选中行」:与编辑区打开的文件(document.path)解耦,仅随用户在树中的单击/定位变化。
+  selectedTreePath: string | null;
   setFileTreeClipboard: (setter: StateSetter<FileTreeClipboard | null>) => void;
   setFileTreeContextMenu: (setter: StateSetter<FileTreeContextMenuState | null>) => void;
   setFileTreeNameDialog: (setter: StateSetter<FileTreeNameDialog | null>) => void;
@@ -94,6 +96,7 @@ interface WorkbenchState {
   setFileTreeTrashTarget: (setter: StateSetter<FileTreeTrashTarget | null>) => void;
   setDraggedTreeNode: (setter: StateSetter<FileTreeNode | null>) => void;
   setDropTarget: (setter: StateSetter<TreeDropTarget | null>) => void;
+  setSelectedTreePath: (setter: StateSetter<string | null>) => void;
 }
 
 export const useWorkbenchStore = create<WorkbenchState>((set) => ({
@@ -169,6 +172,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   fileTreeTrashTarget: null,
   draggedTreeNode: null,
   dropTarget: null,
+  selectedTreePath: null,
   setFileTreeClipboard: (setter) =>
     set((state) => ({ fileTreeClipboard: resolveSetter(setter, state.fileTreeClipboard) })),
   setFileTreeContextMenu: (setter) =>
@@ -181,4 +185,5 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({ fileTreeTrashTarget: resolveSetter(setter, state.fileTreeTrashTarget) })),
   setDraggedTreeNode: (setter) => set((state) => ({ draggedTreeNode: resolveSetter(setter, state.draggedTreeNode) })),
   setDropTarget: (setter) => set((state) => ({ dropTarget: resolveSetter(setter, state.dropTarget) })),
+  setSelectedTreePath: (setter) => set((state) => ({ selectedTreePath: resolveSetter(setter, state.selectedTreePath) })),
 }));

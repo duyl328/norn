@@ -7,10 +7,12 @@ import type {
   WorkbenchDocument,
 } from "@/features/workbench/types";
 import {
+  arePathsEqual,
   clamp,
   collapseTreeNodeDeep,
   collapseTreeNodesDeep,
   createUntitledDocument,
+  findTreeNode,
   flattenVisibleTreeRows,
   formatFileSize,
   getCompactPath,
@@ -28,6 +30,7 @@ import {
   getTabAccent,
   getTabBorderAccent,
   getTailPath,
+  getTreeAncestorDirectoryPaths,
   isAbsolutePath,
   isDocumentDirty,
   isPathInsideOrEqual,
@@ -95,6 +98,24 @@ describe("路径工具", () => {
     expect(isPathInsideOrEqual("/a/b", "/a")).toBe(true);
     expect(isPathInsideOrEqual("/a", "/a")).toBe(true);
     expect(isPathInsideOrEqual("/ab", "/a")).toBe(false);
+  });
+
+  it("arePathsEqual 归一化分隔符与尾斜杠", () => {
+    expect(arePathsEqual("/a/b", "/a/b/")).toBe(true);
+    expect(arePathsEqual("C:\\a\\b", "C:/a/b")).toBe(true);
+    expect(arePathsEqual("/a/b", "/a/c")).toBe(false);
+  });
+
+  it("getTreeAncestorDirectoryPaths 返回根(不含)到文件父目录(含)的自浅到深链", () => {
+    expect(getTreeAncestorDirectoryPaths("/root/a/b/file.ts", "/root")).toEqual(["/root/a", "/root/a/b"]);
+  });
+
+  it("getTreeAncestorDirectoryPaths 文件直接位于根下时返回空数组", () => {
+    expect(getTreeAncestorDirectoryPaths("/root/file.ts", "/root")).toEqual([]);
+  });
+
+  it("getTreeAncestorDirectoryPaths 文件不在根内时返回空数组", () => {
+    expect(getTreeAncestorDirectoryPaths("/other/a/file.ts", "/root")).toEqual([]);
   });
 });
 
@@ -187,6 +208,13 @@ describe("文件树工具", () => {
     const merged = mergeTreeNodesState(fresh, previous);
     expect(merged[0].expanded).toBe(true);
     expect(merged[0].childrenLoaded).toBe(true);
+  });
+
+  it("findTreeNode 深度查找匹配节点,未命中返回 undefined", () => {
+    const tree = [dir("src", "/p/src", [dir("sub", "/p/src/sub", [file("a.ts", "/p/src/sub/a.ts")], true)], true)];
+    expect(findTreeNode(tree, "/p/src/sub/a.ts")?.name).toBe("a.ts");
+    expect(findTreeNode(tree, "/p/src/sub")?.kind).toBe("directory");
+    expect(findTreeNode(tree, "/p/missing")).toBeUndefined();
   });
 });
 
