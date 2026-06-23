@@ -72,6 +72,8 @@ export function EditorSurface({
     tabLayouts,
     hiddenCloseTabIds,
     tabOverflow,
+    tabScrollMetrics,
+    tabScrolling,
     stackDepthMap,
     addPreviewTab,
   } = useEditorTabs({ openDocuments, document, onCreateFile, viewRef });
@@ -419,8 +421,22 @@ export function EditorSurface({
           title="Add test tab"
           onClick={addPreviewTab}
         >
-          <Plus className="h-3.5 w-3.5" />
+          <Plus className="h-3 w-3" />
         </button>
+        {tabScrollMetrics.width > tabScrollMetrics.view + 1 ? (
+          <div
+            className={cn("editor-file-tabs-scrollbar", tabScrolling && "editor-file-tabs-scrollbar-visible")}
+            aria-hidden="true"
+          >
+            <div
+              className="editor-file-tabs-scrollbar-thumb"
+              style={{
+                left: `${(tabScrollMetrics.left / tabScrollMetrics.width) * 100}%`,
+                width: `${(tabScrollMetrics.view / tabScrollMetrics.width) * 100}%`,
+              }}
+            />
+          </div>
+        ) : null}
       </div>
       {error ? (
         <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-ui text-destructive">

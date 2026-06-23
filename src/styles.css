@@ -138,6 +138,9 @@
   .windows-titlebar {
     @apply grid h-9 shrink-0 grid-cols-[minmax(360px,auto)_minmax(80px,1fr)_minmax(260px,430px)_minmax(80px,1fr)_auto] items-center border-b border-border text-foreground;
     position: relative;
+    /* 标题栏(及其下拉菜单)必须盖在主内容之上。面板拖拽手柄是 z-index:80 且会冒泡到根层叠上下文,
+       否则菜单展开后,鼠标移到左侧/编辑区交界处会被下面的拖拽手柄抢走 → 显示 col-resize 分割光标。 */
+    z-index: 100;
     user-select: none;
     background: hsl(var(--card));
   }
@@ -965,6 +968,9 @@
   .editor-file-tabs {
     @apply relative flex h-9 min-w-0 items-end overflow-hidden text-muted-foreground;
     background: hsl(var(--editor-background));
+    /* 把 Tab 的高 z-index(单个 10000、边缘渐隐遮罩 30000)关进本栏自己的层叠上下文,
+       否则它们会窜到标题栏之上,导致「三横杠」菜单等下拉被 Tab 框盖住。 */
+    isolation: isolate;
   }
 
   .editor-file-tabs::before,
@@ -1004,6 +1010,33 @@
 
   .editor-file-tabs-scroll::-webkit-scrollbar {
     display: none;
+  }
+
+  /* Tab 栏底部自定义细滚动条:仅滚动时淡入,停下后淡出;不占布局、不引起内容跳动。 */
+  .editor-file-tabs-scrollbar {
+    position: absolute;
+    left: 8px;
+    right: 40px;
+    bottom: 1px;
+    height: 3px;
+    z-index: 30002;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+
+  .editor-file-tabs-scrollbar-visible,
+  .editor-file-tabs:hover .editor-file-tabs-scrollbar {
+    opacity: 1;
+  }
+
+  .editor-file-tabs-scrollbar-thumb {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    min-width: 24px;
+    border-radius: 999px;
+    background: hsl(var(--muted-foreground) / 0.5);
   }
 
   .editor-file-tab {
@@ -1176,7 +1209,8 @@
   }
 
   .editor-file-tab-add {
-    @apply relative z-[30001] grid h-9 w-8 shrink-0 place-items-center rounded-t-[0.45rem] border-0 bg-transparent p-0 text-muted-foreground transition-colors;
+    /* 比整条 Tab 栏矮一圈、垂直居中,四周留 4px 空隙,不再贴着标签和右边缘。 */
+    @apply relative z-[30001] m-1 grid h-7 w-7 shrink-0 self-center place-items-center rounded-[6px] border-0 bg-transparent p-0 text-muted-foreground transition-colors;
   }
 
   .editor-file-tab-add:hover {

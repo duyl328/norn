@@ -36,6 +36,9 @@ export function useEditorTabs({ openDocuments, document, onCreateFile, viewRef }
   const [tabLayouts, setTabLayouts] = useState<Record<string, EditorTabLayout>>({});
   const [hiddenCloseTabIds, setHiddenCloseTabIds] = useState<Set<string>>(() => new Set());
   const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
+  // Tab 栏自定义细滚动条:scrollLeft / scrollWidth / clientWidth,滚动时显示、停下后淡出。
+  const [tabScrollMetrics, setTabScrollMetrics] = useState({ left: 0, width: 0, view: 0 });
+  const [tabScrolling, setTabScrolling] = useState(false);
 
   const previewTabs = useMemo<EditorTabPreview[]>(
     () =>
@@ -79,6 +82,8 @@ export function useEditorTabs({ openDocuments, document, onCreateFile, viewRef }
     const widths = tabElements.map((element) => element.offsetWidth);
     const scrollLeft = tabScroll.scrollLeft;
     const scrollMax = Math.max(0, tabScroll.scrollWidth - tabScroll.clientWidth);
+
+    setTabScrollMetrics({ left: scrollLeft, width: tabScroll.scrollWidth, view: tabScroll.clientWidth });
 
     const getStackOverflow = (
       orderedWidths: number[],
@@ -531,12 +536,17 @@ export function useEditorTabs({ openDocuments, document, onCreateFile, viewRef }
 
       tabScrollLeftRef.current = currentScrollLeft;
 
+      if (Math.abs(scrollDelta) > 0.5) {
+        setTabScrolling(true);
+      }
+
       if (tabScrollSettleTimerRef.current) {
         window.clearTimeout(tabScrollSettleTimerRef.current);
       }
 
       tabScrollSettleTimerRef.current = window.setTimeout(() => {
         setTabBellows(null);
+        setTabScrolling(false);
       }, 180);
     };
 
@@ -645,6 +655,8 @@ export function useEditorTabs({ openDocuments, document, onCreateFile, viewRef }
     tabLayouts,
     hiddenCloseTabIds,
     tabOverflow,
+    tabScrollMetrics,
+    tabScrolling,
     stackDepthMap,
     addPreviewTab,
   };
