@@ -1007,7 +1007,8 @@
   }
 
   .editor-file-tab {
-    @apply inline-flex h-8 max-w-[220px] shrink-0 items-center gap-2 rounded-t-[0.45rem] border px-2.5 text-ui font-medium text-muted-foreground shadow-none;
+    /* h-9:与 .editor-file-tabs 标签栏同高,Tab 填满整条栏(去掉顶部 4px 空档),增加一体感。 */
+    @apply inline-flex h-9 max-w-[220px] shrink-0 items-center gap-2 rounded-t-[0.45rem] border px-2.5 text-ui font-medium text-muted-foreground shadow-none;
     position: sticky;
     min-width: 92px;
     background: hsl(var(--editor-background));
@@ -1047,8 +1048,10 @@
     );
   }
 
+  /* 首个 Tab 的左上角跟随编辑面板的左上圆角(--workbench-main-corner-radius:展开文件树时 18px、
+     收起时 0),与面板圆角对齐,而非固定直角;右上角由面板 overflow-hidden 裁到面板右上圆角。 */
   .editor-file-tab:first-child {
-    border-top-left-radius: 0;
+    border-top-left-radius: var(--workbench-main-corner-radius);
   }
 
   .editor-file-tab-left-sticky {
@@ -1173,7 +1176,7 @@
   }
 
   .editor-file-tab-add {
-    @apply relative z-[30001] grid h-8 w-8 shrink-0 place-items-center rounded-t-[0.45rem] border-0 bg-transparent p-0 text-muted-foreground transition-colors;
+    @apply relative z-[30001] grid h-9 w-8 shrink-0 place-items-center rounded-t-[0.45rem] border-0 bg-transparent p-0 text-muted-foreground transition-colors;
   }
 
   .editor-file-tab-add:hover {

@@ -24,6 +24,10 @@ import {
 } from "../workbench-utils";
 import { TabFoldStack } from "./titlebar";
 
+// 标签被相邻更高层标签遮挡超过该比例(%)才算「真正进入折叠」,显示堆叠边框;
+// 低于此则按普通标签渲染。避免首/尾标签稍一滚动就常驻折叠边框。
+const stackFrameMinCover = 14;
+
 export function EditorSurface({
   document,
   error,
@@ -303,7 +307,13 @@ export function EditorSurface({
             const active = tab.id === activePreviewTabId;
             const tabDocument = openDocuments.find((openDocument) => openDocument.id === tab.id);
             const layout = tabLayouts[tab.id];
-            const isStacked = layout?.side === "left" || layout?.side === "right";
+            // 「堆叠边框」按真实遮挡程度判定,而非仅凭 side 是否被钉住。否则首/尾标签只要 scrollLeft
+            // 偏离端点一点点就立刻 side:"left"/"right",哪怕几乎完整可见也强行套上折叠边框 → 最左标签
+            // 「边框常驻、右侧被盖」。只有当相邻更高层标签真正盖住本标签一定比例时,才算进入折叠。
+            // 左钉标签被右侧邻居遮挡(coveredRight)、右钉标签被左侧邻居遮挡(coveredLeft)。
+            const leftStacked = layout?.side === "left" && (layout?.coveredRight ?? 0) > stackFrameMinCover;
+            const rightStacked = layout?.side === "right" && (layout?.coveredLeft ?? 0) > stackFrameMinCover;
+            const isStacked = leftStacked || rightStacked;
             const hideCloseButton = !active || isStacked || hiddenCloseTabIds.has(tab.id);
             const { className: tabIconClassName, Icon: TabIcon } = getFileTreeIcon({
               kind: "file",
@@ -334,8 +344,8 @@ export function EditorSurface({
                       active && "editor-file-tab-active",
                       layout?.side !== "right" && "editor-file-tab-left-sticky",
                       layout?.side === "right" && "editor-file-tab-right-sticky",
-                      layout?.side === "right" && "editor-file-tab-right-stacked",
-                      layout?.side === "left" && "editor-file-tab-left-stacked",
+                      rightStacked && "editor-file-tab-right-stacked",
+                      leftStacked && "editor-file-tab-left-stacked",
                     )}
                     ref={(element) => {
                       tabButtonRefs.current[tab.id] = element;

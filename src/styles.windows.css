@@ -127,6 +127,13 @@
   margin-right: 0;
 }
 
+/* 首个 Tab 左上角跟随 Windows 编辑卡的圆角(10px)。
+   base 用 --workbench-main-corner-radius(展开 18px / 收起 0)是 mac/默认行为;Windows 是
+   固定 10px 的悬浮白卡,那个变量偏大、对不上面板左上角,这里覆盖成与卡片一致的 10px。 */
+.platform-windows .editor-file-tab:first-child {
+  border-top-left-radius: 10px;
+}
+
 /* 白色内容区:
    - 编辑区 .editor-surface-panel 用 --editor-background(98%≈白),保持不变。
    - 设置主内容区 .settings-main 已是 #ffffff,保持不变。 */

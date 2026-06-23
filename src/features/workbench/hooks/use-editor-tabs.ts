@@ -190,6 +190,14 @@ export function useEditorTabs({ openDocuments, document, onCreateFile, viewRef }
       return index < visualCenterIndex ? 1000 + index : 1000 + positions.length - index;
     });
 
+    // 当前激活的标签必须永远压在最上层,否则首/尾标签因为永远跨不过几何中线、
+    // 拿不到中心层级,被相邻标签盖住右侧边框——即「第一个标签右侧边框永远被覆盖」。
+    const activeIndex = previewTabs.findIndex((tab) => tab.id === activePreviewTabId);
+
+    if (activeIndex >= 0) {
+      zIndexes[activeIndex] = 20000;
+    }
+
     const getCoveredEdges = (index: number) => {
       const position = positions[index];
       const left = position.left;
