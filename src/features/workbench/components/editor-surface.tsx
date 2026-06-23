@@ -310,9 +310,11 @@ export function EditorSurface({
             // 「堆叠边框」按真实遮挡程度判定,而非仅凭 side 是否被钉住。否则首/尾标签只要 scrollLeft
             // 偏离端点一点点就立刻 side:"left"/"right",哪怕几乎完整可见也强行套上折叠边框 → 最左标签
             // 「边框常驻、右侧被盖」。只有当相邻更高层标签真正盖住本标签一定比例时,才算进入折叠。
-            // 左钉标签被右侧邻居遮挡(coveredRight)、右钉标签被左侧邻居遮挡(coveredLeft)。
-            const leftStacked = layout?.side === "left" && (layout?.coveredRight ?? 0) > stackFrameMinCover;
-            const rightStacked = layout?.side === "right" && (layout?.coveredLeft ?? 0) > stackFrameMinCover;
+            // 取左右遮挡的较大值:左钉标签主要被右邻居盖、右钉标签主要被左邻居盖,用 max 两侧都覆盖,
+            // 避免某一侧因取错遮挡边而丢失折叠动画。
+            const coverAmount = Math.max(layout?.coveredLeft ?? 0, layout?.coveredRight ?? 0);
+            const leftStacked = layout?.side === "left" && coverAmount > stackFrameMinCover;
+            const rightStacked = layout?.side === "right" && coverAmount > stackFrameMinCover;
             const isStacked = leftStacked || rightStacked;
             const hideCloseButton = !active || isStacked || hiddenCloseTabIds.has(tab.id);
             const { className: tabIconClassName, Icon: TabIcon } = getFileTreeIcon({

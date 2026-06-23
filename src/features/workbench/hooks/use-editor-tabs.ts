@@ -182,6 +182,9 @@ export function useEditorTabs({ openDocuments, document, onCreateFile, viewRef }
 
             return Math.abs(currentCenter - centerLine) < Math.abs(bestCenter - centerLine) ? index : bestIndex;
           }, 0);
+    // z 序为以 visualCenterIndex 为顶的「帐篷」:左半区 1000+index 递增、右半区 1000+len-index 递减,
+    // 于是两侧折叠时每个标签都压在更靠外那个之上,形成自然层叠。不要再单独抬高激活标签——那会让
+    // 激活标签凌驾于它右侧正在折叠的标签之上(出现「第二个压住第三个」),破坏层叠顺序。
     const zIndexes = positions.map((_, index) => {
       if (index === visualCenterIndex) {
         return 10000;
@@ -189,14 +192,6 @@ export function useEditorTabs({ openDocuments, document, onCreateFile, viewRef }
 
       return index < visualCenterIndex ? 1000 + index : 1000 + positions.length - index;
     });
-
-    // 当前激活的标签必须永远压在最上层,否则首/尾标签因为永远跨不过几何中线、
-    // 拿不到中心层级,被相邻标签盖住右侧边框——即「第一个标签右侧边框永远被覆盖」。
-    const activeIndex = previewTabs.findIndex((tab) => tab.id === activePreviewTabId);
-
-    if (activeIndex >= 0) {
-      zIndexes[activeIndex] = 20000;
-    }
 
     const getCoveredEdges = (index: number) => {
       const position = positions[index];
