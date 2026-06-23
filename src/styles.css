@@ -1012,33 +1012,6 @@
     display: none;
   }
 
-  /* Tab 栏底部自定义细滚动条:仅滚动时淡入,停下后淡出;不占布局、不引起内容跳动。 */
-  .editor-file-tabs-scrollbar {
-    position: absolute;
-    left: 8px;
-    right: 40px;
-    bottom: 1px;
-    height: 3px;
-    z-index: 30002;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 200ms ease;
-  }
-
-  .editor-file-tabs-scrollbar-visible,
-  .editor-file-tabs:hover .editor-file-tabs-scrollbar {
-    opacity: 1;
-  }
-
-  .editor-file-tabs-scrollbar-thumb {
-    position: absolute;
-    top: 0;
-    height: 100%;
-    min-width: 24px;
-    border-radius: 999px;
-    background: hsl(var(--muted-foreground) / 0.5);
-  }
-
   .editor-file-tab {
     /* h-9:与 .editor-file-tabs 标签栏同高,Tab 填满整条栏(去掉顶部 4px 空档),增加一体感。 */
     @apply inline-flex h-9 max-w-[220px] shrink-0 items-center gap-2 rounded-t-[0.45rem] border px-2.5 text-ui font-medium text-muted-foreground shadow-none;
