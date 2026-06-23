@@ -1013,6 +1013,14 @@
     background: hsl(var(--editor-background));
     border-color: hsl(var(--editor-background));
     transform-origin: center bottom;
+    /* 与 .editor-file-tab-active 同结构但全透明的 box-shadow:Tab 切换时顶部主色描边可在两套
+       shadow 之间平滑插值(颜色淡入/淡出),而非从 none 瞬变(长度不同的 shadow 列表无法过渡)。 */
+    box-shadow:
+      inset 0 2px 0 transparent,
+      inset 1px 0 0 transparent,
+      inset -1px 0 0 transparent,
+      0 -1px 0 transparent,
+      0 5px 12px transparent;
     transition:
       background-color 150ms ease,
       border-color 150ms ease,
@@ -1398,21 +1406,18 @@
 
   .file-tree-list {
     @apply min-w-0 overflow-x-hidden;
-    margin-left: 15px;
+    /* 原本 15px 是给那条左侧竖向引导线预留的位置;引导线已移除,这里收窄,
+       让子项更靠近文件夹左缘(整树左缩,层级缩进由各行的 --tree-indent 控制)。 */
+    margin-left: 4px;
     padding: 0 0.375rem 0.375rem 0.25rem;
     position: relative;
   }
 
+  /* flat 列表(根下没有任何目录,例如「临时文件夹」里全是文件)只收一下右内边距;
+     不再清零缩进/箭头列——否则文件会被拉到最左、与根文件夹左侧平齐,看起来不在根之下。
+     保留与普通行一致的「箭头占位列 + 一层缩进」,文件就明显缩进在根文件夹之内。 */
   .file-tree-list-flat .tree-row {
-    --tree-indent: 0px;
-    grid-template-columns: 0 minmax(0, 1fr) 44px;
-    padding-left: 0.125rem;
     padding-right: 0.25rem;
-  }
-
-  .file-tree-list-flat .tree-row-toggle {
-    width: 0;
-    overflow: hidden;
   }
 
   .file-tree-node {
@@ -1430,8 +1435,12 @@
 
   .tree-row {
     --tree-depth: 0;
-    --tree-indent: calc(var(--tree-depth) * 14px);
-    @apply grid h-6 grid-cols-[16px_minmax(0,1fr)_52px] items-center gap-1 rounded-sm pr-1.5 text-ui leading-none text-foreground;
+    /* 每层缩进台阶。逐级累加,深层(A>B>C>D)会成倍右移,故取较小值更紧凑。 */
+    --tree-indent: calc(var(--tree-depth) * 10px);
+    /* 第一列是「箭头预留列」:目录显示折叠箭头,文件为空。箭头本身只有 12px,
+       原来留 16px + 4px gap 让文件(空箭头列)看起来比父目录更靠右,故收窄到 12px + 2px gap。 */
+    /* rounded-[5px]:选中/悬停高亮的圆角比 rounded-sm 略大一点,观感更柔和。 */
+    @apply grid h-6 grid-cols-[12px_minmax(0,1fr)_52px] items-center gap-0.5 rounded-[5px] pr-1.5 text-ui leading-none text-foreground;
     padding-left: calc(0.125rem + var(--tree-indent));
     transition:
       background-color 120ms ease,
@@ -1518,8 +1527,11 @@
   .tree-row-root {
     --tree-depth: 0;
     @apply h-7 text-ui-lg font-semibold;
-    grid-template-columns: 18px minmax(0, 1fr) 44px;
-    padding-left: 0.25rem;
+    /* 箭头列与子行(.tree-row)对齐到 12px、左内边距归零:否则根行更宽的箭头列会把根图标
+       右推 ~10px,正好抵消子项的第一层缩进 → 子文件/文件夹与根「临时文件夹」左侧平齐。
+       归零后根行比其子项靠左约一层缩进,层级关系恢复。 */
+    grid-template-columns: 12px minmax(0, 1fr) 44px;
+    padding-left: 0;
   }
 
   .tree-row-hidden {
@@ -1546,7 +1558,7 @@
 
   .tree-row-error {
     --tree-depth: 0;
-    --tree-indent: calc(var(--tree-depth) * 14px);
+    --tree-indent: calc(var(--tree-depth) * 10px);
     @apply truncate py-0.5 pr-2 text-ui-md leading-none text-destructive;
     padding-left: calc(1.5rem + var(--tree-indent));
   }
