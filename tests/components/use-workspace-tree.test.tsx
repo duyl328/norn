@@ -73,10 +73,10 @@ describe("文件树剪贴板 / 菜单 / 对话框(同步 store)", () => {
     const node = file("a.ts", "/p/a.ts");
 
     act(() => result.current.copyTreeNode(node));
-    expect(useWorkbenchStore.getState().fileTreeClipboard).toEqual({ action: "copy", node });
+    expect(useWorkbenchStore.getState().fileTreeClipboard).toEqual({ action: "copy", nodes: [node] });
 
     act(() => result.current.cutTreeNode(node));
-    expect(useWorkbenchStore.getState().fileTreeClipboard).toEqual({ action: "cut", node });
+    expect(useWorkbenchStore.getState().fileTreeClipboard).toEqual({ action: "cut", nodes: [node] });
     expect(useWorkbenchStore.getState().fileTreeContextMenu).toBeNull();
   });
 

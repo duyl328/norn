@@ -596,6 +596,29 @@ fn unwatch_directory(state: tauri::State<'_, FsWatchState>) {
     *state.0.lock().unwrap() = None;
 }
 
+// 「复制为文件」:把文件引用写入系统剪贴板的原生格式(Windows CF_HDROP / macOS NSPasteboard 文件 URL),
+// 使其能粘贴到外部应用(资源管理器/访达等)为真实文件;同时附带文件名纯文本,让文本框粘贴得到文件名。
+// 返回 true = 已写入原生文件格式(Windows/macOS);false = 当前平台不支持(Linux),由前端退回只写文件名文本。
+#[tauri::command]
+fn copy_files_to_clipboard(paths: Vec<String>, text: String) -> Result<bool, String> {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    {
+        use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext};
+
+        let context = ClipboardContext::new().map_err(|error| error.to_string())?;
+        context
+            .set(vec![ClipboardContent::Files(paths), ClipboardContent::Text(text)])
+            .map_err(|error| error.to_string())?;
+        Ok(true)
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let _ = (&paths, &text);
+        Ok(false)
+    }
+}
+
 // 在系统文件管理器中显示该路径(文件 → 打开所在目录并选中;目录 → 同样定位)。
 #[tauri::command]
 fn reveal_in_file_manager(path: String) -> Result<(), String> {
@@ -1562,6 +1585,7 @@ pub fn run() {
             watch_directory,
             unwatch_directory,
             reveal_in_file_manager,
+            copy_files_to_clipboard,
             scratch_folder,
             create_file,
             create_directory,

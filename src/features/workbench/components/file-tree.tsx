@@ -4,6 +4,7 @@ import {
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
+  ClipboardCopy,
   ClipboardPaste,
   Copy,
   FilePlus,
@@ -21,6 +22,7 @@ import {
   type CSSProperties,
   type DragEvent,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   useEffect,
   useMemo,
@@ -48,12 +50,14 @@ import type {
   FileTreeNode,
   TreeDropTarget,
   TreePanelView,
+  TreeSelection,
+  TreeSelectionModifiers,
 } from "../types";
 import { flattenVisibleTreeRows, formatFileSize, getFileTreeIcon, isPathInsideOrEqual } from "../workbench-utils";
 
 export function FileTreePanel({
   activePath,
-  selectedPath,
+  selection,
   clipboard,
   contextMenu,
   draggedNode,
@@ -63,12 +67,14 @@ export function FileTreePanel({
   onContextMenu,
   onCopyNode,
   onCutNode,
+  onCopyPath,
   onDragEnd,
   onDragNode,
   onDropNode,
   onDropTargetChange,
   onOpenFile,
   onSelectNode,
+  onTreeKeyDown,
   onPasteNode,
   onRefreshFolder,
   onRequestCreateDirectory,
@@ -83,7 +89,7 @@ export function FileTreePanel({
   onRevealActiveFile,
 }: {
   activePath: string;
-  selectedPath: string | null;
+  selection: TreeSelection | null;
   clipboard: FileTreeClipboard | null;
   contextMenu: FileTreeContextMenuState | null;
   draggedNode: FileTreeNode | null;
@@ -93,12 +99,14 @@ export function FileTreePanel({
   onContextMenu: (node: FileTreeNode | null, event: MouseEvent, scope?: "main" | "scratch") => void;
   onCopyNode: (node: FileTreeNode) => void;
   onCutNode: (node: FileTreeNode) => void;
+  onCopyPath: (node: FileTreeNode, mode: "absolute" | "relative") => void;
   onDragEnd: () => void;
   onDragNode: (node: FileTreeNode) => void;
   onDropNode: (source: FileTreeNode, targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onDropTargetChange: (target: TreeDropTarget | null) => void;
   onOpenFile: (node: FileTreeNode) => void;
-  onSelectNode: (node: FileTreeNode) => void;
+  onSelectNode: (node: FileTreeNode, modifiers: TreeSelectionModifiers, scope: "main" | "scratch") => void;
+  onTreeKeyDown: (scope: "main" | "scratch", event: ReactKeyboardEvent) => void;
   onPasteNode: (targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onRefreshFolder: (path: string, scope?: "main" | "scratch") => void;
   onRequestCreateDirectory: (parentPath: string, scope?: "main" | "scratch") => void;
@@ -113,6 +121,12 @@ export function FileTreePanel({
   onRevealActiveFile?: () => void;
 }) {
   const scrollParentRef = useRef<HTMLDivElement>(null);
+  // 该作用域当前选中的路径集合与光标行(跨作用域时为空,避免另一棵树误高亮)。
+  const selectedPaths = useMemo(
+    () => new Set(selection?.scope === scope ? selection.paths : []),
+    [selection, scope],
+  );
+  const leadPath = selection?.scope === scope ? selection.leadPath : null;
   const rows = useMemo(
     () => (treeView && treeView.rootExpanded ? flattenVisibleTreeRows(treeView.nodes, 1) : []),
     [treeView?.nodes, treeView?.rootExpanded],
@@ -141,8 +155,8 @@ export function FileTreePanel({
       return;
     }
 
-    // 定位按钮已把选中行切到编辑区当前文件;滚动到该选中行。
-    const targetIndex = rows.findIndex((row) => row.node.path === selectedPath);
+    // 定位按钮已把光标行切到编辑区当前文件;滚动到该行。
+    const targetIndex = rows.findIndex((row) => row.node.path === leadPath);
 
     if (targetIndex < 0) {
       // 祖先目录仍在加载,目标行尚未出现;rows 更新后本 effect 会重跑。
@@ -151,7 +165,22 @@ export function FileTreePanel({
 
     pendingRevealRef.current = false;
     treeVirtualizer.scrollToIndex(targetIndex, { align: "center" });
-  }, [revealNonce, rows, selectedPath, treeVirtualizer]);
+  }, [revealNonce, rows, leadPath, treeVirtualizer]);
+
+  // 键盘移动光标(lead)后把它滚入视口;align:"auto" 已可见则不动,故鼠标点击可见行不会触发滚动。
+  useEffect(() => {
+    if (pendingRevealRef.current || leadPath == null) {
+      return;
+    }
+
+    const targetIndex = rows.findIndex((row) => row.node.path === leadPath);
+
+    if (targetIndex >= 0) {
+      treeVirtualizer.scrollToIndex(targetIndex, { align: "auto" });
+    }
+    // 仅在 lead 变化时滚动;rows 频繁变化不应反复拉回视图。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadPath]);
 
   if (!treeView) {
     return <div className="min-h-0 flex-1" />;
@@ -186,11 +215,18 @@ export function FileTreePanel({
         onContextMenu={(event) => onContextMenu(null, event, scope)}
       >
         <div
-          className={cn("file-tree-list", !hasRootDirectories && "file-tree-list-flat")}
+          className={cn("file-tree-list outline-none", !hasRootDirectories && "file-tree-list-flat")}
           role="tree"
           aria-label={treeView.rootName}
+          aria-multiselectable
+          aria-activedescendant={leadPath ? `tree-row:${scope}:${leadPath}` : undefined}
           data-tree-drop-path={treeView.rootPath}
           data-tree-drop-scope={scope}
+          tabIndex={0}
+          // 整棵树共享一个键盘焦点(roving 焦点会与虚拟滚动冲突):点击任意行把焦点拉到容器,
+          // 之后方向键/快捷键都在这里处理,行被虚拟化卸载也不会丢失焦点。
+          onKeyDown={(event) => onTreeKeyDown(scope, event)}
+          onMouseDown={(event) => event.currentTarget.focus()}
         >
           {treeView.loadingPath === treeView.rootPath && treeView.nodes.length === 0 ? (
             <div className="px-2 py-2 text-ui text-muted-foreground">Loading folder...</div>
@@ -208,7 +244,8 @@ export function FileTreePanel({
                   style={{ top: `${virtualRow.start}px` }}
                 >
                   <FileTreeRow
-                    selectedPath={selectedPath}
+                    selectedPaths={selectedPaths}
+                    leadPath={leadPath}
                     ancestorCanonicalPaths={row.ancestorCanonicalPaths}
                     depth={row.depth}
                     draggedNode={draggedNode}
@@ -255,6 +292,7 @@ export function FileTreePanel({
           onRequestRenameNode={(node) => onRequestRenameNode(node, scope)}
           onRequestTrashNode={(node) => onRequestTrashNode(node, scope)}
           onRevealNode={onRevealNode}
+          onCopyPath={onCopyPath}
           x={scopedContextMenu.x}
           y={scopedContextMenu.y}
         />
@@ -359,7 +397,8 @@ export function FileTreeRootRow({
 }
 
 export function FileTreeRow({
-  selectedPath,
+  selectedPaths,
+  leadPath,
   ancestorCanonicalPaths,
   depth = 0,
   draggedNode,
@@ -376,7 +415,8 @@ export function FileTreeRow({
   onSelectNode,
   onToggleDirectory,
 }: {
-  selectedPath: string | null;
+  selectedPaths: Set<string>;
+  leadPath: string | null;
   ancestorCanonicalPaths: string[];
   depth?: number;
   draggedNode: FileTreeNode | null;
@@ -390,20 +430,21 @@ export function FileTreeRow({
   onDropNode: (source: FileTreeNode, targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onDropTargetChange: (target: TreeDropTarget | null) => void;
   onOpenFile: (node: FileTreeNode) => void;
-  onSelectNode: (node: FileTreeNode) => void;
+  onSelectNode: (node: FileTreeNode, modifiers: TreeSelectionModifiers, scope: "main" | "scratch") => void;
   onToggleDirectory: (node: FileTreeNode) => void;
 }) {
   const isDirectory = node.kind === "directory";
-  const isSelected = node.path === selectedPath;
+  const isSelected = selectedPaths.has(node.path);
+  const isLead = node.path === leadPath;
   const isLoading = loadingPath === node.path;
   const isDropTarget = isDirectory && dropTarget?.scope === scope && dropTarget.path === node.path;
   const canonicalPath = node.canonicalPath ?? node.path;
   const wouldCycle = isDirectory && node.isSymlink && ancestorCanonicalPaths.includes(canonicalPath);
   const { className: iconClassName, Icon } = getFileTreeIcon(node);
 
-  // 单击:仅选中(高亮),不打开文件、不展开目录。
-  const handleSelect = () => {
-    onSelectNode(node);
+  // 单击:更新多选(高亮),不打开文件、不展开目录。Ctrl/Cmd 切换单项,Shift 选区间。
+  const handleSelect = (event: MouseEvent) => {
+    onSelectNode(node, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey }, scope);
   };
 
   // 双击 / 回车「确认」:文件 → 打开到编辑区;目录 → 展开/折叠。
@@ -431,13 +472,13 @@ export function FileTreeRow({
     onToggleDirectory(node);
   };
 
-  const handleDragStart = (event: DragEvent<HTMLButtonElement>) => {
+  const handleDragStart = (event: DragEvent<HTMLDivElement>) => {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", node.path);
     onDragNode(node);
   };
 
-  const handleDragOver = (event: DragEvent<HTMLButtonElement>) => {
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
     if (
       !isDirectory ||
       !draggedNode ||
@@ -452,7 +493,7 @@ export function FileTreeRow({
     onDropTargetChange({ path: node.path, scope });
   };
 
-  const handleDrop = (event: DragEvent<HTMLButtonElement>) => {
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
     if (!isDirectory || !draggedNode) {
       return;
     }
@@ -463,12 +504,13 @@ export function FileTreeRow({
 
   return (
     <div className="file-tree-node" role="none">
-      <button
+      <div
         aria-expanded={isDirectory ? Boolean(node.expanded) : undefined}
         aria-selected={isSelected}
         className={cn(
           "tree-row w-full text-left",
           isSelected && "tree-row-active",
+          isLead && "tree-row-lead",
           (node.error || wouldCycle) && "tree-row-muted",
           node.isHidden && "tree-row-hidden",
           node.isReadonly && "tree-row-readonly",
@@ -478,17 +520,13 @@ export function FileTreeRow({
         data-tree-drop-scope={isDirectory ? scope : undefined}
         draggable
         role="treeitem"
+        // 行不可聚焦(无 tabIndex):点击不会把焦点从 .file-tree-list 容器抢走,
+        // 否则该行被虚拟化卸载后焦点丢到 body,方向键就失效了。光标由容器的 aria-activedescendant 跟踪。
+        id={`tree-row:${scope}:${node.path}`}
         style={{ "--tree-depth": depth } as CSSProperties}
-        type="button"
         title={wouldCycle ? `${node.path}\nSymlink loop blocked.` : node.path}
         onClick={handleSelect}
         onDoubleClick={handleConfirm}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            handleConfirm();
-          }
-        }}
         onContextMenu={(event) => {
           // 阻止冒泡到 .file-tree-scroll 的 onContextMenu（那里会把目标 node 重置为 null，
           // 导致右键文件时 Rename / Copy / Cut / Trash 菜单项被禁用）。
@@ -519,7 +557,7 @@ export function FileTreeRow({
         <span className="tree-row-size">
           {isLoading ? "..." : wouldCycle ? "loop" : isDirectory ? "" : formatFileSize(node.size)}
         </span>
-      </button>
+      </div>
       {node.error || wouldCycle ? (
         <div className="tree-row-error" style={{ "--tree-depth": depth } as CSSProperties}>
           {wouldCycle ? "Symlink loop blocked." : node.error}
@@ -541,6 +579,7 @@ export function FileTreeContextMenu({
   onRequestRenameNode,
   onRequestTrashNode,
   onRevealNode,
+  onCopyPath,
   x,
   y,
 }: {
@@ -555,6 +594,7 @@ export function FileTreeContextMenu({
   onRequestRenameNode: (node: FileTreeNode) => void;
   onRequestTrashNode: (node: FileTreeNode) => void;
   onRevealNode: (node: FileTreeNode) => void;
+  onCopyPath: (node: FileTreeNode, mode: "absolute" | "relative") => void;
   x: number;
   y: number;
 }) {
@@ -612,6 +652,25 @@ export function FileTreeContextMenu({
       <button className="file-tree-context-item" disabled={!clipboard} type="button" onClick={onPasteNode}>
         <ClipboardPaste className="file-tree-context-icon" />
         Paste
+      </button>
+      <div className="file-tree-context-separator" />
+      <button
+        className="file-tree-context-item"
+        disabled={!node}
+        type="button"
+        onClick={() => node && onCopyPath(node, "absolute")}
+      >
+        <ClipboardCopy className="file-tree-context-icon" />
+        复制路径
+      </button>
+      <button
+        className="file-tree-context-item"
+        disabled={!node}
+        type="button"
+        onClick={() => node && onCopyPath(node, "relative")}
+      >
+        <ClipboardCopy className="file-tree-context-icon" />
+        复制相对路径
       </button>
       <div className="file-tree-context-separator" />
       <button

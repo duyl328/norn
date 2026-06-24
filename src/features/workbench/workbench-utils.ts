@@ -34,6 +34,8 @@ import type {
   ProjectAccentStyle,
   RecentFolder,
   TreeDropTarget,
+  TreeSelection,
+  TreeSelectionModifiers,
   VisibleTreeRow,
   WorkbenchDocument,
 } from "./types";
@@ -286,6 +288,78 @@ export const flattenVisibleTreeRows = (
 
     return [row, ...flattenVisibleTreeRows(node.children, depth + 1, nextAncestors)];
   });
+
+// Shift 区间选择:在可见行顺序里取 anchor..lead(含两端)。任一端不在顺序中(已折叠/不可见)
+// 时退回只选 lead,避免选出空集或越界。
+export const orderedRange = (order: string[], anchorPath: string, leadPath: string): string[] => {
+  const anchorIndex = order.indexOf(anchorPath);
+  const leadIndex = order.indexOf(leadPath);
+
+  if (anchorIndex < 0 || leadIndex < 0) {
+    return leadIndex >= 0 ? [leadPath] : [];
+  }
+
+  const [low, high] = anchorIndex <= leadIndex ? [anchorIndex, leadIndex] : [leadIndex, anchorIndex];
+
+  return order.slice(low, high + 1);
+};
+
+const singleSelection = (scope: TreeSelection["scope"], path: string): TreeSelection => ({
+  scope,
+  anchorPath: path,
+  leadPath: path,
+  paths: [path],
+});
+
+// 鼠标点击产生的新选区。Shift=区间(锚点不变),Ctrl/Cmd=切换单项(锚点移到该项),无修饰=单选。
+// 跨作用域点击(scope 与当前选区不同)按单选处理。`order` 是该作用域当前可见行顺序。
+export const applyTreeClick = (
+  current: TreeSelection | null,
+  scope: TreeSelection["scope"],
+  path: string,
+  modifiers: TreeSelectionModifiers,
+  order: string[],
+): TreeSelection => {
+  const sameScope = current?.scope === scope;
+
+  if (modifiers.range && sameScope && current) {
+    return { scope, anchorPath: current.anchorPath, leadPath: path, paths: orderedRange(order, current.anchorPath, path) };
+  }
+
+  if (modifiers.toggle && sameScope && current) {
+    const paths = current.paths.includes(path)
+      ? current.paths.filter((existing) => existing !== path)
+      : [...current.paths, path];
+    return { scope, anchorPath: path, leadPath: path, paths };
+  }
+
+  return singleSelection(scope, path);
+};
+
+// 方向键移动光标(lead)。extend(Shift)=以锚点为起点扩展区间;否则单选并把锚点移到新行。
+// 无 lead 时:向下进首行、向上进末行。order 为空则不动。
+export const moveTreeLead = (
+  current: TreeSelection | null,
+  scope: TreeSelection["scope"],
+  order: string[],
+  delta: number,
+  extend: boolean,
+): TreeSelection | null => {
+  if (order.length === 0) {
+    return current;
+  }
+
+  const leadIndex = current?.scope === scope ? order.indexOf(current.leadPath) : -1;
+  const nextIndex =
+    leadIndex < 0 ? (delta > 0 ? 0 : order.length - 1) : Math.min(order.length - 1, Math.max(0, leadIndex + delta));
+  const leadPath = order[nextIndex];
+
+  if (extend && current?.scope === scope) {
+    return { scope, anchorPath: current.anchorPath, leadPath, paths: orderedRange(order, current.anchorPath, leadPath) };
+  }
+
+  return singleSelection(scope, leadPath);
+};
 
 export const isPathInsideOrEqual = (path: string, possibleParent: string) => {
   const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
