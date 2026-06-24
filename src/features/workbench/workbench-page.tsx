@@ -115,6 +115,7 @@ export function WorkbenchPage() {
     cutTreeNode,
     pasteTreeNode,
     requestTrashTreeNode,
+    revealTreeNodeInFileManager,
     confirmTrashTreeNode,
     moveTreeNodeToDirectory,
     openFileTreeContextMenu,
@@ -337,6 +338,7 @@ export function WorkbenchPage() {
                     openFileTreeNameDialog({ kind: "rename", node, scope })
                   }
                   onRequestTrashNode={requestTrashTreeNode}
+                  onRevealNode={revealTreeNodeInFileManager}
                   recentFolders={recentFolders}
                   scratchFolder={scratchFolder}
                   scratchFolderView={scratchFolderView}

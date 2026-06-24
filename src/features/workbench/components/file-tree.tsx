@@ -9,6 +9,7 @@ import {
   FilePlus,
   FolderOpen,
   FolderPlus,
+  FolderSearch,
   Link2,
   LocateFixed,
   Pencil,
@@ -74,6 +75,7 @@ export function FileTreePanel({
   onRequestCreateFile,
   onRequestRenameNode,
   onRequestTrashNode,
+  onRevealNode,
   onToggleDirectory,
   onToggleRootDirectory,
   onExpandAll,
@@ -103,6 +105,7 @@ export function FileTreePanel({
   onRequestCreateFile: (parentPath: string, scope?: "main" | "scratch") => void;
   onRequestRenameNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
   onRequestTrashNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
+  onRevealNode: (node: FileTreeNode) => void;
   onToggleDirectory: (node: FileTreeNode) => void;
   onToggleRootDirectory: () => void;
   onExpandAll?: () => void;
@@ -251,6 +254,7 @@ export function FileTreePanel({
           onRequestCreateFile={() => onRequestCreateFile(targetDirectory, scope)}
           onRequestRenameNode={(node) => onRequestRenameNode(node, scope)}
           onRequestTrashNode={(node) => onRequestTrashNode(node, scope)}
+          onRevealNode={onRevealNode}
           x={scopedContextMenu.x}
           y={scopedContextMenu.y}
         />
@@ -536,6 +540,7 @@ export function FileTreeContextMenu({
   onRequestCreateFile,
   onRequestRenameNode,
   onRequestTrashNode,
+  onRevealNode,
   x,
   y,
 }: {
@@ -549,6 +554,7 @@ export function FileTreeContextMenu({
   onRequestCreateFile: () => void;
   onRequestRenameNode: (node: FileTreeNode) => void;
   onRequestTrashNode: (node: FileTreeNode) => void;
+  onRevealNode: (node: FileTreeNode) => void;
   x: number;
   y: number;
 }) {
@@ -570,6 +576,15 @@ export function FileTreeContextMenu({
       <button className="file-tree-context-item" type="button" onClick={onRefresh}>
         <RefreshCw className="file-tree-context-icon" />
         Refresh
+      </button>
+      <button
+        className="file-tree-context-item"
+        disabled={!node}
+        type="button"
+        onClick={() => node && onRevealNode(node)}
+      >
+        <FolderSearch className="file-tree-context-icon" />
+        在文件管理器中显示
       </button>
       <div className="file-tree-context-separator" />
       <button

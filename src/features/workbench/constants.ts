@@ -2,6 +2,9 @@ import type { EditorScrollMetrics } from "./types";
 
 export const nativeMenuEvent = "norn-menu";
 
+// Rust 文件系统监听器上报「受影响目录」时发出的事件(见 src-tauri watch_directory)。
+export const workspaceFsChangeEvent = "workspace-fs-change";
+
 export const nativeMenuCommands = {
   find: "menu-find",
   newFile: "menu-new-file",

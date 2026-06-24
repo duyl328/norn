@@ -1,8 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { type MouseEvent, useEffect, useRef } from "react";
 
-import { maxRecentFolders } from "../constants";
+import { maxRecentFolders, workspaceFsChangeEvent } from "../constants";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type {
   FileTreeNameDialog,
@@ -559,6 +560,19 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     setFileTreeTrashTarget({ node, scope });
   };
 
+  const revealTreeNodeInFileManager = (node: FileTreeNode) => {
+    setFileTreeContextMenu(null);
+
+    if (!isTauriRuntime()) {
+      setFileError("Revealing in the file manager is only available in the Tauri desktop app.");
+      return;
+    }
+
+    void invoke("reveal_in_file_manager", { path: node.path }).catch((error) => {
+      setFileError(error instanceof Error ? error.message : String(error));
+    });
+  };
+
   const confirmTrashTreeNode = async () => {
     if (!fileTreeTrashTarget) {
       return;
@@ -691,8 +705,9 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
       });
     };
 
+    // 实时刷新由 Rust 文件监听器驱动(见下方 effect)。这里只保留聚焦/可见性时的
+    // 一次性根目录同步,作为监听器偶尔漏事件(网络盘、inotify 超限退化)时的兜底。
     refreshRootSilently();
-    const intervalId = window.setInterval(refreshRootSilently, 12_000);
 
     const handleFocus = () => refreshRootSilently();
     const handleVisibilityChange = () => {
@@ -708,12 +723,70 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
       disposed = true;
       window.removeEventListener("focus", handleFocus);
       globalThis.document.removeEventListener("visibilitychange", handleVisibilityChange);
-
-      if (intervalId) {
-        window.clearInterval(intervalId);
-      }
     };
   }, [folderView?.rootPath, leftPanelOpen]);
+
+  // 文件系统监听(替代轮询):Rust 侧 notify 去抖后上报「受影响目录」,
+  // 这里只重新 list 那些「当前已加载」的层级,任意深度的增删改都能近实时反映到树上。
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    // 关闭文件夹(folderView 置空):此时没有并发的 watch_directory,可安全停止监听。
+    // 切换文件夹(A→B)不在这里 unwatch——交给 watch_directory 原子替换,
+    // 否则 cleanup 的 unwatch 与新 effect 的 watch 是两次并发 IPC,顺序不保证,可能反把新 watcher 清掉。
+    if (!folderView) {
+      void invoke("unwatch_directory").catch(() => undefined);
+      return;
+    }
+
+    const rootPath = folderView.rootPath;
+
+    // inotify 句柄超限等启动失败:不报错打断用户,退回靠上面的聚焦刷新兜底。
+    void invoke("watch_directory", { path: rootPath }).catch(() => undefined);
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    listen<string[]>(workspaceFsChangeEvent, (event) => {
+      const view = useWorkbenchStore.getState().folderView;
+
+      if (!view) {
+        return;
+      }
+
+      for (const changedDir of event.payload) {
+        if (changedDir === view.rootPath) {
+          void refreshFolderPath(changedDir, { collapseChildren: false, preserveExpansion: true, silent: true });
+          continue;
+        }
+
+        // 未展开/未加载的子树不必刷新——下次展开时自然是最新的。
+        const node = findTreeNode(view.nodes, changedDir);
+
+        if (node?.kind === "directory" && node.childrenLoaded) {
+          void refreshFolderPath(changedDir, { collapseChildren: false, preserveExpansion: true, silent: true });
+        }
+      }
+    })
+      .then((cleanup) => {
+        if (disposed) {
+          cleanup();
+          return;
+        }
+
+        unlisten = cleanup;
+      })
+      .catch(() => {
+        unlisten = undefined;
+      });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [folderView?.rootPath]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -825,6 +898,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     cutTreeNode,
     pasteTreeNode,
     requestTrashTreeNode,
+    revealTreeNodeInFileManager,
     confirmTrashTreeNode,
     moveTreeNodeToDirectory,
     openFileTreeContextMenu,

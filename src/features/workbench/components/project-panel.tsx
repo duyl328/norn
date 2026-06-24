@@ -57,6 +57,7 @@ export function ProjectPanel({
   onRequestCreateFile,
   onRequestRenameNode,
   onRequestTrashNode,
+  onRevealNode,
   recentFolders,
   scratchFolder,
   scratchFolderView,
@@ -94,6 +95,7 @@ export function ProjectPanel({
   onRequestCreateFile: (parentPath: string, scope?: "main" | "scratch") => void;
   onRequestRenameNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
   onRequestTrashNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
+  onRevealNode: (node: FileTreeNode) => void;
   recentFolders: RecentFolder[];
   scratchFolder: ScratchFolder | null;
   scratchFolderView: ScratchFolderView;
@@ -196,6 +198,7 @@ export function ProjectPanel({
             onRequestCreateFile={onRequestCreateFile}
             onRequestRenameNode={onRequestRenameNode}
             onRequestTrashNode={onRequestTrashNode}
+            onRevealNode={onRevealNode}
             onToggleDirectory={onToggleDirectory}
             onToggleRootDirectory={onToggleRootDirectory}
             onExpandAll={onExpandAll}
@@ -241,6 +244,7 @@ export function ProjectPanel({
           onRequestCreateFile={onRequestCreateFile}
           onRequestRenameNode={onRequestRenameNode}
           onRequestTrashNode={onRequestTrashNode}
+          onRevealNode={onRevealNode}
           onToggleDirectory={onToggleScratchDirectory}
           onToggleRootDirectory={onToggleScratchRootDirectory}
         />
@@ -389,6 +393,7 @@ export function ProjectPanelScratchFolder({
   onRequestCreateFile,
   onRequestRenameNode,
   onRequestTrashNode,
+  onRevealNode,
   onToggleDirectory,
   onToggleRootDirectory,
 }: {
@@ -416,6 +421,7 @@ export function ProjectPanelScratchFolder({
   onRequestCreateFile: (parentPath: string, scope?: "main" | "scratch") => void;
   onRequestRenameNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
   onRequestTrashNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
+  onRevealNode: (node: FileTreeNode) => void;
   onToggleDirectory: (node: FileTreeNode) => void;
   onToggleRootDirectory: () => void;
 }) {
@@ -457,6 +463,7 @@ export function ProjectPanelScratchFolder({
         onRequestCreateFile={onRequestCreateFile}
         onRequestRenameNode={onRequestRenameNode}
         onRequestTrashNode={onRequestTrashNode}
+        onRevealNode={onRevealNode}
         onToggleDirectory={onToggleDirectory}
         onToggleRootDirectory={onToggleRootDirectory}
       />
