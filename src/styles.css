@@ -2259,4 +2259,221 @@
     left: 4px;
     width: 9px;
   }
+
+  /* 自绘查找/替换面板(见 editor-search-panel.ts):悬浮覆盖在编辑器右上角(参考最新版 IDEA)。
+     大圆角 + 柔和大投影 + 宽松留白;脱离布局浮于代码之上,不下挤内容。 */
+  .cm-norn-search {
+    /* 用 block(非 flex)布局:查找行/替换行天然上下堆叠,且替换行的 width:0+min-width:100%
+       才能真正不参与卡片 fit-content 宽度计算 —— 卡片宽度恒定,展开替换时查找框不再水平抖动。 */
+    @apply relative rounded-xl border border-border/50 p-2.5 text-ui shadow-xl;
+    pointer-events: auto;
+    width: fit-content;
+    max-width: calc(100% - 36px);
+    /* 右侧留出自定义滚动条(18px)的空间,顶部留出与 tab 的间隙。 */
+    margin: 10px 24px 0 auto;
+    background-color: hsl(var(--background));
+    font-family: inherit;
+    /* 出现时的入场缓动。 */
+    animation: cm-norn-search-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .cm-norn-search-row {
+    @apply flex items-center gap-2;
+  }
+
+  /* 替换行:用 max-height + margin-top 做展开缓动。收起时高度与间距都归零,
+     卡片不留空白,只有查找框时上下严格居中。 */
+  .cm-norn-search-row-replace {
+    @apply overflow-hidden;
+    /* width:0 + min-width:100% 让替换行不参与卡片 fit-content 宽度计算(仅由查找行决定),
+       这样展开/折叠时卡片宽度恒定,查找框不再抖动。 */
+    width: 0;
+    min-width: 100%;
+    max-height: 0;
+    margin-top: 0;
+    opacity: 0;
+    visibility: hidden;
+    /* max-height 的目标值必须正好等于内容高度(替换行 h-8 = 2rem);若大于内容,
+       可见高度会在缓动早期就触顶、随后空蠕动,看起来像"先跳后抖"。配均匀缓动使其平滑生长。 */
+    transition:
+      max-height 200ms cubic-bezier(0.4, 0, 0.2, 1),
+      margin-top 200ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 160ms ease,
+      visibility 0s linear 200ms;
+  }
+
+  .cm-norn-search-row-replace-open {
+    max-height: 2rem;
+    margin-top: 0.5rem;
+    opacity: 1;
+    visibility: visible;
+    transition:
+      max-height 200ms cubic-bezier(0.4, 0, 0.2, 1),
+      margin-top 200ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 160ms ease;
+  }
+
+  /* 替换输入框与查找输入框对齐(让出展开按钮的宽度 w-8 + gap-2)。 */
+  .cm-norn-search-replace-line {
+    @apply flex items-center gap-2;
+    padding-left: calc(2rem + 0.5rem);
+  }
+
+  .cm-norn-search-field {
+    @apply relative flex min-w-0 items-center;
+  }
+
+  /* 离屏测量元素:须与输入框字体一致,用于按内容算宽度。 */
+  .cm-norn-search-sizer {
+    @apply invisible absolute whitespace-pre text-ui;
+    left: -9999px;
+    top: 0;
+    pointer-events: none;
+  }
+
+  .cm-norn-search-input {
+    /* 宽度由脚本按内容设定(见 editor-search-panel.ts),min/max 作为兜底边界。 */
+    @apply h-8 min-w-[16rem] max-w-[32rem] rounded-lg border border-input bg-background px-2.5 text-ui text-foreground outline-none transition-colors;
+  }
+
+  .cm-norn-search-row:not(.cm-norn-search-row-replace) .cm-norn-search-input {
+    /* 给右侧装饰区(清空× + 大小写/全词 + 通配/正则模式组)留出空间 */
+    padding-right: 9rem;
+  }
+
+  .cm-norn-search-row-replace .cm-norn-search-input {
+    /* 仅给清空×留出空间 */
+    padding-right: 2.25rem;
+  }
+
+  .cm-norn-search-input::placeholder {
+    @apply text-muted-foreground;
+  }
+
+  .cm-norn-search-input:focus {
+    /* 聚焦更轻:淡边框 + 极淡光晕,不抢眼。 */
+    border-color: hsl(var(--ring) / 0.5);
+    box-shadow: 0 0 0 3px hsl(var(--ring) / 0.12);
+  }
+
+  .cm-norn-search-invalid,
+  .cm-norn-search-invalid:focus-visible {
+    @apply border-destructive ring-1 ring-destructive/50;
+  }
+
+  .cm-norn-search-adornments {
+    @apply absolute right-1.5 flex items-center gap-0.5;
+  }
+
+  /* 清空×是不常用功能,默认更淡(像"次要"),hover 才清晰起来。 */
+  .cm-norn-search-clear {
+    @apply flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground/40 transition-colors;
+  }
+
+  .cm-norn-search-clear:hover {
+    @apply bg-accent text-foreground;
+  }
+
+  .cm-norn-search-clear[hidden] {
+    display: none;
+  }
+
+  .cm-norn-search-toggle {
+    @apply flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors;
+  }
+
+  .cm-norn-search-toggle:hover {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .cm-norn-search-toggle-active {
+    @apply bg-primary/15 text-primary;
+  }
+
+  /* 通配/正则模式组:用淡底色框在一起,表示二者互斥、最多选其一(底色不宜过深)。 */
+  .cm-norn-search-mode {
+    @apply ml-0.5 flex items-center gap-0.5 rounded-md bg-muted/40 px-0.5;
+  }
+
+  .cm-norn-search-count {
+    @apply shrink-0 whitespace-nowrap px-1.5 text-xs tabular-nums text-muted-foreground;
+  }
+
+  .cm-norn-search-count[hidden] {
+    display: none;
+  }
+
+  .cm-norn-search-count-empty {
+    @apply text-destructive;
+  }
+
+  .cm-norn-search-actions {
+    @apply flex shrink-0 items-center gap-1;
+  }
+
+  .cm-norn-search-btn,
+  .cm-norn-search-expand {
+    @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors;
+  }
+
+  .cm-norn-search-btn:hover,
+  .cm-norn-search-expand:hover {
+    @apply bg-accent text-foreground;
+  }
+
+  .cm-norn-search-expand .cm-norn-search-icon {
+    @apply transition-transform;
+  }
+
+  .cm-norn-search-expand-open .cm-norn-search-icon {
+    transform: rotate(90deg);
+  }
+
+  .cm-norn-search-icon {
+    @apply h-4 w-4;
+    pointer-events: none;
+  }
+
+  /* 快速 tooltip:由脚本控制延迟(~200ms,远快于原生 title)。 */
+  .cm-norn-search-tooltip {
+    @apply pointer-events-none absolute z-30 whitespace-nowrap rounded-md border border-border/60 px-2 py-0.5 text-xs shadow-md;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    transform: translateX(-50%) translateY(2px);
+    opacity: 0;
+    transition:
+      opacity 110ms ease,
+      transform 110ms ease;
+  }
+
+  .cm-norn-search-tooltip[data-show="true"] {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes cm-norn-search-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 尊重系统的"减少动态效果"偏好。 */
+@media (prefers-reduced-motion: reduce) {
+  .cm-norn-search {
+    animation: none;
+  }
+
+  .cm-norn-search-row-replace,
+  .cm-norn-search-row-replace-open {
+    transition:
+      opacity 0s,
+      visibility 0s;
+  }
 }
