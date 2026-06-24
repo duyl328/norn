@@ -110,11 +110,10 @@
   height: auto;
   margin: 8px 4px; /* 上下 8px;左右默认 4px = 面板收起时与窗口边的小间隙 */
   border: var(--workspace-panel-border);
-  /* 三角 10px 圆角,左下角强制直角。
-     base styles.css 用 longhand 写 border-bottom-left-radius(随 --workbench-main-corner-radius
-     在左面板打开时变 18px),这里必须同样用 longhand 覆盖,否则那条 longhand 仍生效 → 左下角依旧圆。 */
+  /* 四角 10px 圆角(含左下角)。base styles.css 用 longhand 写 border-bottom-left-radius: 0
+     强制左下直角,这里用 longhand 覆盖回 10px,否则那条 longhand 仍生效 → 左下角变直角。 */
   border-radius: 10px;
-  border-bottom-left-radius: 0;
+  border-bottom-left-radius: 10px;
 }
 
 /* 左面板打开时,编辑卡左边与树卡留 8px(收起时回到上面的 4px)。 */
@@ -126,6 +125,13 @@
    收起时回到上面的 4px,让编辑卡离窗口右边更近。 */
 .platform-windows .workbench-layout-right-open .editor-surface-panel {
   margin-right: 0;
+}
+
+/* 首个 Tab 左上角跟随 Windows 编辑卡的圆角(10px)。
+   base 用 --workbench-main-corner-radius(展开 18px / 收起 0)是 mac/默认行为;Windows 是
+   固定 10px 的悬浮白卡,那个变量偏大、对不上面板左上角,这里覆盖成与卡片一致的 10px。 */
+.platform-windows .editor-file-tab:first-child {
+  border-top-left-radius: 10px;
 }
 
 /* 白色内容区:

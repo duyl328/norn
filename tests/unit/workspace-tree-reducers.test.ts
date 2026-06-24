@@ -10,6 +10,7 @@ import {
   collapseAllFolderNodes,
   collapseScratchNode,
   expandAllFolderNodes,
+  expandFolderNode,
   expandLoadedScratchNode,
   markFolderLoading,
   markFolderNodeExpanding,
@@ -153,6 +154,17 @@ describe("FolderView reducers", () => {
     expect(expanded.nodes[0].expanded).toBe(true);
     expect(expanded.nodes[0].children?.[0].expanded).toBe(true);
     expect(expanded.nodes[1].expanded).toBe(false);
+  });
+
+  it("expandFolderNode 仅展开指定目录,保留其后代展开状态", () => {
+    const view = folderView([
+      dir("src", "/root/src", [dir("sub", "/root/src/sub", [file("a.ts", "/root/src/sub/a.ts")], true)], false),
+    ]);
+    const next = expandFolderNode(view, "/root/src");
+
+    expect(next.nodes[0].expanded).toBe(true);
+    // 后代已展开状态保持不变(不像 toggle 那样深折叠)。
+    expect(next.nodes[0].children?.[0].expanded).toBe(true);
   });
 });
 

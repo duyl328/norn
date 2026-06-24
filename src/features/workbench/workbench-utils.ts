@@ -294,6 +294,47 @@ export const isPathInsideOrEqual = (path: string, possibleParent: string) => {
   return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}/`);
 };
 
+export const arePathsEqual = (a: string, b: string) =>
+  a.replace(/\\/g, "/").replace(/\/+$/, "") === b.replace(/\\/g, "/").replace(/\/+$/, "");
+
+export const findTreeNode = (nodes: FileTreeNode[], path: string): FileTreeNode | undefined => {
+  for (const node of nodes) {
+    if (node.path === path) {
+      return node;
+    }
+
+    if (node.children) {
+      const found = findTreeNode(node.children, path);
+
+      if (found) {
+        return found;
+      }
+    }
+  }
+
+  return undefined;
+};
+
+// 「在文件树中定位」用:从根(不含)到目标文件父目录(含)的祖先目录路径,自浅到深排序。
+// 调用方沿这条链逐级「按需加载 + 展开」,直到目标文件所在目录可见。文件直接位于根下时返回空数组。
+export const getTreeAncestorDirectoryPaths = (filePath: string, rootPath: string): string[] => {
+  const ancestors: string[] = [];
+  let current = getParentPath(filePath);
+
+  while (current && isPathInsideOrEqual(current, rootPath) && !arePathsEqual(current, rootPath)) {
+    ancestors.unshift(current);
+    const parent = getParentPath(current);
+
+    if (!parent || arePathsEqual(parent, current)) {
+      break;
+    }
+
+    current = parent;
+  }
+
+  return ancestors;
+};
+
 export const getNativeFileOperationError = (error: unknown): NativeFileOperationError => {
   if (error && typeof error === "object") {
     return error as NativeFileOperationError;

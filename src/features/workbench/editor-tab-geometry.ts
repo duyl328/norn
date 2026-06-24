@@ -146,8 +146,11 @@ export const getTabPositionsForScroll = (
     const naturalRight = naturalLeft + width;
     const stickyLeft = (index - leftStackOverflow) * leftStackStep;
     const rightSlot = rightSlots[index];
-    const isLeftPinned = naturalLeft <= stickyLeft;
-    const isRightPinned = naturalRight >= viewportWidth - rightSlot.stickyRight;
+    // 严格不等:标签只有真正滚到沾边位置「之下」(被覆盖/折叠)时才算钉住。
+    // 用 <= / >= 会让首个标签在静止无溢出时被误判:naturalLeft 与 stickyLeft 都恰为 0
+    // (railPadding=0、scrollLeft=0、index 0),0<=0 恒真 → 永远 side:"left" → 常亮折叠边框。
+    const isLeftPinned = naturalLeft < stickyLeft;
+    const isRightPinned = naturalRight > viewportWidth - rightSlot.stickyRight;
     let side: EditorTabLayout["side"] = "normal";
     let left = naturalLeft;
 

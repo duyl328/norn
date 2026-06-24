@@ -113,6 +113,16 @@ export const expandAllFolderNodes = (view: FolderView): FolderView => ({
   nodes: expandLoadedTreeNodesDeep(view.nodes),
 });
 
+// 「定位当前文件」用:仅把指定目录设为展开,保留其后代已有的展开状态
+// (区别于 toggleFolderNode 展开时不动、折叠时深折叠的语义)。
+export const expandFolderNode = (view: FolderView, path: string): FolderView => ({
+  ...view,
+  nodes: updateTreeNode(view.nodes, path, (currentNode) => ({
+    ...currentNode,
+    expanded: true,
+  })),
+});
+
 // scratch 文件夹树（ScratchFolderView）的纯状态变换 ————————————————————————
 
 export const markScratchLoading = (

@@ -138,6 +138,9 @@
   .windows-titlebar {
     @apply grid h-9 shrink-0 grid-cols-[minmax(360px,auto)_minmax(80px,1fr)_minmax(260px,430px)_minmax(80px,1fr)_auto] items-center border-b border-border text-foreground;
     position: relative;
+    /* 标题栏(及其下拉菜单)必须盖在主内容之上。面板拖拽手柄是 z-index:80 且会冒泡到根层叠上下文,
+       否则菜单展开后,鼠标移到左侧/编辑区交界处会被下面的拖拽手柄抢走 → 显示 col-resize 分割光标。 */
+    z-index: 100;
     user-select: none;
     background: hsl(var(--card));
   }
@@ -643,19 +646,19 @@
   }
 
   /* 仅 macOS:编辑+Git 合成一张卡,横向贴边——左贴文件树、右贴窗口边,左右都不留缝。
-     只在底部抬离地面(margin-bottom)并把「搁在地面上」的底部两角做成圆角;顶/左/右贴边不圆。
+     只在底部抬离地面(margin-bottom)并把「搁在地面上」的右下角做成圆角;顶/左/右贴边与左下角不圆。
      Git 收起时编辑卡独占整块;Git 展开时解开右边与 Git 拼成同一张卡,中缝由 Git 左边框分隔。 */
   .platform-mac .editor-surface-panel {
     height: auto; /* 配合 margin-bottom:grid 把它拉伸为「行高 − 下边距」,避免 height:100% + margin 溢出。 */
     margin-bottom: 8px;
     border-bottom: var(--workspace-panel-border);
     border-right: var(--workspace-panel-border);
-    border-radius: 0 0 10px 10px; /* 仅底部两角(左下/右下)圆角,顶部与左右贴边为直角。 */
+    border-radius: 0 0 10px 0; /* 仅右下角圆角;左下角与顶部、左右贴边均为直角(mac 编辑区左下不圆)。 */
   }
 
   .platform-mac .workbench-layout-right-open .editor-surface-panel {
     border-right: 0;
-    border-bottom-right-radius: 0; /* 右下角交给 Git(编辑卡只保留左下圆角)。 */
+    border-bottom-right-radius: 0; /* 右下角交给 Git;此时编辑卡底部两角均为直角。 */
   }
 
   .editor-surface-panel {
@@ -965,6 +968,9 @@
   .editor-file-tabs {
     @apply relative flex h-9 min-w-0 items-end overflow-hidden text-muted-foreground;
     background: hsl(var(--editor-background));
+    /* 把 Tab 的高 z-index(单个 10000、边缘渐隐遮罩 30000)关进本栏自己的层叠上下文,
+       否则它们会窜到标题栏之上,导致「三横杠」菜单等下拉被 Tab 框盖住。 */
+    isolation: isolate;
   }
 
   .editor-file-tabs::before,
@@ -1007,12 +1013,21 @@
   }
 
   .editor-file-tab {
-    @apply inline-flex h-8 max-w-[220px] shrink-0 items-center gap-2 rounded-t-[0.45rem] border px-2.5 text-ui font-medium text-muted-foreground shadow-none;
+    /* h-9:与 .editor-file-tabs 标签栏同高,Tab 填满整条栏(去掉顶部 4px 空档),增加一体感。 */
+    @apply inline-flex h-9 max-w-[220px] shrink-0 items-center gap-2 rounded-t-[0.45rem] border px-2.5 text-ui font-medium text-muted-foreground shadow-none;
     position: sticky;
     min-width: 92px;
     background: hsl(var(--editor-background));
     border-color: hsl(var(--editor-background));
     transform-origin: center bottom;
+    /* 与 .editor-file-tab-active 同结构但全透明的 box-shadow:Tab 切换时顶部主色描边可在两套
+       shadow 之间平滑插值(颜色淡入/淡出),而非从 none 瞬变(长度不同的 shadow 列表无法过渡)。 */
+    box-shadow:
+      inset 0 2px 0 transparent,
+      inset 1px 0 0 transparent,
+      inset -1px 0 0 transparent,
+      0 -1px 0 transparent,
+      0 5px 12px transparent;
     transition:
       background-color 150ms ease,
       border-color 150ms ease,
@@ -1039,8 +1054,10 @@
     );
   }
 
+  /* 首个 Tab 的左上角跟随编辑面板的左上圆角(--workbench-main-corner-radius:展开文件树时 18px、
+     收起时 0),与面板圆角对齐,而非固定直角;右上角由面板 overflow-hidden 裁到面板右上圆角。 */
   .editor-file-tab:first-child {
-    border-top-left-radius: 0;
+    border-top-left-radius: var(--workbench-main-corner-radius);
   }
 
   .editor-file-tab-left-sticky {
@@ -1165,7 +1182,8 @@
   }
 
   .editor-file-tab-add {
-    @apply relative z-[30001] grid h-8 w-8 shrink-0 place-items-center rounded-t-[0.45rem] border-0 bg-transparent p-0 text-muted-foreground transition-colors;
+    /* 比整条 Tab 栏矮一圈、垂直居中,四周留 4px 空隙,不再贴着标签和右边缘。 */
+    @apply relative z-[30001] m-1 grid h-7 w-7 shrink-0 self-center place-items-center rounded-[6px] border-0 bg-transparent p-0 text-muted-foreground transition-colors;
   }
 
   .editor-file-tab-add:hover {
@@ -1358,7 +1376,7 @@
   }
 
   .file-tree-root {
-    @apply relative shrink-0 px-1.5 pb-0.5 pt-1;
+    @apply relative shrink-0 px-1.5 pb-0 pt-1;
     background: transparent;
   }
 
@@ -1384,33 +1402,32 @@
     color: hsl(var(--foreground));
   }
 
+  /* 「定位当前文件」在无可定位文件(未打开文件 / 文件不在本树)时禁用:仅变淡、不响应 hover。
+     不使用 not-allowed 光标——鼠标移入时保持普通箭头、无任何反应即可。 */
+  .file-tree-root-action:disabled {
+    @apply opacity-40;
+    cursor: default;
+  }
+
+  .file-tree-root-action:disabled:hover {
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+  }
+
   .file-tree-list {
     @apply min-w-0 overflow-x-hidden;
-    margin-left: 15px;
-    padding: 0.125rem 0.375rem 0.375rem 0.25rem;
+    /* 原本 15px 是给那条左侧竖向引导线预留的位置;引导线已移除,这里收窄,
+       让子项更靠近文件夹左缘(整树左缩,层级缩进由各行的 --tree-indent 控制)。 */
+    margin-left: 4px;
+    padding: 0 0.375rem 0.375rem 0.25rem;
     position: relative;
   }
 
-  .file-tree-list::before {
-    content: "";
-    position: absolute;
-    left: 8px;
-    top: 0;
-    bottom: 0.375rem;
-    width: 1px;
-    background: hsl(var(--border) / 0.54);
-  }
-
+  /* flat 列表(根下没有任何目录,例如「临时文件夹」里全是文件)只收一下右内边距;
+     不再清零缩进/箭头列——否则文件会被拉到最左、与根文件夹左侧平齐,看起来不在根之下。
+     保留与普通行一致的「箭头占位列 + 一层缩进」,文件就明显缩进在根文件夹之内。 */
   .file-tree-list-flat .tree-row {
-    --tree-indent: 0px;
-    grid-template-columns: 0 minmax(0, 1fr) 44px;
-    padding-left: 0.125rem;
     padding-right: 0.25rem;
-  }
-
-  .file-tree-list-flat .tree-row-toggle {
-    width: 0;
-    overflow: hidden;
   }
 
   .file-tree-node {
@@ -1428,8 +1445,12 @@
 
   .tree-row {
     --tree-depth: 0;
-    --tree-indent: calc(var(--tree-depth) * 14px);
-    @apply grid h-6 grid-cols-[16px_minmax(0,1fr)_52px] items-center gap-1 rounded-sm pr-1.5 text-ui leading-none text-foreground;
+    /* 每层缩进台阶。逐级累加,深层(A>B>C>D)会成倍右移,故取较小值更紧凑。 */
+    --tree-indent: calc(var(--tree-depth) * 10px);
+    /* 第一列是「箭头预留列」:目录显示折叠箭头,文件为空。箭头本身只有 12px,
+       原来留 16px + 4px gap 让文件(空箭头列)看起来比父目录更靠右,故收窄到 12px + 2px gap。 */
+    /* rounded-[5px]:选中/悬停高亮的圆角比 rounded-sm 略大一点,观感更柔和。 */
+    @apply grid h-6 grid-cols-[12px_minmax(0,1fr)_52px] items-center gap-0.5 rounded-[5px] pr-1.5 text-ui leading-none text-foreground;
     padding-left: calc(0.125rem + var(--tree-indent));
     transition:
       background-color 120ms ease,
@@ -1515,9 +1536,12 @@
 
   .tree-row-root {
     --tree-depth: 0;
-    @apply h-8 text-ui-lg font-semibold;
-    grid-template-columns: 18px minmax(0, 1fr) 44px;
-    padding-left: 0.25rem;
+    @apply h-7 text-ui-lg font-semibold;
+    /* 箭头列与子行(.tree-row)对齐到 12px、左内边距归零:否则根行更宽的箭头列会把根图标
+       右推 ~10px,正好抵消子项的第一层缩进 → 子文件/文件夹与根「临时文件夹」左侧平齐。
+       归零后根行比其子项靠左约一层缩进,层级关系恢复。 */
+    grid-template-columns: 12px minmax(0, 1fr) 44px;
+    padding-left: 0;
   }
 
   .tree-row-hidden {
@@ -1533,16 +1557,18 @@
     box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.5);
   }
 
-  .tree-row-active {
-    /* 选中态更明显:更饱和的主色半透明底 + 1px 主色内描边(替代原本很淡的 bg-accent)。 */
-    background: hsl(var(--primary) / 0.18);
+  .tree-row-active,
+  .tree-row-active:hover,
+  .tree-row-active:focus-visible {
+    /* 选中态:柔和的主色半透明填充,去掉生硬的 1px 内描边,观感更平滑;
+       同时覆盖 hover 态,保证选中行被悬停时高亮不被 hover 背景吞掉。 */
+    background: hsl(var(--primary) / 0.14);
     color: hsl(var(--foreground));
-    box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.45);
   }
 
   .tree-row-error {
     --tree-depth: 0;
-    --tree-indent: calc(var(--tree-depth) * 14px);
+    --tree-indent: calc(var(--tree-depth) * 10px);
     @apply truncate py-0.5 pr-2 text-ui-md leading-none text-destructive;
     padding-left: calc(1.5rem + var(--tree-indent));
   }

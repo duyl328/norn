@@ -182,6 +182,9 @@ export function useEditorTabs({ openDocuments, document, onCreateFile, viewRef }
 
             return Math.abs(currentCenter - centerLine) < Math.abs(bestCenter - centerLine) ? index : bestIndex;
           }, 0);
+    // z 序为以 visualCenterIndex 为顶的「帐篷」:左半区 1000+index 递增、右半区 1000+len-index 递减,
+    // 于是两侧折叠时每个标签都压在更靠外那个之上,形成自然层叠。不要再单独抬高激活标签——那会让
+    // 激活标签凌驾于它右侧正在折叠的标签之上(出现「第二个压住第三个」),破坏层叠顺序。
     const zIndexes = positions.map((_, index) => {
       if (index === visualCenterIndex) {
         return 10000;
