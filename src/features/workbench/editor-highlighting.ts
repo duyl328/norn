@@ -1,4 +1,3 @@
-import { StreamLanguage } from "@codemirror/language";
 import { type Extension } from "@codemirror/state";
 
 import { genericConfigLanguage, genericLogLanguage, genericTextCueLanguage } from "./editor-stream-parsers";
@@ -6,6 +5,13 @@ import { genericConfigLanguage, genericLogLanguage, genericTextCueLanguage } fro
 // 智能高亮叠层实现已拆分到独立模块；此处再导出以保持对外 API 不变。
 export { createSmartOverlayExtension, SMART_OVERLAY_SIZE_LIMIT_BYTES } from "./editor-smart-overlay";
 
+// 完全文本解析:不再加载任何 Lezer 语言解析器(@codemirror/lang-*)。
+// 所有文件统一走「智能叠层(逐行正则,见 editor-smart-overlay.ts)+ 泛化流解析器
+// (逐行 tokenizer,见 editor-stream-parsers.ts)」。代码、配置、日志都按规则着色,
+// 与具体语言/解析器不挂钩,对大文件也更友好(只扫可见视口、无全文件语法树)。
+//
+// 这两个常量保留原名以兼容 editor-surface 的引用;现在含义是「超过此大小连泛化流
+// 解析器都不挂,仅留叠层」。
 export const HIGHLIGHT_LANGUAGE_SIZE_LIMIT_BYTES = 5 * 1024 * 1024;
 export const FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES = 5 * 1024 * 1024;
 
@@ -16,27 +22,7 @@ type HighlightDocument = {
   size?: number;
 };
 
-type PreciseLanguageId =
-  | "css"
-  | "dockerfile"
-  | "html"
-  | "javascript"
-  | "json"
-  | "jsx"
-  | "markdown"
-  | "properties"
-  | "python"
-  | "rust"
-  | "shell"
-  | "sql"
-  | "toml"
-  | "tsx"
-  | "typescript"
-  | "xml"
-  | "yaml";
-
 export type HighlightMode =
-  | { kind: "language"; id: PreciseLanguageId; label: string }
   | { kind: "generic-config"; label: string }
   | { kind: "generic-log"; label: string }
   | { kind: "generic-text-cues"; label: string }
@@ -44,37 +30,6 @@ export type HighlightMode =
 
 const SAMPLE_SIZE = 16 * 1024;
 const MIN_STRUCTURED_LINES = 2;
-
-const preciseExtensionLanguages: Record<string, HighlightMode> = {
-  bash: { kind: "language", id: "shell", label: "Shell" },
-  cjs: { kind: "language", id: "javascript", label: "JavaScript" },
-  command: { kind: "language", id: "shell", label: "Shell" },
-  css: { kind: "language", id: "css", label: "CSS" },
-  htm: { kind: "language", id: "html", label: "HTML" },
-  html: { kind: "language", id: "html", label: "HTML" },
-  js: { kind: "language", id: "javascript", label: "JavaScript" },
-  json: { kind: "language", id: "json", label: "JSON" },
-  jsonc: { kind: "language", id: "json", label: "JSONC" },
-  jsx: { kind: "language", id: "jsx", label: "JSX" },
-  ksh: { kind: "language", id: "shell", label: "Shell" },
-  markdown: { kind: "language", id: "markdown", label: "Markdown" },
-  md: { kind: "language", id: "markdown", label: "Markdown" },
-  mjs: { kind: "language", id: "javascript", label: "JavaScript" },
-  properties: { kind: "language", id: "properties", label: "Properties" },
-  py: { kind: "language", id: "python", label: "Python" },
-  pyw: { kind: "language", id: "python", label: "Python" },
-  rs: { kind: "language", id: "rust", label: "Rust" },
-  sh: { kind: "language", id: "shell", label: "Shell" },
-  sql: { kind: "language", id: "sql", label: "SQL" },
-  svg: { kind: "language", id: "xml", label: "SVG" },
-  toml: { kind: "language", id: "toml", label: "TOML" },
-  ts: { kind: "language", id: "typescript", label: "TypeScript" },
-  tsx: { kind: "language", id: "tsx", label: "TSX" },
-  xml: { kind: "language", id: "xml", label: "XML" },
-  yaml: { kind: "language", id: "yaml", label: "YAML" },
-  yml: { kind: "language", id: "yaml", label: "YAML" },
-  zsh: { kind: "language", id: "shell", label: "Shell" },
-};
 
 const genericConfigExtensions = new Set([
   "cfg",
@@ -91,11 +46,6 @@ const genericConfigExtensions = new Set([
   "rc",
   "service",
 ]);
-
-const exactLanguageFilenames: Record<string, HighlightMode> = {
-  containerfile: { kind: "language", id: "dockerfile", label: "Dockerfile" },
-  dockerfile: { kind: "language", id: "dockerfile", label: "Dockerfile" },
-};
 
 const exactConfigFilenames = new Set([
   ".babelrc",
@@ -174,20 +124,6 @@ const looksLikeConfig = (content: string) => {
   return matches >= MIN_STRUCTURED_LINES && matches / lines.length >= 0.35;
 };
 
-const looksLikeMarkdown = (content: string) => {
-  const lines = getMeaningfulLines(content);
-
-  if (lines.length === 0) {
-    return false;
-  }
-
-  const matches = lines.filter((line) =>
-    /^(?:#{1,6}\s+|[-*+]\s+|\d+\.\s+|>\s+|```|---$|\[[^\]]+\]\([^)]+\))/.test(line),
-  ).length;
-
-  return matches >= MIN_STRUCTURED_LINES && matches / lines.length >= 0.25;
-};
-
 export const resolveHighlightMode = (document: HighlightDocument): HighlightMode => {
   if (typeof document.size === "number" && document.size > HIGHLIGHT_LANGUAGE_SIZE_LIMIT_BYTES) {
     return { kind: "plain-text", label: "Plain Text", reason: "large-file" };
@@ -196,12 +132,6 @@ export const resolveHighlightMode = (document: HighlightDocument): HighlightMode
   const baseName = getBaseName(document);
   const normalizedBaseName = baseName.toLowerCase();
   const extension = getExtension(normalizedBaseName);
-
-  const exactLanguage = exactLanguageFilenames[normalizedBaseName];
-
-  if (exactLanguage) {
-    return exactLanguage;
-  }
 
   if (
     exactConfigFilenames.has(normalizedBaseName) ||
@@ -213,12 +143,6 @@ export const resolveHighlightMode = (document: HighlightDocument): HighlightMode
 
   if (extension === "log") {
     return genericLogMode;
-  }
-
-  const preciseLanguage = preciseExtensionLanguages[extension];
-
-  if (preciseLanguage) {
-    return preciseLanguage;
   }
 
   if (genericConfigExtensions.has(extension)) {
@@ -233,24 +157,16 @@ export const resolveHighlightMode = (document: HighlightDocument): HighlightMode
     return genericConfigMode;
   }
 
-  if (looksLikeMarkdown(document.content)) {
-    return { kind: "language", id: "markdown", label: "Markdown" };
-  }
-
   if (document.content.length === 0) {
     return plainTextMode;
   }
 
+  // 代码及其余一切文本:智能叠层负责关键字/函数/字符串/数字等着色,
+  // 这里再叠一层轻量的泛化 tokenizer 兜底结构性 token。
   return genericTextCueMode;
 };
 
-export const getHighlightLabel = (mode: HighlightMode) => mode.label;
-
 export const loadHighlightExtensions = async (mode: HighlightMode): Promise<Extension[]> => {
-  if (mode.kind === "plain-text") {
-    return [];
-  }
-
   if (mode.kind === "generic-config") {
     return [genericConfigLanguage];
   }
@@ -263,78 +179,5 @@ export const loadHighlightExtensions = async (mode: HighlightMode): Promise<Exte
     return [genericTextCueLanguage];
   }
 
-  return loadPreciseLanguage(mode.id);
-};
-
-const loadPreciseLanguage = async (language: PreciseLanguageId): Promise<Extension[]> => {
-  switch (language) {
-    case "css": {
-      const { css } = await import("@codemirror/lang-css");
-      return [css()];
-    }
-    case "dockerfile": {
-      const { dockerFile } = await import("@codemirror/legacy-modes/mode/dockerfile");
-      return [StreamLanguage.define(dockerFile)];
-    }
-    case "html": {
-      const { html } = await import("@codemirror/lang-html");
-      return [html()];
-    }
-    case "javascript": {
-      const { javascript } = await import("@codemirror/lang-javascript");
-      return [javascript()];
-    }
-    case "json": {
-      const { json } = await import("@codemirror/lang-json");
-      return [json()];
-    }
-    case "jsx": {
-      const { javascript } = await import("@codemirror/lang-javascript");
-      return [javascript({ jsx: true })];
-    }
-    case "markdown": {
-      const { markdown } = await import("@codemirror/lang-markdown");
-      return [markdown()];
-    }
-    case "properties": {
-      const { properties } = await import("@codemirror/legacy-modes/mode/properties");
-      return [StreamLanguage.define(properties)];
-    }
-    case "python": {
-      const { python } = await import("@codemirror/lang-python");
-      return [python()];
-    }
-    case "rust": {
-      const { rust } = await import("@codemirror/lang-rust");
-      return [rust()];
-    }
-    case "shell": {
-      const { shell } = await import("@codemirror/legacy-modes/mode/shell");
-      return [StreamLanguage.define(shell)];
-    }
-    case "sql": {
-      const { sql } = await import("@codemirror/lang-sql");
-      return [sql()];
-    }
-    case "toml": {
-      const { toml } = await import("@codemirror/legacy-modes/mode/toml");
-      return [StreamLanguage.define(toml)];
-    }
-    case "tsx": {
-      const { javascript } = await import("@codemirror/lang-javascript");
-      return [javascript({ jsx: true, typescript: true })];
-    }
-    case "typescript": {
-      const { javascript } = await import("@codemirror/lang-javascript");
-      return [javascript({ typescript: true })];
-    }
-    case "xml": {
-      const { xml } = await import("@codemirror/lang-xml");
-      return [xml()];
-    }
-    case "yaml": {
-      const { yaml } = await import("@codemirror/lang-yaml");
-      return [yaml()];
-    }
-  }
+  return [];
 };

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   createSmartOverlayExtension,
-  getHighlightLabel,
   HIGHLIGHT_LANGUAGE_SIZE_LIMIT_BYTES,
   type HighlightMode,
   loadHighlightExtensions,
@@ -22,11 +21,6 @@ describe("resolveHighlightMode", () => {
     expect(mode).toEqual({ kind: "plain-text", label: "Plain Text", reason: "large-file" });
   });
 
-  it("精确文件名命中语言(Dockerfile / Containerfile)", () => {
-    expect(resolveHighlightMode(docOf("Dockerfile"))).toMatchObject({ kind: "language", id: "dockerfile" });
-    expect(resolveHighlightMode(docOf("Containerfile"))).toMatchObject({ kind: "language", id: "dockerfile" });
-  });
-
   it("精确配置文件名 / 以 rc 结尾 / .env. 前缀都识别为 generic-config", () => {
     expect(resolveHighlightMode(docOf(".prettierrc"))).toMatchObject({ kind: "generic-config" });
     expect(resolveHighlightMode(docOf("foorc"))).toMatchObject({ kind: "generic-config" });
@@ -37,24 +31,15 @@ describe("resolveHighlightMode", () => {
     expect(resolveHighlightMode(docOf("server.log"))).toMatchObject({ kind: "generic-log" });
   });
 
-  it("常见扩展名映射到精确语言", () => {
-    expect(resolveHighlightMode(docOf("a.ts"))).toMatchObject({ kind: "language", id: "typescript" });
-    expect(resolveHighlightMode(docOf("a.tsx"))).toMatchObject({ kind: "language", id: "tsx" });
-    expect(resolveHighlightMode(docOf("a.py"))).toMatchObject({ kind: "language", id: "python" });
-    expect(resolveHighlightMode(docOf("a.rs"))).toMatchObject({ kind: "language", id: "rust" });
-    expect(resolveHighlightMode(docOf("a.svg"))).toMatchObject({ kind: "language", id: "xml" });
-  });
-
-  it("根据 path(而非 name)推断扩展名", () => {
-    expect(resolveHighlightMode(docOf("display.txt", "x", { path: "/deep/dir/real.py" }))).toMatchObject({
-      kind: "language",
-      id: "python",
-    });
-  });
-
   it("通用配置扩展名识别为 generic-config", () => {
     expect(resolveHighlightMode(docOf("settings.ini"))).toMatchObject({ kind: "generic-config" });
     expect(resolveHighlightMode(docOf("nginx.conf"))).toMatchObject({ kind: "generic-config" });
+  });
+
+  it("代码文件(无配置/日志特征)回退到 generic-text-cues:完全文本解析,不挂语言", () => {
+    expect(resolveHighlightMode(docOf("a.ts", "const x = 1"))).toMatchObject({ kind: "generic-text-cues" });
+    expect(resolveHighlightMode(docOf("a.py", "def foo(): pass"))).toMatchObject({ kind: "generic-text-cues" });
+    expect(resolveHighlightMode(docOf("a.rs", "fn main() {}"))).toMatchObject({ kind: "generic-text-cues" });
   });
 
   it("内容启发式:日志结构识别为 generic-log", () => {
@@ -67,11 +52,6 @@ describe("resolveHighlightMode", () => {
     expect(resolveHighlightMode(docOf("data.dat", content))).toMatchObject({ kind: "generic-config" });
   });
 
-  it("内容启发式:markdown 列表识别为 markdown", () => {
-    const content = ["- item one", "* item two", "1. numbered", "+ plus item"].join("\n");
-    expect(resolveHighlightMode(docOf("notes.dat", content))).toMatchObject({ kind: "language", id: "markdown" });
-  });
-
   it("空内容回退到 plain-text", () => {
     expect(resolveHighlightMode(docOf("empty.dat", ""))).toMatchObject({ kind: "plain-text" });
   });
@@ -80,13 +60,6 @@ describe("resolveHighlightMode", () => {
     expect(resolveHighlightMode(docOf("mystery.dat", "hello world just some prose"))).toMatchObject({
       kind: "generic-text-cues",
     });
-  });
-});
-
-describe("getHighlightLabel", () => {
-  it("返回 mode.label", () => {
-    expect(getHighlightLabel({ kind: "plain-text", label: "Plain Text" })).toBe("Plain Text");
-    expect(getHighlightLabel({ kind: "language", id: "rust", label: "Rust" })).toBe("Rust");
   });
 });
 
@@ -104,34 +77,6 @@ describe("loadHighlightExtensions", () => {
     for (const mode of modes) {
       const extensions = await loadHighlightExtensions(mode);
       expect(extensions).toHaveLength(1);
-    }
-  });
-
-  it("所有精确语言都能动态加载出扩展", async () => {
-    const ids = [
-      "css",
-      "dockerfile",
-      "html",
-      "javascript",
-      "json",
-      "jsx",
-      "markdown",
-      "properties",
-      "python",
-      "rust",
-      "shell",
-      "sql",
-      "toml",
-      "tsx",
-      "typescript",
-      "xml",
-      "yaml",
-    ] as const;
-
-    for (const id of ids) {
-      const extensions = await loadHighlightExtensions({ kind: "language", id, label: id });
-      expect(Array.isArray(extensions)).toBe(true);
-      expect(extensions.length).toBeGreaterThanOrEqual(1);
     }
   });
 });

@@ -2245,6 +2245,50 @@
     text-align: right;
   }
 
+  /* 折叠槽:箭头平时淡出,移到 gutter 上才显眼(IDEA 风);占位符做成小胶囊。 */
+  .codemirror-shell .cm-foldGutter .cm-gutterElement {
+    min-width: 0;
+    padding: 0 2px;
+    cursor: pointer;
+    color: hsl(var(--muted-foreground) / 0.45);
+    transition: color 0.12s ease;
+  }
+
+  .codemirror-shell .cm-gutters:hover .cm-foldGutter .cm-gutterElement,
+  .codemirror-shell .cm-foldGutter .cm-gutterElement:hover {
+    color: hsl(var(--foreground));
+  }
+
+  .codemirror-shell .cm-foldPlaceholder {
+    margin: 0 2px;
+    padding: 0 6px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 4px;
+    background-color: hsl(var(--muted));
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* 悬停折叠箭头时整段区域高亮(含首尾括号行),见 editor-fold-hover.ts。 */
+  .codemirror-shell .cm-foldHoverRegion {
+    background-color: hsl(var(--accent) / 0.35);
+  }
+
+  /* 配对括号:光标贴着括号时上下两个一起高亮;未配上的标红。 */
+  .codemirror-shell .cm-matchingBracket,
+  .codemirror-shell .cm-focused .cm-matchingBracket {
+    background-color: hsl(var(--primary) / 0.22);
+    border-radius: 2px;
+    outline: 1px solid hsl(var(--primary) / 0.45);
+    color: inherit;
+  }
+
+  .codemirror-shell .cm-nonmatchingBracket,
+  .codemirror-shell .cm-focused .cm-nonmatchingBracket {
+    background-color: hsl(0 80% 60% / 0.2);
+    outline: 1px solid hsl(0 80% 60% / 0.55);
+    color: inherit;
+  }
+
   .codemirror-shell .cm-selectionBackground {
     background-color: hsl(var(--primary) / 0.22);
   }

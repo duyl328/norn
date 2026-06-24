@@ -274,6 +274,14 @@ export const createEditorSearchPanel = (view: EditorView): Panel => {
     countEl.textContent = total === 0 ? "无结果" : `${current}/${total}`;
   };
 
+  // 计数是全文档扫描,连续按键/移动光标时用尾随防抖合并,只让"X/Y"延迟刷新;
+  // 查找/跳转/选中仍即时响应(走 commit/revealMatch,不经过这里)。
+  let countTimer = 0;
+  const scheduleCount = () => {
+    window.clearTimeout(countTimer);
+    countTimer = window.setTimeout(refreshCount, 120);
+  };
+
   const commit = () => {
     // 通配符模式:把输入翻译成正则,以 regexp 查询执行(界面仍显示用户输入的通配写法)。
     const query = new SearchQuery({
@@ -530,8 +538,11 @@ export const createEditorSearchPanel = (view: EditorView): Panel => {
 
       // 查询变化、导航(选区变化)或替换/编辑(文档变化)后都刷新计数。
       if (queryChanged || update.selectionSet || update.docChanged) {
-        refreshCount();
+        scheduleCount();
       }
+    },
+    destroy() {
+      window.clearTimeout(countTimer);
     },
   };
 };

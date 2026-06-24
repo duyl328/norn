@@ -1,5 +1,14 @@
+import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
+import {
+  bracketMatching,
+  codeFolding,
+  defaultHighlightStyle,
+  foldGutter,
+  foldKeymap,
+  indentOnInput,
+  syntaxHighlighting,
+} from "@codemirror/language";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
 import { type Compartment, type Extension } from "@codemirror/state";
 import {
@@ -11,7 +20,9 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 
+import { foldHoverHighlight } from "./editor-fold-hover";
 import { createSmartOverlayExtension } from "./editor-highlighting";
+import { indentFoldService } from "./editor-indent-fold";
 import { createEditorSearchPanel } from "./editor-search-panel";
 import type { WorkbenchDocument } from "./types";
 
@@ -85,11 +96,11 @@ export const codeMirrorTheme = EditorView.theme({
  */
 const editorKeymap = keymap.of([
   indentWithTab,
+  ...closeBracketsKeymap, // 自动闭合:闭合符前再敲会跳过、退格删成对括号/引号
   ...searchKeymap, // 查找/替换:Mod-f 打开查找,Mod-Alt-f / Mod-h 替换
+  ...foldKeymap, // 折叠:Ctrl-Shift-[ 折叠 / Ctrl-Shift-] 展开 / Ctrl-Alt-[ 全部折叠
   // 预留插槽(随对应功能落地时启用):
-  // ...closeBracketsKeymap,
-  // ...completionKeymap,
-  // ...foldKeymap,
+  // ...completionKeymap, // 代码补全:明确不做
   ...defaultKeymap,
   ...historyKeymap,
 ]);
@@ -105,6 +116,11 @@ export const createCodeMirrorExtensions = (
   drawSelection(),
   indentOnInput(),
   bracketMatching(),
+  closeBrackets(),
+  codeFolding(),
+  indentFoldService,
+  foldGutter(),
+  foldHoverHighlight,
   syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
   highlightActiveLine(),
   highlightSelectionMatches(),
