@@ -619,6 +619,56 @@ fn copy_files_to_clipboard(paths: Vec<String>, text: String) -> Result<bool, Str
     }
 }
 
+// 在该路径所在目录打开系统终端(文件 → 其所在目录;目录 → 该目录本身)。
+#[tauri::command]
+fn open_terminal_at(path: String) -> Result<(), String> {
+    let target = PathBuf::from(&path);
+    let directory = if target.is_dir() {
+        target.clone()
+    } else {
+        target.parent().map(Path::to_path_buf).unwrap_or_else(|| target.clone())
+    };
+
+    if !directory.is_dir() {
+        return Err(format!("{} is not a directory", directory.display()));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // 优先 Windows Terminal;不可用时回退到 cmd。
+        if Command::new("wt.exe").arg("-d").arg(&directory).spawn().is_ok() {
+            return Ok(());
+        }
+        Command::new("cmd")
+            .args(["/C", "start", "cmd", "/K"])
+            .arg(format!("cd /d {}", directory.display()))
+            .spawn()
+            .map_err(|error| format!("Unable to open terminal: {error}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .args(["-a", "Terminal"])
+            .arg(&directory)
+            .spawn()
+            .map_err(|error| format!("Unable to open Terminal: {error}"))?;
+        return Ok(());
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        // Linux:依次尝试常见终端,以目标目录为工作目录启动。
+        for terminal in ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"] {
+            if Command::new(terminal).current_dir(&directory).spawn().is_ok() {
+                return Ok(());
+            }
+        }
+        Err("No supported terminal emulator found".to_string())
+    }
+}
+
 // 在系统文件管理器中显示该路径(文件 → 打开所在目录并选中;目录 → 同样定位)。
 #[tauri::command]
 fn reveal_in_file_manager(path: String) -> Result<(), String> {
@@ -1585,6 +1635,7 @@ pub fn run() {
             watch_directory,
             unwatch_directory,
             reveal_in_file_manager,
+            open_terminal_at,
             copy_files_to_clipboard,
             scratch_folder,
             create_file,

@@ -148,6 +148,12 @@ export type TreeSelectionModifiers = {
   range: boolean; // Shift:区间选择
 };
 
+// 文件树「即输即搜」(类 IDEA speed search):在某棵树内直接键入即开始,只匹配当前可见行的名字。
+export type TreeSearch = {
+  scope: "main" | "scratch";
+  query: string;
+};
+
 export type FileTreeNameDialog =
   | { kind: "create-file"; parentPath: string; scope?: "main" | "scratch" }
   | { kind: "create-directory"; parentPath: string; scope?: "main" | "scratch" }

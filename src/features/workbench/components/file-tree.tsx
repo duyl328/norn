@@ -16,6 +16,7 @@ import {
   Pencil,
   RefreshCw,
   Scissors,
+  Terminal,
   Trash2,
 } from "lucide-react";
 import {
@@ -50,6 +51,7 @@ import type {
   FileTreeNode,
   TreeDropTarget,
   TreePanelView,
+  TreeSearch,
   TreeSelection,
   TreeSelectionModifiers,
 } from "../types";
@@ -58,6 +60,7 @@ import { flattenVisibleTreeRows, formatFileSize, getFileTreeIcon, isPathInsideOr
 export function FileTreePanel({
   activePath,
   selection,
+  search,
   clipboard,
   contextMenu,
   draggedNode,
@@ -75,6 +78,7 @@ export function FileTreePanel({
   onOpenFile,
   onSelectNode,
   onTreeKeyDown,
+  onTreeBlur,
   onPasteNode,
   onRefreshFolder,
   onRequestCreateDirectory,
@@ -82,6 +86,7 @@ export function FileTreePanel({
   onRequestRenameNode,
   onRequestTrashNode,
   onRevealNode,
+  onOpenTerminal,
   onToggleDirectory,
   onToggleRootDirectory,
   onExpandAll,
@@ -90,6 +95,7 @@ export function FileTreePanel({
 }: {
   activePath: string;
   selection: TreeSelection | null;
+  search: TreeSearch | null;
   clipboard: FileTreeClipboard | null;
   contextMenu: FileTreeContextMenuState | null;
   draggedNode: FileTreeNode | null;
@@ -107,6 +113,7 @@ export function FileTreePanel({
   onOpenFile: (node: FileTreeNode) => void;
   onSelectNode: (node: FileTreeNode, modifiers: TreeSelectionModifiers, scope: "main" | "scratch") => void;
   onTreeKeyDown: (scope: "main" | "scratch", event: ReactKeyboardEvent) => void;
+  onTreeBlur: () => void;
   onPasteNode: (targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onRefreshFolder: (path: string, scope?: "main" | "scratch") => void;
   onRequestCreateDirectory: (parentPath: string, scope?: "main" | "scratch") => void;
@@ -114,6 +121,7 @@ export function FileTreePanel({
   onRequestRenameNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
   onRequestTrashNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
   onRevealNode: (node: FileTreeNode) => void;
+  onOpenTerminal: (node: FileTreeNode) => void;
   onToggleDirectory: (node: FileTreeNode) => void;
   onToggleRootDirectory: () => void;
   onExpandAll?: () => void;
@@ -127,6 +135,8 @@ export function FileTreePanel({
     [selection, scope],
   );
   const leadPath = selection?.scope === scope ? selection.leadPath : null;
+  // 即输即搜:本作用域的查询(空 = 未搜索)。匹配在行内按子串高亮,命中数显示在搜索条上。
+  const searchQuery = search?.scope === scope ? search.query : "";
   const rows = useMemo(
     () => (treeView && treeView.rootExpanded ? flattenVisibleTreeRows(treeView.nodes, 1) : []),
     [treeView?.nodes, treeView?.rootExpanded],
@@ -137,6 +147,10 @@ export function FileTreePanel({
     getScrollElement: () => scrollParentRef.current,
     overscan: 12,
   });
+  const searchMatchCount = useMemo(() => {
+    const needle = searchQuery.trim().toLowerCase();
+    return needle ? rows.filter((row) => row.node.name.toLowerCase().includes(needle)).length : 0;
+  }, [searchQuery, rows]);
 
   // 「定位当前文件」:点击后置位 pending,待祖先目录异步加载/展开使目标行出现在 rows 中,
   // 再把它滚动到可见区中部。pending 用 ref 记录,滚动一次后清除,避免之后任何树变化都把视图拉回。
@@ -209,6 +223,12 @@ export function FileTreePanel({
         onRevealActiveFile={onRevealActiveFile ? handleRevealActiveFile : undefined}
         canRevealActiveFile={canRevealActiveFile}
       />
+      {searchQuery ? (
+        <div className="file-tree-search-bar">
+          <span className="file-tree-search-query">{searchQuery}</span>
+          <span className="file-tree-search-count">{searchMatchCount > 0 ? `${searchMatchCount} 项` : "无匹配"}</span>
+        </div>
+      ) : null}
       <div
         className="file-tree-scroll min-h-0 flex-1"
         ref={scrollParentRef}
@@ -227,6 +247,8 @@ export function FileTreePanel({
           // 之后方向键/快捷键都在这里处理,行被虚拟化卸载也不会丢失焦点。
           onKeyDown={(event) => onTreeKeyDown(scope, event)}
           onMouseDown={(event) => event.currentTarget.focus()}
+          // 焦点离开文件树即退出搜索(类 IDEA speed search)。行不可聚焦,blur 即代表焦点真正离开本树。
+          onBlur={onTreeBlur}
         >
           {treeView.loadingPath === treeView.rootPath && treeView.nodes.length === 0 ? (
             <div className="px-2 py-2 text-ui text-muted-foreground">Loading folder...</div>
@@ -246,6 +268,7 @@ export function FileTreePanel({
                   <FileTreeRow
                     selectedPaths={selectedPaths}
                     leadPath={leadPath}
+                    searchQuery={searchQuery}
                     ancestorCanonicalPaths={row.ancestorCanonicalPaths}
                     depth={row.depth}
                     draggedNode={draggedNode}
@@ -292,6 +315,7 @@ export function FileTreePanel({
           onRequestRenameNode={(node) => onRequestRenameNode(node, scope)}
           onRequestTrashNode={(node) => onRequestTrashNode(node, scope)}
           onRevealNode={onRevealNode}
+          onOpenTerminal={onOpenTerminal}
           onCopyPath={onCopyPath}
           x={scopedContextMenu.x}
           y={scopedContextMenu.y}
@@ -396,9 +420,29 @@ export function FileTreeRootRow({
   );
 }
 
+// 即输即搜:把名字里第一处匹配(不分大小写)用 <mark> 高亮。无查询/无命中时原样返回。
+function highlightMatch(name: string, query: string) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) {
+    return name;
+  }
+  const start = name.toLowerCase().indexOf(needle);
+  if (start < 0) {
+    return name;
+  }
+  return (
+    <>
+      {name.slice(0, start)}
+      <mark className="tree-row-match">{name.slice(start, start + needle.length)}</mark>
+      {name.slice(start + needle.length)}
+    </>
+  );
+}
+
 export function FileTreeRow({
   selectedPaths,
   leadPath,
+  searchQuery,
   ancestorCanonicalPaths,
   depth = 0,
   draggedNode,
@@ -417,6 +461,7 @@ export function FileTreeRow({
 }: {
   selectedPaths: Set<string>;
   leadPath: string | null;
+  searchQuery: string;
   ancestorCanonicalPaths: string[];
   depth?: number;
   draggedNode: FileTreeNode | null;
@@ -551,7 +596,7 @@ export function FileTreeRow({
         </span>
         <span className="tree-row-main">
           <Icon className={cn("tree-row-icon", iconClassName)} />
-          <span className="tree-row-name">{node.name}</span>
+          <span className="tree-row-name">{highlightMatch(node.name, searchQuery)}</span>
           {node.isSymlink ? <Link2 className="tree-row-badge-icon" /> : null}
         </span>
         <span className="tree-row-size">
@@ -579,6 +624,7 @@ export function FileTreeContextMenu({
   onRequestRenameNode,
   onRequestTrashNode,
   onRevealNode,
+  onOpenTerminal,
   onCopyPath,
   x,
   y,
@@ -594,6 +640,7 @@ export function FileTreeContextMenu({
   onRequestRenameNode: (node: FileTreeNode) => void;
   onRequestTrashNode: (node: FileTreeNode) => void;
   onRevealNode: (node: FileTreeNode) => void;
+  onOpenTerminal: (node: FileTreeNode) => void;
   onCopyPath: (node: FileTreeNode, mode: "absolute" | "relative") => void;
   x: number;
   y: number;
@@ -625,6 +672,15 @@ export function FileTreeContextMenu({
       >
         <FolderSearch className="file-tree-context-icon" />
         在文件管理器中显示
+      </button>
+      <button
+        className="file-tree-context-item"
+        disabled={!node}
+        type="button"
+        onClick={() => node && onOpenTerminal(node)}
+      >
+        <Terminal className="file-tree-context-icon" />
+        在此处打开终端
       </button>
       <div className="file-tree-context-separator" />
       <button

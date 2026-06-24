@@ -27,6 +27,7 @@ import type {
   ScratchFolderView,
   TreeDropTarget,
   TreePanelView,
+  TreeSearch,
   TreeSelection,
   TreeSelectionModifiers,
 } from "../types";
@@ -42,6 +43,7 @@ import { FileTreePanel } from "./file-tree";
 export function ProjectPanel({
   activePath,
   selection,
+  search,
   clipboard,
   contextMenu,
   draggedNode,
@@ -61,6 +63,7 @@ export function ProjectPanel({
   onOpenTreeFile,
   onSelectTreeNode,
   onTreeKeyDown,
+  onTreeBlur,
   onCopyPath,
   onPasteNode,
   onRefreshFolder,
@@ -69,6 +72,7 @@ export function ProjectPanel({
   onRequestRenameNode,
   onRequestTrashNode,
   onRevealNode,
+  onOpenTerminal,
   recentFolders,
   scratchFolder,
   scratchFolderView,
@@ -82,6 +86,7 @@ export function ProjectPanel({
 }: {
   activePath: string;
   selection: TreeSelection | null;
+  search: TreeSearch | null;
   clipboard: FileTreeClipboard | null;
   contextMenu: FileTreeContextMenuState | null;
   draggedNode: FileTreeNode | null;
@@ -101,6 +106,7 @@ export function ProjectPanel({
   onOpenTreeFile: (node: FileTreeNode) => void;
   onSelectTreeNode: (node: FileTreeNode, modifiers: TreeSelectionModifiers, scope: "main" | "scratch") => void;
   onTreeKeyDown: (scope: "main" | "scratch", event: ReactKeyboardEvent) => void;
+  onTreeBlur: () => void;
   onCopyPath: (node: FileTreeNode, mode: "absolute" | "relative") => void;
   onPasteNode: (targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onRefreshFolder: (path: string, scope?: "main" | "scratch") => void;
@@ -109,6 +115,7 @@ export function ProjectPanel({
   onRequestRenameNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
   onRequestTrashNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
   onRevealNode: (node: FileTreeNode) => void;
+  onOpenTerminal: (node: FileTreeNode) => void;
   recentFolders: RecentFolder[];
   scratchFolder: ScratchFolder | null;
   scratchFolderView: ScratchFolderView;
@@ -179,6 +186,7 @@ export function ProjectPanel({
           <FileTreePanel
             activePath={activePath}
             selection={selection}
+            search={search}
             clipboard={clipboard}
             contextMenu={contextMenu}
             draggedNode={draggedNode}
@@ -206,6 +214,7 @@ export function ProjectPanel({
             onOpenFile={onOpenTreeFile}
             onSelectNode={onSelectTreeNode}
             onTreeKeyDown={onTreeKeyDown}
+            onTreeBlur={onTreeBlur}
             onCopyPath={onCopyPath}
             onPasteNode={onPasteNode}
             onRefreshFolder={onRefreshFolder}
@@ -214,6 +223,7 @@ export function ProjectPanel({
             onRequestRenameNode={onRequestRenameNode}
             onRequestTrashNode={onRequestTrashNode}
             onRevealNode={onRevealNode}
+            onOpenTerminal={onOpenTerminal}
             onToggleDirectory={onToggleDirectory}
             onToggleRootDirectory={onToggleRootDirectory}
             onExpandAll={onExpandAll}
@@ -237,6 +247,7 @@ export function ProjectPanel({
         <ProjectPanelScratchFolder
           activePath={activePath}
           selection={selection}
+          search={search}
           clipboard={clipboard}
           contextMenu={contextMenu}
           draggedNode={draggedNode}
@@ -254,6 +265,7 @@ export function ProjectPanel({
           onOpenFile={onOpenTreeFile}
           onSelectNode={onSelectTreeNode}
           onTreeKeyDown={onTreeKeyDown}
+          onTreeBlur={onTreeBlur}
           onCopyPath={onCopyPath}
           onPasteNode={onPasteNode}
           onRefreshFolder={onRefreshFolder}
@@ -262,6 +274,7 @@ export function ProjectPanel({
           onRequestRenameNode={onRequestRenameNode}
           onRequestTrashNode={onRequestTrashNode}
           onRevealNode={onRevealNode}
+          onOpenTerminal={onOpenTerminal}
           onToggleDirectory={onToggleScratchDirectory}
           onToggleRootDirectory={onToggleScratchRootDirectory}
         />
@@ -388,6 +401,7 @@ export function ProjectPanelStart({
 export function ProjectPanelScratchFolder({
   activePath,
   selection,
+  search,
   clipboard,
   contextMenu,
   draggedNode,
@@ -405,6 +419,7 @@ export function ProjectPanelScratchFolder({
   onOpenFile,
   onSelectNode,
   onTreeKeyDown,
+  onTreeBlur,
   onCopyPath,
   onPasteNode,
   onRefreshFolder,
@@ -413,11 +428,13 @@ export function ProjectPanelScratchFolder({
   onRequestRenameNode,
   onRequestTrashNode,
   onRevealNode,
+  onOpenTerminal,
   onToggleDirectory,
   onToggleRootDirectory,
 }: {
   activePath: string;
   selection: TreeSelection | null;
+  search: TreeSearch | null;
   clipboard: FileTreeClipboard | null;
   contextMenu: FileTreeContextMenuState | null;
   draggedNode: FileTreeNode | null;
@@ -435,6 +452,7 @@ export function ProjectPanelScratchFolder({
   onOpenFile: (node: FileTreeNode) => void;
   onSelectNode: (node: FileTreeNode, modifiers: TreeSelectionModifiers, scope: "main" | "scratch") => void;
   onTreeKeyDown: (scope: "main" | "scratch", event: ReactKeyboardEvent) => void;
+  onTreeBlur: () => void;
   onCopyPath: (node: FileTreeNode, mode: "absolute" | "relative") => void;
   onPasteNode: (targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onRefreshFolder: (path: string, scope?: "main" | "scratch") => void;
@@ -443,6 +461,7 @@ export function ProjectPanelScratchFolder({
   onRequestRenameNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
   onRequestTrashNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
   onRevealNode: (node: FileTreeNode) => void;
+  onOpenTerminal: (node: FileTreeNode) => void;
   onToggleDirectory: (node: FileTreeNode) => void;
   onToggleRootDirectory: () => void;
 }) {
@@ -463,6 +482,7 @@ export function ProjectPanelScratchFolder({
       <FileTreePanel
         activePath={activePath}
         selection={selection}
+        search={search}
         clipboard={clipboard}
         contextMenu={contextMenu}
         draggedNode={draggedNode}
@@ -480,6 +500,7 @@ export function ProjectPanelScratchFolder({
         onOpenFile={onOpenFile}
         onSelectNode={onSelectNode}
         onTreeKeyDown={onTreeKeyDown}
+        onTreeBlur={onTreeBlur}
         onPasteNode={onPasteNode}
         onRefreshFolder={onRefreshFolder}
         onRequestCreateDirectory={onRequestCreateDirectory}
@@ -487,6 +508,7 @@ export function ProjectPanelScratchFolder({
         onRequestRenameNode={onRequestRenameNode}
         onRequestTrashNode={onRequestTrashNode}
         onRevealNode={onRevealNode}
+        onOpenTerminal={onOpenTerminal}
         onToggleDirectory={onToggleDirectory}
         onToggleRootDirectory={onToggleRootDirectory}
       />

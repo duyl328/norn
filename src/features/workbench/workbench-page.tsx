@@ -103,8 +103,10 @@ export function WorkbenchPage() {
     expandAllDirectories,
     revealActiveFile,
     treeSelection,
+    treeSearch,
     selectTreeNode,
     handleTreeKeyDown,
+    clearTreeSearch,
     toggleScratchDirectory,
     toggleScratchRootDirectory,
     refreshTreePath,
@@ -118,6 +120,7 @@ export function WorkbenchPage() {
     pasteTreeNode,
     requestTrashTreeNode,
     revealTreeNodeInFileManager,
+    openTerminalAtNode,
     confirmTrashTreeNode,
     moveTreeNodeToDirectory,
     openFileTreeContextMenu,
@@ -303,6 +306,7 @@ export function WorkbenchPage() {
                 <ProjectPanel
                   activePath={document.path}
                   selection={treeSelection}
+                  search={treeSearch}
                   clipboard={fileTreeClipboard}
                   contextMenu={fileTreeContextMenu}
                   draggedNode={draggedTreeNode}
@@ -329,6 +333,7 @@ export function WorkbenchPage() {
                   onOpenTreeFile={openTreeFile}
                   onSelectTreeNode={selectTreeNode}
                   onTreeKeyDown={handleTreeKeyDown}
+                  onTreeBlur={clearTreeSearch}
                   onCopyPath={copyTreeNodePaths}
                   onPasteNode={pasteTreeNode}
                   onRefreshFolder={(path, scope = "main") => void refreshTreePath(scope, path)}
@@ -343,6 +348,7 @@ export function WorkbenchPage() {
                   }
                   onRequestTrashNode={requestTrashTreeNode}
                   onRevealNode={revealTreeNodeInFileManager}
+                  onOpenTerminal={openTerminalAtNode}
                   recentFolders={recentFolders}
                   scratchFolder={scratchFolder}
                   scratchFolderView={scratchFolderView}

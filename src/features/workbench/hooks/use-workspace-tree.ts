@@ -33,6 +33,7 @@ import {
   isPathInsideOrEqual,
   isTauriRuntime,
   moveTreeLead,
+  orderedRange,
   saveRecentFolders,
   toFileTreeNode,
 } from "../workbench-utils";
@@ -87,6 +88,8 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   const setDropTarget = useWorkbenchStore((state) => state.setDropTarget);
   const treeSelection = useWorkbenchStore((state) => state.treeSelection);
   const setTreeSelection = useWorkbenchStore((state) => state.setTreeSelection);
+  const treeSearch = useWorkbenchStore((state) => state.treeSearch);
+  const setTreeSearch = useWorkbenchStore((state) => state.setTreeSearch);
 
   const dropTargetRef = useRef<TreeDropTarget | null>(null);
   const isDirty = isDocumentDirty(document);
@@ -351,17 +354,42 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     setFolderView((currentView) => (currentView ? expandAllFolderNodes(currentView) : currentView));
   };
 
-  // 某作用域当前「可见行」的路径顺序(方向键导航 / Shift 区间都以此为序)。
-  const getVisibleTreePaths = (scope: "main" | "scratch"): string[] => {
+  // 某作用域当前「可见行」(路径 + 名字),方向键导航 / Shift 区间 / 即输即搜都以此顺序为准。
+  const getVisibleTreeRows = (scope: "main" | "scratch"): { path: string; name: string }[] => {
     const state = useWorkbenchStore.getState();
+    const view = scope === "scratch" ? state.scratchFolderView : state.folderView;
+    const expanded = scope === "scratch" ? state.scratchFolderView.expanded : Boolean(state.folderView?.rootExpanded);
 
-    if (scope === "scratch") {
-      return state.scratchFolderView.expanded ? flattenVisibleTreeRows(state.scratchFolderView.nodes, 1).map((row) => row.node.path) : [];
+    if (!view || !expanded) {
+      return [];
     }
 
-    const view = state.folderView;
-    return view && view.rootExpanded ? flattenVisibleTreeRows(view.nodes, 1).map((row) => row.node.path) : [];
+    return flattenVisibleTreeRows(view.nodes, 1).map((row) => ({ path: row.node.path, name: row.node.name }));
   };
+
+  const getVisibleTreePaths = (scope: "main" | "scratch"): string[] => getVisibleTreeRows(scope).map((row) => row.path);
+
+  // 即输即搜:在可见行里按名字(不区分大小写、子串)匹配,返回命中行的路径(保持可见顺序)。
+  const treeSearchMatches = (scope: "main" | "scratch", query: string): string[] => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) {
+      return [];
+    }
+    return getVisibleTreeRows(scope)
+      .filter((row) => row.name.toLowerCase().includes(needle))
+      .map((row) => row.path);
+  };
+
+  // 运行/刷新搜索:更新查询;有命中则把选区(光标)落到第一个命中,供滚动定位。
+  const runTreeSearch = (scope: "main" | "scratch", query: string) => {
+    setTreeSearch(query ? { scope, query } : null);
+    const matches = treeSearchMatches(scope, query);
+    if (matches.length > 0) {
+      setTreeSelection({ scope, anchorPath: matches[0], leadPath: matches[0], paths: [matches[0]] });
+    }
+  };
+
+  const clearTreeSearch = () => setTreeSearch(null);
 
   const getTreeNodeByPath = (scope: "main" | "scratch", path: string): FileTreeNode | null => {
     const state = useWorkbenchStore.getState();
@@ -396,6 +424,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     modifiers: TreeSelectionModifiers = { toggle: false, range: false },
     scope: "main" | "scratch" = "main",
   ) => {
+    clearTreeSearch();
     setTreeSelection((current) => applyTreeClick(current, scope, node.path, modifiers, getVisibleTreePaths(scope)));
   };
 
@@ -460,32 +489,106 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     }
   };
 
-  // 文件树键盘导航(类 IDEA):↑↓ 移动光标(Shift 扩选)、← 折叠/回父、→ 展开/进子、
-  // Enter 打开或展开、Delete 移到回收站、Ctrl/Cmd+A 全选、Ctrl/Cmd+C/X/V 复制/剪切/粘贴。
+  // Home/End/PageUp/PageDown:把光标跳到指定行索引(夹紧到范围内),Shift 则以锚点扩选。
+  const jumpTreeLead = (
+    scope: "main" | "scratch",
+    order: string[],
+    current: ReturnType<typeof useWorkbenchStore.getState>["treeSelection"],
+    targetIndex: number,
+    extend: boolean,
+  ) => {
+    if (order.length === 0) {
+      return;
+    }
+    const clamped = Math.min(order.length - 1, Math.max(0, targetIndex));
+    const leadPath = order[clamped];
+    if (extend && current?.scope === scope) {
+      setTreeSelection({ scope, anchorPath: current.anchorPath, leadPath, paths: orderedRange(order, current.anchorPath, leadPath) });
+    } else {
+      selectSingleTreePath(scope, leadPath);
+    }
+  };
+
+  // 搜索态下 ↑↓ 在「命中项」之间循环切换(回绕)。
+  const cycleTreeSearchMatch = (scope: "main" | "scratch", query: string, delta: number) => {
+    const matches = treeSearchMatches(scope, query);
+    if (matches.length === 0) {
+      return;
+    }
+    const selection = useWorkbenchStore.getState().treeSelection;
+    const leadPath = selection?.scope === scope ? selection.leadPath : null;
+    const index = leadPath ? matches.indexOf(leadPath) : -1;
+    const next = index < 0 ? (delta > 0 ? 0 : matches.length - 1) : (index + delta + matches.length) % matches.length;
+    selectSingleTreePath(scope, matches[next]);
+  };
+
+  // 文件树键盘:类 IDEA。可打印字符直接「即输即搜」;↑↓ 移动光标(搜索态下在命中项间切换,Shift 扩选);
+  // ←/→ 折叠/展开;Home/End/PageUp/PageDown 跳转;Enter 打开;Esc 清除搜索;Delete 回收站;
+  // Ctrl/Cmd+A 全选、C/X/V 复制/剪切/粘贴、Shift+C 复制路径。
   const handleTreeKeyDown = (scope: "main" | "scratch", event: ReactKeyboardEvent) => {
-    const modKey = event.ctrlKey || event.metaKey;
     const order = getVisibleTreePaths(scope);
     const current = useWorkbenchStore.getState().treeSelection;
+    const search = useWorkbenchStore.getState().treeSearch;
+    const searching = Boolean(search && search.scope === scope && search.query);
     const leadPath = current && current.scope === scope ? current.leadPath : null;
     const leadNode = leadPath ? getTreeNodeByPath(scope, leadPath) : null;
-    // Shift 会把字母键的 event.key 变成大写(如 Ctrl+Shift+C → "C"),统一转小写再匹配。
-    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    const leadIndex = leadPath ? order.indexOf(leadPath) : -1;
+    const pageRows = 10;
 
-    switch (key) {
+    // Ctrl/Cmd 组合优先处理(否则字母会被「即输即搜」吃掉)。任何此类操作都视作「操作后」→ 退出搜索。
+    if (event.ctrlKey || event.metaKey) {
+      clearTreeSearch();
+      const letter = event.key.toLowerCase();
+      if (letter === "a") {
+        if (order.length > 0) {
+          event.preventDefault();
+          setTreeSelection({ scope, anchorPath: order[0], leadPath: order[order.length - 1], paths: order });
+        }
+      } else if (letter === "c") {
+        event.preventDefault();
+        // Shift+C → 复制完整路径;C → 复制文件(+文件名)。
+        if (event.shiftKey) {
+          copySelectionPaths(scope, "absolute");
+        } else {
+          copySelectionToClipboard(scope, "copy");
+        }
+      } else if (letter === "x") {
+        event.preventDefault();
+        copySelectionToClipboard(scope, "cut");
+      } else if (letter === "v") {
+        event.preventDefault();
+        const root = scope === "scratch" ? scratchFolder?.path : folderView?.rootPath;
+        const destination =
+          (leadNode?.kind === "directory" ? leadNode.path : leadPath ? getParentPath(leadPath) : null) ?? root;
+        if (destination) {
+          void pasteTreeNode(destination, scope);
+        }
+      }
+      return;
+    }
+
+    switch (event.key) {
       case "ArrowDown":
         event.preventDefault();
-        setTreeSelection(moveTreeLead(current, scope, order, 1, event.shiftKey));
+        if (searching) {
+          cycleTreeSearchMatch(scope, search!.query, 1);
+        } else {
+          setTreeSelection(moveTreeLead(current, scope, order, 1, event.shiftKey));
+        }
         return;
       case "ArrowUp":
         event.preventDefault();
-        setTreeSelection(moveTreeLead(current, scope, order, -1, event.shiftKey));
+        if (searching) {
+          cycleTreeSearchMatch(scope, search!.query, -1);
+        } else {
+          setTreeSelection(moveTreeLead(current, scope, order, -1, event.shiftKey));
+        }
         return;
       case "ArrowRight":
         event.preventDefault();
         if (leadNode?.kind === "directory" && !leadNode.expanded) {
           void toggleTreeDirectory(scope, leadNode);
         } else {
-          // 文件,或已展开目录:移到下一行(即进入第一个子项)。
           setTreeSelection(moveTreeLead(current, scope, order, 1, false));
         }
         return;
@@ -501,55 +604,55 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
         }
         return;
       }
+      case "Home":
+        event.preventDefault();
+        jumpTreeLead(scope, order, current, 0, event.shiftKey);
+        return;
+      case "End":
+        event.preventDefault();
+        jumpTreeLead(scope, order, current, order.length - 1, event.shiftKey);
+        return;
+      case "PageDown":
+        event.preventDefault();
+        jumpTreeLead(scope, order, current, (leadIndex < 0 ? 0 : leadIndex) + pageRows, event.shiftKey);
+        return;
+      case "PageUp":
+        event.preventDefault();
+        jumpTreeLead(scope, order, current, (leadIndex < 0 ? 0 : leadIndex) - pageRows, event.shiftKey);
+        return;
       case "Enter":
         event.preventDefault();
+        clearTreeSearch();
         if (leadNode) {
           void confirmTreeNode(scope, leadNode);
         }
         return;
+      case "Escape":
+        if (searching) {
+          event.preventDefault();
+          clearTreeSearch();
+        }
+        return;
       case "Delete":
-      case "Backspace":
         event.preventDefault();
+        clearTreeSearch();
         if (leadNode) {
           requestTrashTreeNode(leadNode, scope);
         }
         return;
-      case "a":
-        if (modKey && order.length > 0) {
+      case "Backspace":
+        // 搜索态下退格删字符;非搜索态不做破坏性操作(删除走 Delete)。
+        if (searching) {
           event.preventDefault();
-          setTreeSelection({ scope, anchorPath: order[0], leadPath: order[order.length - 1], paths: order });
-        }
-        return;
-      case "c":
-        if (modKey) {
-          event.preventDefault();
-          // Ctrl/Cmd+Shift+C → 复制完整路径到系统剪贴板;Ctrl/Cmd+C → 复制文件(+文件名到系统剪贴板)。
-          if (event.shiftKey) {
-            copySelectionPaths(scope, "absolute");
-          } else {
-            copySelectionToClipboard(scope, "copy");
-          }
-        }
-        return;
-      case "x":
-        if (modKey) {
-          event.preventDefault();
-          copySelectionToClipboard(scope, "cut");
-        }
-        return;
-      case "v":
-        if (modKey) {
-          event.preventDefault();
-          const root = scope === "scratch" ? scratchFolder?.path : folderView?.rootPath;
-          const target =
-            leadNode?.kind === "directory" ? leadNode.path : leadPath ? getParentPath(leadPath) : null;
-          const destination = target ?? root;
-          if (destination) {
-            void pasteTreeNode(destination, scope);
-          }
+          runTreeSearch(scope, search!.query.slice(0, -1));
         }
         return;
       default:
+        // 即输即搜:可打印单字符 → 追加到查询(保留原始大小写,匹配本身不分大小写)。
+        if (event.key.length === 1) {
+          event.preventDefault();
+          runTreeSearch(scope, (searching ? search!.query : "") + event.key);
+        }
         return;
     }
   };
@@ -788,6 +891,19 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     });
   };
 
+  const openTerminalAtNode = (node: FileTreeNode) => {
+    setFileTreeContextMenu(null);
+
+    if (!isTauriRuntime()) {
+      setFileError("Opening a terminal is only available in the Tauri desktop app.");
+      return;
+    }
+
+    void invoke("open_terminal_at", { path: node.path }).catch((error) => {
+      setFileError(error instanceof Error ? error.message : String(error));
+    });
+  };
+
   const confirmTrashTreeNode = async () => {
     if (!fileTreeTrashTarget) {
       return;
@@ -826,46 +942,64 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   ) => {
     const targetRoot = scope === "scratch" ? scratchFolder?.path : folderView?.rootPath;
 
-    if (!targetRoot || source.path === targetDirectoryPath || isPathInsideOrEqual(targetDirectoryPath, source.path)) {
+    if (!targetRoot) {
       setDropTarget(null);
       return;
     }
 
-    // 拖拽源所属的树:在 scratch 根之内 → scratch,否则 main。
-    const sourceScope: "main" | "scratch" =
-      scratchFolder && isPathInsideOrEqual(source.path, scratchFolder.path) ? "scratch" : "main";
+    // 多选拖动:拖的是多选选区内的节点(且选区 > 1)→ 搬整组;否则只搬被拖的这一个。
+    const selection = useWorkbenchStore.getState().treeSelection;
+    const draggingSelection = Boolean(selection && selection.paths.length > 1 && selection.paths.includes(source.path));
+    // 拖拽源所属的树:多选用选区的 scope;否则按路径是否在 scratch 根之内判断。
+    const sourceScope: "main" | "scratch" = draggingSelection
+      ? selection!.scope
+      : scratchFolder && isPathInsideOrEqual(source.path, scratchFolder.path)
+        ? "scratch"
+        : "main";
+    const sources = draggingSelection
+      ? selection!.paths
+          .map((path) => getTreeNodeByPath(selection!.scope, path))
+          .filter((node): node is FileTreeNode => Boolean(node))
+      : [source];
 
     setFileError(null);
 
     try {
-      if (sourceScope === scope) {
-        // 同一棵树内 → 移动。
-        const movedEntry = await invoke<NativeDirectoryEntry>("move_path", {
-          workspaceRoot: targetRoot,
-          sourcePath: source.path,
-          targetDirectory: targetDirectoryPath,
-        });
-        await refreshNodeParent(source, scope);
-        await refreshTreePath(scope, targetDirectoryPath);
-
-        if (source.path === document.path) {
-          setDocument((currentDocument) => ({
-            ...currentDocument,
-            id: getFileOpenId(movedEntry.path, movedEntry.lastModified),
-            name: movedEntry.name,
-            path: movedEntry.path,
-            lastModified: movedEntry.lastModified ?? currentDocument.lastModified,
-          }));
+      for (const node of sources) {
+        // 跳过无效目标:拖到自身、或拖进自己的子目录。
+        if (node.path === targetDirectoryPath || isPathInsideOrEqual(targetDirectoryPath, node.path)) {
+          continue;
         }
-      } else {
-        // 跨树(主 ↔ 临时,根目录不同)→ 复制到目标树。move_path 要求同根,故用只校验目标的 copy_external_paths;源保持不变。
-        await invoke<NativeDirectoryEntry[]>("copy_external_paths", {
-          workspaceRoot: targetRoot,
-          sourcePaths: [source.path],
-          targetDirectory: targetDirectoryPath,
-        });
-        await refreshTreePath(scope, targetDirectoryPath);
+
+        if (sourceScope === scope) {
+          // 同一棵树内 → 移动。
+          const movedEntry = await invoke<NativeDirectoryEntry>("move_path", {
+            workspaceRoot: targetRoot,
+            sourcePath: node.path,
+            targetDirectory: targetDirectoryPath,
+          });
+          await refreshNodeParent(node, sourceScope);
+
+          if (node.path === document.path) {
+            setDocument((currentDocument) => ({
+              ...currentDocument,
+              id: getFileOpenId(movedEntry.path, movedEntry.lastModified),
+              name: movedEntry.name,
+              path: movedEntry.path,
+              lastModified: movedEntry.lastModified ?? currentDocument.lastModified,
+            }));
+          }
+        } else {
+          // 跨树(主 ↔ 临时,根目录不同)→ 复制到目标树。move_path 要求同根,故用只校验目标的 copy_external_paths;源保持不变。
+          await invoke<NativeDirectoryEntry[]>("copy_external_paths", {
+            workspaceRoot: targetRoot,
+            sourcePaths: [node.path],
+            targetDirectory: targetDirectoryPath,
+          });
+        }
       }
+
+      await refreshTreePath(scope, targetDirectoryPath);
     } catch (error) {
       setFileTreeError(error, "Unable to move this item.");
     } finally {
@@ -909,6 +1043,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     scope: "main" | "scratch" = "main",
   ) => {
     event.preventDefault();
+    clearTreeSearch(); // 右键即进入操作流程 → 退出搜索(菜单里的动作都经此入口)。
 
     // 右键先选中再弹菜单:右键已在多选内的节点保留整组选区(可对多项一起操作),否则单选该节点。
     if (node) {
@@ -1122,8 +1257,10 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     expandAllDirectories,
     revealActiveFile,
     treeSelection,
+    treeSearch,
     selectTreeNode,
     handleTreeKeyDown,
+    clearTreeSearch,
     toggleScratchDirectory,
     toggleScratchRootDirectory,
     refreshTreePath,
@@ -1137,6 +1274,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     pasteTreeNode,
     requestTrashTreeNode,
     revealTreeNodeInFileManager,
+    openTerminalAtNode,
     confirmTrashTreeNode,
     moveTreeNodeToDirectory,
     openFileTreeContextMenu,
