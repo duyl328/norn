@@ -8,6 +8,7 @@ import { SaveConflictDialog, UnsavedChangesDialog } from "./components/dialogs";
 import { EditorSurface } from "./components/editor-surface";
 import { FileTreeNameDialogView, FileTreeTrashDialog } from "./components/file-tree";
 import { GitPanel } from "./components/git-panel";
+import { GitPreview } from "./components/git-preview";
 import { ProjectPanel } from "./components/project-panel";
 import { SettingsPage } from "./components/settings";
 import { StatusBar } from "./components/status-bar";
@@ -389,6 +390,7 @@ export function WorkbenchPage() {
               saveState={saveState}
               gitWorkspace={gitWorkspace}
             />
+            <GitPreview />
             <UnsavedChangesDialog
               open={Boolean(pendingCloseDocument)}
               onCancel={() => setPendingCloseDocument(null)}

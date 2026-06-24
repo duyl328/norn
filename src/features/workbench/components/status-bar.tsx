@@ -1,10 +1,11 @@
-import { GitPullRequest, Settings, Terminal } from "lucide-react";
+import { GitBranch, Settings, Terminal } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
-import { gitRepositoryMock } from "../mock-data";
+import { gitChangeSummary, gitRepositoryMock } from "../mock-data";
 import type { GitWorkspaceState, SaveState, WorkbenchDocument } from "../types";
 import { formatFileSize, getDocumentLines } from "../workbench-utils";
+import { GitBranchMenu } from "./git-branch-menu";
 
 export function StatusBar({
   document,
@@ -20,16 +21,12 @@ export function StatusBar({
   saveState: SaveState;
 }) {
   const lineCount = getDocumentLines(document).length;
-  const gitStatusLabel =
-    gitWorkspace.kind === "ready" && gitWorkspace.inspection.isRepository
-      ? (gitWorkspace.inspection.branch ?? "Git 仓库")
-      : gitWorkspace.kind === "loading"
-        ? "检测 Git"
-        : "未打开 Git";
-  const gitChangeLabel =
-    gitWorkspace.kind === "ready" && gitWorkspace.inspection.isRepository
-      ? `${gitRepositoryMock.workingCount} 项变更`
-      : "无变更数据";
+  // Mock 阶段:分支与改动量始终展示假数据的最终效果。
+  const isNonRepository = gitWorkspace.kind === "ready" && !gitWorkspace.inspection.isRepository;
+  const branchLabel =
+    gitWorkspace.kind === "ready" && gitWorkspace.inspection.branch
+      ? gitWorkspace.inspection.branch
+      : gitRepositoryMock.branch;
   const saveLabel =
     document.mode === "large-readonly"
       ? "Read-only"
@@ -53,11 +50,30 @@ export function StatusBar({
         <span className="status-token">{saveLabel}</span>
       </div>
       <div className="flex items-center gap-3">
-        <span className="status-token">
-          <GitPullRequest className="h-3 w-3" />
-          {gitStatusLabel}
-        </span>
-        <span className="status-token">{gitChangeLabel}</span>
+        {isNonRepository ? (
+          <span className="status-token">
+            <GitBranch className="h-3 w-3" />
+            未打开 Git
+          </span>
+        ) : (
+          <>
+            <GitBranchMenu>
+              <button type="button" className="status-token status-token-button">
+                <GitBranch className="h-3 w-3" />
+                {branchLabel}
+                {gitRepositoryMock.ahead > 0 ? <span className="status-ahead">↑{gitRepositoryMock.ahead}</span> : null}
+                {gitRepositoryMock.behind > 0 ? (
+                  <span className="status-behind">↓{gitRepositoryMock.behind}</span>
+                ) : null}
+              </button>
+            </GitBranchMenu>
+            <span className="status-token">
+              {gitChangeSummary.files} 个文件
+              <span className="status-additions">+{gitChangeSummary.additions}</span>
+              <span className="status-deletions">−{gitChangeSummary.deletions}</span>
+            </span>
+          </>
+        )}
         <span className="status-token">
           <Terminal className="h-3 w-3" />
           Tauri 2
