@@ -26,6 +26,7 @@ import { type WindowsTitlebarMenuId, windowsTitlebarMenus } from "../constants";
 import type { EditorTabPreview } from "../types";
 
 export function WindowsTitleBar({
+  gitBadgeCount,
   leftPanelOpen,
   onCloseSearch,
   onCreateFile,
@@ -40,6 +41,7 @@ export function WindowsTitleBar({
   searchOpen,
   variant = "workbench",
 }: {
+  gitBadgeCount?: number;
   leftPanelOpen: boolean;
   onCloseSearch: () => void;
   onCreateFile: () => void;
@@ -158,8 +160,8 @@ export function WindowsTitleBar({
   };
 
   return (
-    <header className="windows-titlebar" onDoubleClick={handleTitlebarDoubleClick} data-tauri-drag-region>
-      <div className="windows-titlebar-left" ref={menuRef} data-tauri-drag-region>
+    <header className="windows-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
+      <div className="windows-titlebar-left" ref={menuRef}>
         {!menuExpanded ? (
           <>
             <button
@@ -244,13 +246,14 @@ export function WindowsTitleBar({
         </>
       ) : null}
       <div className="windows-titlebar-drag-fill windows-titlebar-drag-fill-right" data-tauri-drag-region />
-      <div className="windows-titlebar-right-tools" data-tauri-drag-region>
+      <div className="windows-titlebar-right-tools">
         {variant === "workbench" ? (
           <PanelToggleButton
             className="titlebar-panel-button"
             label={rightPanelOpen ? "Hide Git panel" : "Show Git panel"}
             open={rightPanelOpen}
             side="right"
+            badgeCount={gitBadgeCount}
             showBadge
             onClick={onToggleRightPanel}
           />
@@ -287,6 +290,7 @@ export function WindowsTitleBar({
 }
 
 export function MacTitlebar({
+  gitBadgeCount,
   leftPanelOpen,
   leftPanelWidth,
   onCloseSearch,
@@ -297,6 +301,7 @@ export function MacTitlebar({
   rightPanelWidth,
   searchOpen,
 }: {
+  gitBadgeCount?: number;
   leftPanelOpen: boolean;
   leftPanelWidth: number;
   onCloseSearch: () => void;
@@ -336,6 +341,7 @@ export function MacTitlebar({
           label={rightPanelOpen ? "Hide Git panel" : "Show Git panel"}
           open={rightPanelOpen}
           side="right"
+          badgeCount={gitBadgeCount}
           showBadge
           useLocalSidebarIcon
           onClick={onToggleRightPanel}
@@ -347,6 +353,7 @@ export function MacTitlebar({
 }
 
 export function PanelToggleButton({
+  badgeCount,
   className,
   label,
   onClick,
@@ -355,6 +362,7 @@ export function PanelToggleButton({
   side,
   useLocalSidebarIcon = false,
 }: {
+  badgeCount?: number;
   className?: string;
   label: string;
   onClick: () => void;
@@ -377,7 +385,9 @@ export function PanelToggleButton({
       onClick={onClick}
     >
       {useLocalSidebarIcon ? <SidebarPanelIcon side={side} /> : <StatefulIcon className="h-3 w-3" />}
-      {showBadge ? <span className="panel-toggle-badge">4</span> : null}
+      {showBadge && badgeCount !== undefined && badgeCount > 0 ? (
+        <span className="panel-toggle-badge">{badgeCount > 99 ? "99+" : badgeCount}</span>
+      ) : null}
     </button>
   );
 }
