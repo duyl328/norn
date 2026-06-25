@@ -6,6 +6,8 @@ import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { setActiveEditorView } from "../actions/active-editor";
+import { buildEditorKeymapExtension } from "../actions/editor-actions";
 import { createCodeMirrorExtensions } from "../codemirror-setup";
 import { EDITOR_SCROLLBAR_SIZE, emptyEditorScrollMetrics } from "../constants";
 import {
@@ -14,6 +16,7 @@ import {
   resolveHighlightMode,
 } from "../editor-highlighting";
 import { useEditorTabs } from "../hooks/use-editor-tabs";
+import { useWorkbenchStore } from "../store/workbench-store";
 import type { EditorScrollbarOrientation, EditorScrollMetrics, WorkbenchDocument } from "../types";
 import {
   clamp,
@@ -53,6 +56,9 @@ export function EditorSurface({
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const languageCompartmentRef = useRef(new Compartment());
+  const keymapCompartmentRef = useRef(new Compartment());
+  const keymapOverrides = useWorkbenchStore((state) => state.keymapOverrides);
+  const keymapOverridesRef = useRef(keymapOverrides);
   const dragRef = useRef<{
     maxScroll: number;
     orientation: EditorScrollbarOrientation;
@@ -83,6 +89,16 @@ export function EditorSurface({
     onChangeRef.current = onChange;
   }, [onChange]);
 
+  // 改键即时生效:overrides 变化 → 重建编辑器 keymap(不重建整个视图)。
+  useEffect(() => {
+    keymapOverridesRef.current = keymapOverrides;
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: keymapCompartmentRef.current.reconfigure(buildEditorKeymapExtension(keymapOverrides)),
+    });
+  }, [keymapOverrides]);
+
   useEffect(() => {
     const parent = editorElementRef.current;
     const frame = editorFrameRef.current;
@@ -95,13 +111,17 @@ export function EditorSurface({
       parent,
       state: EditorState.create({
         doc: document.content,
-        extensions: createCodeMirrorExtensions(languageCompartmentRef.current, document, (content) =>
-          onChangeRef.current(content),
+        extensions: createCodeMirrorExtensions(
+          languageCompartmentRef.current,
+          document,
+          (content) => onChangeRef.current(content),
+          keymapCompartmentRef.current.of(buildEditorKeymapExtension(keymapOverridesRef.current)),
         ),
       }),
     });
 
     viewRef.current = view;
+    setActiveEditorView(view);
     scrollDOMRef.current = view.scrollDOM;
     setHighlightWarning(null);
 
@@ -198,6 +218,9 @@ export function EditorSurface({
       mutationObserver.disconnect();
       view.scrollDOM.removeEventListener("scroll", updateScrollMetrics);
       view.destroy();
+      if (viewRef.current === view) {
+        setActiveEditorView(null);
+      }
       viewRef.current = null;
       scrollDOMRef.current = null;
     };
@@ -366,6 +389,18 @@ export function EditorSurface({
                         event.preventDefault();
                         if (tabDocument) {
                           onSelectDocument(tabDocument);
+                        }
+                        return;
+                      }
+
+                      if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+                        event.preventDefault();
+                        const currentIndex = previewTabs.findIndex((item) => item.id === tab.id);
+                        const nextTab = previewTabs[currentIndex + (event.key === "ArrowRight" ? 1 : -1)];
+                        const nextDocument = nextTab && openDocuments.find((item) => item.id === nextTab.id);
+                        if (nextDocument) {
+                          onSelectDocument(nextDocument);
+                          requestAnimationFrame(() => tabButtonRefs.current[nextTab.id]?.focus());
                         }
                       }
                     }}

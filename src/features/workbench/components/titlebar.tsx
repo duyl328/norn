@@ -22,19 +22,16 @@ import {
 
 import { cn } from "@/lib/utils";
 
-import { type WindowsTitlebarMenuId, windowsTitlebarMenus } from "../constants";
+import { formatKey } from "../actions/registry";
+import { useActions } from "../actions/use-actions";
+import { type WindowsMenuItem, type WindowsTitlebarMenuId, windowsTitlebarMenus } from "../constants";
 import type { EditorTabPreview } from "../types";
 
 export function WindowsTitleBar({
   gitBadgeCount,
   leftPanelOpen,
   onCloseSearch,
-  onCreateFile,
-  onOpenFile,
-  onOpenFolder,
   onOpenSearch,
-  onSaveFile,
-  onSaveFileAs,
   onToggleLeftPanel,
   onToggleRightPanel,
   rightPanelOpen,
@@ -44,12 +41,7 @@ export function WindowsTitleBar({
   gitBadgeCount?: number;
   leftPanelOpen: boolean;
   onCloseSearch: () => void;
-  onCreateFile: () => void;
-  onOpenFile: () => void;
-  onOpenFolder: () => void;
   onOpenSearch: () => void;
-  onSaveFile: () => void;
-  onSaveFileAs: () => void;
   onToggleLeftPanel: () => void;
   onToggleRightPanel: () => void;
   rightPanelOpen: boolean;
@@ -59,6 +51,7 @@ export function WindowsTitleBar({
   variant?: "workbench" | "settings";
 }) {
   const appWindow = getCurrentWindow();
+  const { actions, dispatch } = useActions();
   const menuRef = useRef<HTMLDivElement>(null);
   const [menuExpanded, setMenuExpanded] = useState(false);
   const [activeMenu, setActiveMenu] = useState<WindowsTitlebarMenuId | null>(null);
@@ -132,30 +125,13 @@ export function WindowsTitleBar({
 
   const activeMenuConfig = activeMenu ? windowsTitlebarMenus.find((item) => item.id === activeMenu) : null;
 
-  const handleMenuItemClick = (child: string) => {
-    if (child === "New File") {
-      onCreateFile();
-    }
+  const actionById = new Map(actions.map((action) => [action.id, action]));
 
-    if (child === "Open File") {
-      onOpenFile();
-    }
-
-    if (child === "Open Folder") {
-      onOpenFolder();
-    }
-
-    if (child === "Save") {
-      onSaveFile();
-    }
-
-    if (child === "Save As") {
-      onSaveFileAs();
-    }
-
-    if (child === "Minimize") appWindow.minimize();
-    if (child === "Maximize / Restore") appWindow.toggleMaximize();
-    if (child === "Close") appWindow.close();
+  const handleMenuItemClick = (item: WindowsMenuItem) => {
+    if (item.window === "minimize") appWindow.minimize();
+    else if (item.window === "maximize") appWindow.toggleMaximize();
+    else if (item.window === "close") appWindow.close();
+    else if (item.actionId) dispatch(item.actionId);
     collapseMenu();
   };
 
@@ -217,20 +193,27 @@ export function WindowsTitleBar({
             ))}
             {activeMenuConfig ? (
               <div className="windows-titlebar-submenu" style={{ transform: `translateX(${submenuLeft}px)` }}>
-                {activeMenuConfig.children.map((child) => (
-                  <button
-                    className={cn(
-                      "windows-titlebar-submenu-item",
-                      child === "Close" && "windows-titlebar-submenu-item-danger",
-                    )}
-                    key={child}
-                    type="button"
-                    data-titlebar-submenu-action="true"
-                    onClick={() => handleMenuItemClick(child)}
-                  >
-                    {child}
-                  </button>
-                ))}
+                {activeMenuConfig.children.map((child) => {
+                  const action = child.actionId ? actionById.get(child.actionId) : undefined;
+                  const label = action?.title ?? child.label;
+                  const shortcut = action?.keys?.[0] ? formatKey(action.keys[0]) : null;
+
+                  return (
+                    <button
+                      className={cn(
+                        "windows-titlebar-submenu-item",
+                        child.window === "close" && "windows-titlebar-submenu-item-danger",
+                      )}
+                      key={child.label}
+                      type="button"
+                      data-titlebar-submenu-action="true"
+                      onClick={() => handleMenuItemClick(child)}
+                    >
+                      <span>{label}</span>
+                      {shortcut ? <span className="windows-titlebar-submenu-shortcut">{shortcut}</span> : null}
+                    </button>
+                  );
+                })}
               </div>
             ) : null}
           </nav>

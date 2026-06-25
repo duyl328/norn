@@ -1,6 +1,7 @@
 import { Compartment } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
 
+import { buildEditorKeymapExtension } from "@/features/workbench/actions/editor-actions";
 import { codeMirrorTheme, createCodeMirrorExtensions } from "@/features/workbench/codemirror-setup";
 import type { WorkbenchDocument } from "@/features/workbench/types";
 
@@ -16,13 +17,18 @@ const doc = (overrides: Partial<WorkbenchDocument> = {}): WorkbenchDocument => (
 
 describe("createCodeMirrorExtensions", () => {
   it("可编辑文档构建出一组扩展", () => {
-    const extensions = createCodeMirrorExtensions(new Compartment(), doc(), () => {});
+    const extensions = createCodeMirrorExtensions(new Compartment(), doc(), () => {}, buildEditorKeymapExtension({}));
     expect(Array.isArray(extensions)).toBe(true);
     expect(extensions.length).toBeGreaterThan(0);
   });
 
   it("large-readonly 文档同样能构建扩展(只读分支)", () => {
-    const extensions = createCodeMirrorExtensions(new Compartment(), doc({ mode: "large-readonly" }), () => {});
+    const extensions = createCodeMirrorExtensions(
+      new Compartment(),
+      doc({ mode: "large-readonly" }),
+      () => {},
+      buildEditorKeymapExtension({}),
+    );
     expect(extensions.length).toBeGreaterThan(0);
   });
 

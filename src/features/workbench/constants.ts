@@ -48,25 +48,62 @@ export const emptyEditorScrollMetrics: EditorScrollMetrics = {
   shellWidth: 0,
 };
 
-export const windowsTitlebarMenus = [
-  { id: "file", label: "File", children: ["New File", "Open File", "Open Folder", "Save", "Save As"] },
-  { id: "edit", label: "Edit", children: ["Undo", "Redo", "Find"] },
-  { id: "view", label: "View", children: ["Explorer", "Git Panel", "Terminal"] },
-  { id: "window", label: "Window", children: ["Minimize", "Maximize / Restore", "Close"] },
+/**
+ * Windows 标题栏菜单项。三类:
+ * - `actionId`:走 action 系统分发,label/快捷键从注册表取(传 label 仅作兜底)。
+ * - `window`:窗口控制(最小化/最大化/关闭),由 titlebar 直接操作原生窗口。
+ * - 仅 label:占位/待接入项,点击关闭菜单不做事。
+ */
+export type WindowsMenuItem = {
+  label: string;
+  actionId?: string;
+  window?: "minimize" | "maximize" | "close";
+};
+
+export const windowsTitlebarMenus: ReadonlyArray<{
+  id: string;
+  label: string;
+  children: ReadonlyArray<WindowsMenuItem>;
+}> = [
+  {
+    id: "file",
+    label: "File",
+    children: [
+      { label: "New File", actionId: "file.new" },
+      { label: "Open File…", actionId: "file.open" },
+      { label: "Open Folder…", actionId: "file.openFolder" },
+      { label: "Save", actionId: "file.save" },
+      { label: "Save As…", actionId: "file.saveAs" },
+    ],
+  },
+  {
+    id: "view",
+    label: "View",
+    children: [
+      { label: "Explorer", actionId: "view.toggleExplorer" },
+      { label: "Git Panel", actionId: "view.toggleGit" },
+      { label: "Find Action…", actionId: "navigate.commandPalette" },
+      { label: "Go to File…", actionId: "navigate.goToFile" },
+      { label: "Settings", actionId: "view.settings" },
+    ],
+  },
+  {
+    id: "window",
+    label: "Window",
+    children: [
+      { label: "Minimize", window: "minimize" },
+      { label: "Maximize / Restore", window: "maximize" },
+      { label: "Close", window: "close" },
+    ],
+  },
   {
     id: "help",
     label: "Help",
     children: [
-      "Welcome",
-      "Documentation",
-      "Keyboard Shortcuts",
-      "Release Notes",
-      "Report Issue",
-      "View Logs",
-      "Check for Updates",
-      "Community",
-      "Privacy Statement",
-      "About Norn",
+      { label: "Welcome" },
+      { label: "Documentation" },
+      { label: "Keyboard Shortcuts", actionId: "view.settings" },
+      { label: "About Norn" },
     ],
   },
 ] as const;
@@ -82,6 +119,7 @@ export const recentProjects = [
 
 export const recentFoldersStorageKey = "norn.recentFolders";
 export const resizeHandleHintsStorageKey = "norn.resizeHandleHints";
+export const keymapOverridesStorageKey = "norn.keymapOverrides";
 export const maxRecentFolders = 8;
 
 export const projectColorPairs = [
