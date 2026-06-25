@@ -27,10 +27,10 @@ import {
 import { useDocumentSession } from "./hooks/use-document-session";
 import { usePanelLayout } from "./hooks/use-panel-layout";
 import { useWorkspaceTree } from "./hooks/use-workspace-tree";
-import { gitChangeSections } from "./mock-data";
+import { gitChangeSummary } from "./mock-data";
 import { isMac, isWindows } from "./platform";
 import { useWorkbenchStore } from "./store/workbench-store";
-import { isDocumentDirty, isTauriRuntime, loadKeymapOverrides } from "./workbench-utils";
+import { isDocumentDirty, isTauriRuntime, loadKeymapOverrides, saveEditorLineWrapping } from "./workbench-utils";
 
 export function WorkbenchPage() {
   const document = useWorkbenchStore((state) => state.document);
@@ -42,6 +42,8 @@ export function WorkbenchPage() {
   const rightPanelWidth = useWorkbenchStore((state) => state.rightPanelWidth);
   const resizingPanel = useWorkbenchStore((state) => state.resizingPanel);
   const resizeHandleHintsVisible = useWorkbenchStore((state) => state.resizeHandleHintsVisible);
+  const editorLineWrapping = useWorkbenchStore((state) => state.editorLineWrapping);
+  const setEditorLineWrapping = useWorkbenchStore((state) => state.setEditorLineWrapping);
   const settingsOpen = useWorkbenchStore((state) => state.settingsOpen);
   const setSettingsOpen = useWorkbenchStore((state) => state.setSettingsOpen);
   const fileError = useWorkbenchStore((state) => state.fileError);
@@ -70,7 +72,7 @@ export function WorkbenchPage() {
   const showWindowsTitlebar = useMemo(() => isWindows(), []);
   const showMacTitlebar = useMemo(() => isMac(), []);
   const isDirty = isDocumentDirty(document);
-  const gitBadgeCount = gitChangeSections.reduce((total, section) => total + section.count, 0);
+  const gitBadgeCount = gitChangeSummary.files;
 
   const {
     toggleFilesTool,
@@ -144,8 +146,14 @@ export function WorkbenchPage() {
 
   const settingsPageNode = (
     <SettingsPage
+      editorLineWrapping={editorLineWrapping}
       gitWorkspace={gitWorkspace}
       onBack={() => setSettingsOpen(false)}
+      onToggleEditorLineWrapping={() => {
+        const next = !editorLineWrapping;
+        setEditorLineWrapping(next);
+        saveEditorLineWrapping(next);
+      }}
       onToggleResizeHandleHints={() => updateResizeHandleHintsVisible(!resizeHandleHintsVisible)}
       resizeHandleHintsVisible={resizeHandleHintsVisible}
       showMacTitlebar={showMacTitlebar}

@@ -1,16 +1,32 @@
+import { closeBrackets } from "@codemirror/autocomplete";
 import { history } from "@codemirror/commands";
-import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
+import {
+  bracketMatching,
+  codeFolding,
+  defaultHighlightStyle,
+  foldGutter,
+  indentOnInput,
+  syntaxHighlighting,
+} from "@codemirror/language";
 import { highlightSelectionMatches, search } from "@codemirror/search";
-import { type Compartment, type Extension } from "@codemirror/state";
+import { type Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
   drawSelection,
   EditorView,
   highlightActiveLine,
   highlightActiveLineGutter,
   lineNumbers,
+  rectangularSelection,
 } from "@codemirror/view";
 
+import {
+  altClickToggleCaret,
+  occurrenceHistory,
+  selectionHistory,
+} from "./editor-commands";
+import { foldHoverHighlight } from "./editor-fold-hover";
 import { createSmartOverlayExtension } from "./editor-highlighting";
+import { indentFoldService } from "./editor-indent-fold";
 import { createEditorSearchPanel } from "./editor-search-panel";
 import type { WorkbenchDocument } from "./types";
 
@@ -80,20 +96,38 @@ export const codeMirrorTheme = EditorView.theme({
  */
 export const createCodeMirrorExtensions = (
   languageCompartment: Compartment,
+  lineWrappingCompartment: Compartment,
   document: WorkbenchDocument,
   onChange: (content: string) => void,
   keymapExtension: Extension,
+  lineWrapping: boolean,
 ): Extension[] => [
   lineNumbers(),
   highlightActiveLineGutter(),
   history(),
   drawSelection(),
+  // 多光标 / 多选:Alt+点击 加/取消一个光标(点空白处加,点已有光标取消);
+  // drawSelection 负责渲染多个光标。列编辑:Alt+拖拽 拉矩形选区。
+  // 不用 crosshairCursor —— 按住 Alt 时保留正常的文字 I 形光标。
+  EditorState.allowMultipleSelections.of(true),
+  EditorView.clickAddsSelectionRange.of((event) => event.altKey),
+  altClickToggleCaret,
+  rectangularSelection(),
+  // 长行换行:走 compartment,可在不重建编辑器的前提下随设置开关(见 editor-surface)。
+  lineWrappingCompartment.of(lineWrapping ? EditorView.lineWrapping : []),
   indentOnInput(),
   bracketMatching(),
+  closeBrackets(),
+  codeFolding(),
+  indentFoldService,
+  foldGutter(),
+  foldHoverHighlight,
   syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
   highlightActiveLine(),
   highlightSelectionMatches(),
   search({ top: true, createPanel: createEditorSearchPanel }),
+  selectionHistory, // Ctrl+Shift+W 缩选所需的扩选历史栈
+  occurrenceHistory, // Alt+Shift+J 取消选中所需的加选历史栈
   keymapExtension,
   languageCompartment.of([]),
   ...createSmartOverlayExtension(document.content.length),

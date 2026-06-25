@@ -18,6 +18,7 @@ import {
 import {
   EDITOR_MIN_THUMB_SIZE,
   EDITOR_SCROLLBAR_SIZE,
+  editorLineWrappingStorageKey,
   keymapOverridesStorageKey,
   maxRecentFolders,
   projectColorPairs,
@@ -645,6 +646,18 @@ export const saveKeymapOverrides = async (overrides: Record<string, string[]>) =
   } catch {
     // localStorage 不可用时忽略。
   }
+};
+
+export const loadEditorLineWrapping = () => {
+  try {
+    return window.localStorage.getItem(editorLineWrappingStorageKey) === "true";
+  } catch {
+    return false;
+  }
+};
+
+export const saveEditorLineWrapping = (enabled: boolean) => {
+  window.localStorage.setItem(editorLineWrappingStorageKey, String(enabled));
 };
 
 export const initialDocument: WorkbenchDocument = {

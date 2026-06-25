@@ -57,8 +57,10 @@ export function EditorSurface({
   const onChangeRef = useRef(onChange);
   const languageCompartmentRef = useRef(new Compartment());
   const keymapCompartmentRef = useRef(new Compartment());
+  const lineWrapCompartmentRef = useRef(new Compartment());
   const keymapOverrides = useWorkbenchStore((state) => state.keymapOverrides);
   const keymapOverridesRef = useRef(keymapOverrides);
+  const lineWrapping = useWorkbenchStore((state) => state.editorLineWrapping);
   const dragRef = useRef<{
     maxScroll: number;
     orientation: EditorScrollbarOrientation;
@@ -113,9 +115,11 @@ export function EditorSurface({
         doc: document.content,
         extensions: createCodeMirrorExtensions(
           languageCompartmentRef.current,
+          lineWrapCompartmentRef.current,
           document,
           (content) => onChangeRef.current(content),
           keymapCompartmentRef.current.of(buildEditorKeymapExtension(keymapOverridesRef.current)),
+          useWorkbenchStore.getState().editorLineWrapping,
         ),
       }),
     });
@@ -225,6 +229,13 @@ export function EditorSurface({
       scrollDOMRef.current = null;
     };
   }, [document.id, document.name]);
+
+  // 设置里切换长行换行时,只重配置 compartment,不重建编辑器(保留光标/滚动/撤销栈)。
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: lineWrapCompartmentRef.current.reconfigure(lineWrapping ? EditorView.lineWrapping : []),
+    });
+  }, [lineWrapping]);
 
   const setScrollPosition = (orientation: EditorScrollbarOrientation, value: number) => {
     const scrollDOM = scrollDOMRef.current;
