@@ -1,3 +1,8 @@
+use notify_debouncer_mini::{
+    new_debouncer,
+    notify::{RecommendedWatcher, RecursiveMode},
+    DebounceEventResult, Debouncer,
+};
 use tauri::{
     menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu},
     Emitter, Manager, Theme,
@@ -6,14 +11,21 @@ use tauri_plugin_dialog::DialogExt;
 
 use serde::Serialize;
 use std::{
+    collections::HashSet,
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     process::Command,
-    time::{SystemTime, UNIX_EPOCH},
+    sync::Mutex,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 const MENU_EVENT: &str = "norn-menu";
+const FS_CHANGE_EVENT: &str = "workspace-fs-change";
+
+// 当前打开文件夹的文件系统监听器。切换文件夹时整体替换;drop 旧 debouncer 即停止其监听。
+#[derive(Default)]
+struct FsWatchState(Mutex<Option<Debouncer<RecommendedWatcher>>>);
 const MENU_NEW_FILE: &str = "menu-new-file";
 const MENU_OPEN_FILE: &str = "menu-open-file";
 const MENU_OPEN_FOLDER: &str = "menu-open-folder";
@@ -522,6 +534,182 @@ fn read_text_file_range(path: String, offset: u64, length: u64) -> Result<TextFi
         has_more_before: start_offset > 0,
         has_more_after: end_offset < file_size,
     })
+}
+
+#[tauri::command]
+fn watch_directory(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, FsWatchState>,
+    path: String,
+) -> Result<(), String> {
+    let root = PathBuf::from(&path);
+
+    if !root.is_dir() {
+        return Err(format!("{} is not a directory", root.display()));
+    }
+
+    let emitter = app.clone();
+    // 去抖 400ms:把 git checkout / npm install 这类成千上万次事件合并成几批,
+    // 每批只把「受影响条目的父目录」去重后发给前端,由前端按需刷新已加载的那几层。
+    let mut debouncer = new_debouncer(
+        Duration::from_millis(400),
+        move |result: DebounceEventResult| {
+            let Ok(events) = result else {
+                return;
+            };
+
+            let mut dirs: HashSet<String> = HashSet::new();
+
+            for event in events {
+                // .git / node_modules 内部 churn 不影响树展示,跳过以免无谓刷新风暴。
+                // ponytail: 仅过滤上报,递归监听仍会为这些目录占用 inotify 句柄(见 watch_directory 调用方注释)。
+                if event.path.components().any(|component| {
+                    matches!(component.as_os_str().to_str(), Some(".git") | Some("node_modules"))
+                }) {
+                    continue;
+                }
+
+                // 新建/删除/重命名都体现在「父目录」的列表里 → 重新 list 父目录即可。
+                if let Some(parent) = event.path.parent() {
+                    dirs.insert(parent.to_string_lossy().into_owned());
+                }
+            }
+
+            if !dirs.is_empty() {
+                let _ = emitter.emit(FS_CHANGE_EVENT, dirs.into_iter().collect::<Vec<_>>());
+            }
+        },
+    )
+    .map_err(|error| format!("Unable to start file watcher: {error}"))?;
+
+    debouncer
+        .watcher()
+        .watch(&root, RecursiveMode::Recursive)
+        .map_err(|error| format!("Unable to watch {}: {error}", root.display()))?;
+
+    *state.0.lock().unwrap() = Some(debouncer);
+    Ok(())
+}
+
+#[tauri::command]
+fn unwatch_directory(state: tauri::State<'_, FsWatchState>) {
+    *state.0.lock().unwrap() = None;
+}
+
+// 「复制为文件」:把文件引用写入系统剪贴板的原生格式(Windows CF_HDROP / macOS NSPasteboard 文件 URL),
+// 使其能粘贴到外部应用(资源管理器/访达等)为真实文件;同时附带文件名纯文本,让文本框粘贴得到文件名。
+// 返回 true = 已写入原生文件格式(Windows/macOS);false = 当前平台不支持(Linux),由前端退回只写文件名文本。
+#[tauri::command]
+fn copy_files_to_clipboard(paths: Vec<String>, text: String) -> Result<bool, String> {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    {
+        use clipboard_rs::{Clipboard, ClipboardContent, ClipboardContext};
+
+        let context = ClipboardContext::new().map_err(|error| error.to_string())?;
+        context
+            .set(vec![ClipboardContent::Files(paths), ClipboardContent::Text(text)])
+            .map_err(|error| error.to_string())?;
+        Ok(true)
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let _ = (&paths, &text);
+        Ok(false)
+    }
+}
+
+// 在该路径所在目录打开系统终端(文件 → 其所在目录;目录 → 该目录本身)。
+#[tauri::command]
+fn open_terminal_at(path: String) -> Result<(), String> {
+    let target = PathBuf::from(&path);
+    let directory = if target.is_dir() {
+        target.clone()
+    } else {
+        target.parent().map(Path::to_path_buf).unwrap_or_else(|| target.clone())
+    };
+
+    if !directory.is_dir() {
+        return Err(format!("{} is not a directory", directory.display()));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // 优先 Windows Terminal;不可用时回退到 cmd。
+        if Command::new("wt.exe").arg("-d").arg(&directory).spawn().is_ok() {
+            return Ok(());
+        }
+        Command::new("cmd")
+            .args(["/C", "start", "cmd", "/K"])
+            .arg(format!("cd /d {}", directory.display()))
+            .spawn()
+            .map_err(|error| format!("Unable to open terminal: {error}"))?;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .args(["-a", "Terminal"])
+            .arg(&directory)
+            .spawn()
+            .map_err(|error| format!("Unable to open Terminal: {error}"))?;
+        return Ok(());
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        // Linux:依次尝试常见终端,以目标目录为工作目录启动。
+        for terminal in ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"] {
+            if Command::new(terminal).current_dir(&directory).spawn().is_ok() {
+                return Ok(());
+            }
+        }
+        Err("No supported terminal emulator found".to_string())
+    }
+}
+
+// 在系统文件管理器中显示该路径(文件 → 打开所在目录并选中;目录 → 同样定位)。
+#[tauri::command]
+fn reveal_in_file_manager(path: String) -> Result<(), String> {
+    let target = PathBuf::from(&path);
+
+    if !target.exists() {
+        return Err(format!("{} does not exist", target.display()));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // explorer /select 即便成功也常返回非 0 退出码,故只 spawn、不校验状态。
+        Command::new("explorer")
+            .arg(format!("/select,{}", target.display()))
+            .spawn()
+            .map_err(|error| format!("Unable to open File Explorer: {error}"))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .args(["-R", &target.to_string_lossy()])
+            .spawn()
+            .map_err(|error| format!("Unable to open Finder: {error}"))?;
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        // 多数 Linux 文件管理器不支持「选中」,退而打开其所在目录(目录本身则直接打开)。
+        let directory = if target.is_dir() {
+            target.clone()
+        } else {
+            target.parent().map(Path::to_path_buf).unwrap_or_else(|| target.clone())
+        };
+        Command::new("xdg-open")
+            .arg(&directory)
+            .spawn()
+            .map_err(|error| format!("Unable to open file manager: {error}"))?;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -1388,6 +1576,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .manage(FsWatchState::default())
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
 
@@ -1443,6 +1632,11 @@ pub fn run() {
             save_text_file,
             save_text_file_as,
             list_directory,
+            watch_directory,
+            unwatch_directory,
+            reveal_in_file_manager,
+            open_terminal_at,
+            copy_files_to_clipboard,
             scratch_folder,
             create_file,
             create_directory,

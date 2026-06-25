@@ -1,5 +1,12 @@
 import { ChevronDown, FolderOpen, Settings } from "lucide-react";
-import { type CSSProperties, type MouseEvent, type PointerEvent as ReactPointerEvent, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  useRef,
+  useState,
+} from "react";
 
 import {
   DropdownMenu,
@@ -20,6 +27,9 @@ import type {
   ScratchFolderView,
   TreeDropTarget,
   TreePanelView,
+  TreeSearch,
+  TreeSelection,
+  TreeSelectionModifiers,
 } from "../types";
 import {
   getCompactPath,
@@ -32,7 +42,8 @@ import { FileTreePanel } from "./file-tree";
 
 export function ProjectPanel({
   activePath,
-  selectedPath,
+  selection,
+  search,
   clipboard,
   contextMenu,
   draggedNode,
@@ -51,12 +62,17 @@ export function ProjectPanel({
   onOpenSettings,
   onOpenTreeFile,
   onSelectTreeNode,
+  onTreeKeyDown,
+  onTreeBlur,
+  onCopyPath,
   onPasteNode,
   onRefreshFolder,
   onRequestCreateDirectory,
   onRequestCreateFile,
   onRequestRenameNode,
   onRequestTrashNode,
+  onRevealNode,
+  onOpenTerminal,
   recentFolders,
   scratchFolder,
   scratchFolderView,
@@ -69,7 +85,8 @@ export function ProjectPanel({
   onRevealActiveFile,
 }: {
   activePath: string;
-  selectedPath: string | null;
+  selection: TreeSelection | null;
+  search: TreeSearch | null;
   clipboard: FileTreeClipboard | null;
   contextMenu: FileTreeContextMenuState | null;
   draggedNode: FileTreeNode | null;
@@ -87,13 +104,18 @@ export function ProjectPanel({
   onOpenRecentFolder: (path: string) => void;
   onOpenSettings: () => void;
   onOpenTreeFile: (node: FileTreeNode) => void;
-  onSelectTreeNode: (node: FileTreeNode) => void;
+  onSelectTreeNode: (node: FileTreeNode, modifiers: TreeSelectionModifiers, scope: "main" | "scratch") => void;
+  onTreeKeyDown: (scope: "main" | "scratch", event: ReactKeyboardEvent) => void;
+  onTreeBlur: () => void;
+  onCopyPath: (node: FileTreeNode, mode: "absolute" | "relative") => void;
   onPasteNode: (targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onRefreshFolder: (path: string, scope?: "main" | "scratch") => void;
   onRequestCreateDirectory: (parentPath: string, scope?: "main" | "scratch") => void;
   onRequestCreateFile: (parentPath: string, scope?: "main" | "scratch") => void;
   onRequestRenameNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
   onRequestTrashNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
+  onRevealNode: (node: FileTreeNode) => void;
+  onOpenTerminal: (node: FileTreeNode) => void;
   recentFolders: RecentFolder[];
   scratchFolder: ScratchFolder | null;
   scratchFolderView: ScratchFolderView;
@@ -163,7 +185,8 @@ export function ProjectPanel({
           />
           <FileTreePanel
             activePath={activePath}
-            selectedPath={selectedPath}
+            selection={selection}
+            search={search}
             clipboard={clipboard}
             contextMenu={contextMenu}
             draggedNode={draggedNode}
@@ -190,12 +213,17 @@ export function ProjectPanel({
             onDropTargetChange={onDropTargetChange}
             onOpenFile={onOpenTreeFile}
             onSelectNode={onSelectTreeNode}
+            onTreeKeyDown={onTreeKeyDown}
+            onTreeBlur={onTreeBlur}
+            onCopyPath={onCopyPath}
             onPasteNode={onPasteNode}
             onRefreshFolder={onRefreshFolder}
             onRequestCreateDirectory={onRequestCreateDirectory}
             onRequestCreateFile={onRequestCreateFile}
             onRequestRenameNode={onRequestRenameNode}
             onRequestTrashNode={onRequestTrashNode}
+            onRevealNode={onRevealNode}
+            onOpenTerminal={onOpenTerminal}
             onToggleDirectory={onToggleDirectory}
             onToggleRootDirectory={onToggleRootDirectory}
             onExpandAll={onExpandAll}
@@ -218,7 +246,8 @@ export function ProjectPanel({
         </div>
         <ProjectPanelScratchFolder
           activePath={activePath}
-          selectedPath={selectedPath}
+          selection={selection}
+          search={search}
           clipboard={clipboard}
           contextMenu={contextMenu}
           draggedNode={draggedNode}
@@ -235,12 +264,17 @@ export function ProjectPanel({
           onDropTargetChange={onDropTargetChange}
           onOpenFile={onOpenTreeFile}
           onSelectNode={onSelectTreeNode}
+          onTreeKeyDown={onTreeKeyDown}
+          onTreeBlur={onTreeBlur}
+          onCopyPath={onCopyPath}
           onPasteNode={onPasteNode}
           onRefreshFolder={onRefreshFolder}
           onRequestCreateDirectory={onRequestCreateDirectory}
           onRequestCreateFile={onRequestCreateFile}
           onRequestRenameNode={onRequestRenameNode}
           onRequestTrashNode={onRequestTrashNode}
+          onRevealNode={onRevealNode}
+          onOpenTerminal={onOpenTerminal}
           onToggleDirectory={onToggleScratchDirectory}
           onToggleRootDirectory={onToggleScratchRootDirectory}
         />
@@ -366,7 +400,8 @@ export function ProjectPanelStart({
 
 export function ProjectPanelScratchFolder({
   activePath,
-  selectedPath,
+  selection,
+  search,
   clipboard,
   contextMenu,
   draggedNode,
@@ -383,17 +418,23 @@ export function ProjectPanelScratchFolder({
   onDropTargetChange,
   onOpenFile,
   onSelectNode,
+  onTreeKeyDown,
+  onTreeBlur,
+  onCopyPath,
   onPasteNode,
   onRefreshFolder,
   onRequestCreateDirectory,
   onRequestCreateFile,
   onRequestRenameNode,
   onRequestTrashNode,
+  onRevealNode,
+  onOpenTerminal,
   onToggleDirectory,
   onToggleRootDirectory,
 }: {
   activePath: string;
-  selectedPath: string | null;
+  selection: TreeSelection | null;
+  search: TreeSearch | null;
   clipboard: FileTreeClipboard | null;
   contextMenu: FileTreeContextMenuState | null;
   draggedNode: FileTreeNode | null;
@@ -409,13 +450,18 @@ export function ProjectPanelScratchFolder({
   onDropNode: (source: FileTreeNode, targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onDropTargetChange: (target: TreeDropTarget | null) => void;
   onOpenFile: (node: FileTreeNode) => void;
-  onSelectNode: (node: FileTreeNode) => void;
+  onSelectNode: (node: FileTreeNode, modifiers: TreeSelectionModifiers, scope: "main" | "scratch") => void;
+  onTreeKeyDown: (scope: "main" | "scratch", event: ReactKeyboardEvent) => void;
+  onTreeBlur: () => void;
+  onCopyPath: (node: FileTreeNode, mode: "absolute" | "relative") => void;
   onPasteNode: (targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onRefreshFolder: (path: string, scope?: "main" | "scratch") => void;
   onRequestCreateDirectory: (parentPath: string, scope?: "main" | "scratch") => void;
   onRequestCreateFile: (parentPath: string, scope?: "main" | "scratch") => void;
   onRequestRenameNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
   onRequestTrashNode: (node: FileTreeNode, scope?: "main" | "scratch") => void;
+  onRevealNode: (node: FileTreeNode) => void;
+  onOpenTerminal: (node: FileTreeNode) => void;
   onToggleDirectory: (node: FileTreeNode) => void;
   onToggleRootDirectory: () => void;
 }) {
@@ -435,7 +481,8 @@ export function ProjectPanelScratchFolder({
       <div className="project-panel-scratch-heading">临时文件夹</div>
       <FileTreePanel
         activePath={activePath}
-        selectedPath={selectedPath}
+        selection={selection}
+        search={search}
         clipboard={clipboard}
         contextMenu={contextMenu}
         draggedNode={draggedNode}
@@ -445,18 +492,23 @@ export function ProjectPanelScratchFolder({
         onContextMenu={onContextMenu}
         onCopyNode={onCopyNode}
         onCutNode={onCutNode}
+        onCopyPath={onCopyPath}
         onDragEnd={onDragEnd}
         onDragNode={onDragNode}
         onDropNode={onDropNode}
         onDropTargetChange={onDropTargetChange}
         onOpenFile={onOpenFile}
         onSelectNode={onSelectNode}
+        onTreeKeyDown={onTreeKeyDown}
+        onTreeBlur={onTreeBlur}
         onPasteNode={onPasteNode}
         onRefreshFolder={onRefreshFolder}
         onRequestCreateDirectory={onRequestCreateDirectory}
         onRequestCreateFile={onRequestCreateFile}
         onRequestRenameNode={onRequestRenameNode}
         onRequestTrashNode={onRequestTrashNode}
+        onRevealNode={onRevealNode}
+        onOpenTerminal={onOpenTerminal}
         onToggleDirectory={onToggleDirectory}
         onToggleRootDirectory={onToggleRootDirectory}
       />

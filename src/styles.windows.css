@@ -22,7 +22,7 @@
 .platform-windows .windows-titlebar {
   background: hsl(var(--muted));
   border-bottom: 0;
-  height: 30px; /* 原 36px,降低 */
+  height: 38px;
 }
 
 /* ───────────────────────── 左侧文件树:同款白卡 ─────────────────────────
@@ -30,7 +30,7 @@
    右侧不额外内缩(贴着编辑卡的左边距),让 树↔编辑 间隙和 编辑↔Git 一致。
    file-tree-scroll 保持不透明,否则丢 ClearType 导致文字发虚。 */
 .platform-windows .workbench-left-panel {
-  padding: 8px 0 8px 8px;
+  padding: 0 0 8px 8px;
 }
 
 .platform-windows .project-panel {
@@ -49,7 +49,7 @@
    和中间编辑区一样:白底 + 圆角 + 边框;因为 Git 外面套了一层 wrapper,这里用 wrapper 的
    padding 来内缩留出灰底(编辑区是直接 grid item,用的是 margin)。 */
 .platform-windows .workbench-right-panel {
-  padding: 8px 8px 8px 0; /* 左边贴着拖拽手柄,不额外内缩 */
+  padding: 0 8px 8px 0; /* 左边贴着拖拽手柄,不额外内缩 */
 }
 
 .platform-windows .right-task-panel {
@@ -99,7 +99,7 @@
 
 /* 主网格顶部多留 4px,让三张卡离顶栏更远一点(总顶距 = 4px + 卡片自身 8px = 12px)。 */
 .platform-windows .workbench-layout {
-  padding-top: 4px;
+  padding-top: 0;
 }
 
 /* ───────────────────────── 编辑区:灰框里的白卡 ─────────────────────────
@@ -108,7 +108,7 @@
    height:auto 让 grid 拉伸时为「单元格高度 - margin」,避免 height:100% + margin 溢出。 */
 .platform-windows .editor-surface-panel {
   height: auto;
-  margin: 8px 4px; /* 上下 8px;左右默认 4px = 面板收起时与窗口边的小间隙 */
+  margin: 0 4px 8px; /* 顶部贴着操作栏,底部保留 8px 地面 */
   border: var(--workspace-panel-border);
   /* 四角 10px 圆角(含左下角)。base styles.css 用 longhand 写 border-bottom-left-radius: 0
      强制左下直角,这里用 longhand 覆盖回 10px,否则那条 longhand 仍生效 → 左下角变直角。 */

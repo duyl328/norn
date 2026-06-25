@@ -24,6 +24,7 @@ import {
 import { useDocumentSession } from "./hooks/use-document-session";
 import { usePanelLayout } from "./hooks/use-panel-layout";
 import { useWorkspaceTree } from "./hooks/use-workspace-tree";
+import { gitChangeSections } from "./mock-data";
 import { isMac, isWindows } from "./platform";
 import { useWorkbenchStore } from "./store/workbench-store";
 import { isDocumentDirty, isTauriRuntime } from "./workbench-utils";
@@ -66,6 +67,7 @@ export function WorkbenchPage() {
   const showWindowsTitlebar = useMemo(() => isWindows(), []);
   const showMacTitlebar = useMemo(() => isMac(), []);
   const isDirty = isDocumentDirty(document);
+  const gitBadgeCount = gitChangeSections.reduce((total, section) => total + section.count, 0);
 
   const {
     toggleFilesTool,
@@ -101,8 +103,11 @@ export function WorkbenchPage() {
     collapseAllDirectories,
     expandAllDirectories,
     revealActiveFile,
-    selectedTreePath,
+    treeSelection,
+    treeSearch,
     selectTreeNode,
+    handleTreeKeyDown,
+    clearTreeSearch,
     toggleScratchDirectory,
     toggleScratchRootDirectory,
     refreshTreePath,
@@ -112,8 +117,11 @@ export function WorkbenchPage() {
     submitFileTreeNameDialog,
     copyTreeNode,
     cutTreeNode,
+    copyTreeNodePaths,
     pasteTreeNode,
     requestTrashTreeNode,
+    revealTreeNodeInFileManager,
+    openTerminalAtNode,
     confirmTrashTreeNode,
     moveTreeNodeToDirectory,
     openFileTreeContextMenu,
@@ -209,6 +217,7 @@ export function WorkbenchPage() {
             // Windows 无边框窗口:设置页也要有自绘标题栏(窗口控制 + 汉堡菜单),否则无法关闭窗口 / 访问菜单。
             <div className="flex h-full min-w-0 flex-col">
               <WindowsTitleBar
+                gitBadgeCount={gitBadgeCount}
                 variant="settings"
                 leftPanelOpen={leftPanelOpen}
                 onCreateFile={() => {
@@ -241,6 +250,7 @@ export function WorkbenchPage() {
           <div className="workspace-view flex h-full min-w-0 flex-col">
             {showWindowsTitlebar ? (
               <WindowsTitleBar
+                gitBadgeCount={gitBadgeCount}
                 leftPanelOpen={leftPanelOpen}
                 onCreateFile={createFile}
                 onToggleLeftPanel={toggleFilesTool}
@@ -257,6 +267,7 @@ export function WorkbenchPage() {
             ) : null}
             {showMacTitlebar ? (
               <MacTitlebar
+                gitBadgeCount={gitBadgeCount}
                 leftPanelOpen={leftPanelOpen}
                 leftPanelWidth={leftPanelWidth}
                 onCloseSearch={closeSearchTool}
@@ -295,7 +306,8 @@ export function WorkbenchPage() {
               >
                 <ProjectPanel
                   activePath={document.path}
-                  selectedPath={selectedTreePath}
+                  selection={treeSelection}
+                  search={treeSearch}
                   clipboard={fileTreeClipboard}
                   contextMenu={fileTreeContextMenu}
                   draggedNode={draggedTreeNode}
@@ -321,6 +333,9 @@ export function WorkbenchPage() {
                   onOpenRecentFolder={(path) => void openFolderView(path, "open-folder")}
                   onOpenTreeFile={openTreeFile}
                   onSelectTreeNode={selectTreeNode}
+                  onTreeKeyDown={handleTreeKeyDown}
+                  onTreeBlur={clearTreeSearch}
+                  onCopyPath={copyTreeNodePaths}
                   onPasteNode={pasteTreeNode}
                   onRefreshFolder={(path, scope = "main") => void refreshTreePath(scope, path)}
                   onRequestCreateDirectory={(parentPath, scope = "main") =>
@@ -333,6 +348,8 @@ export function WorkbenchPage() {
                     openFileTreeNameDialog({ kind: "rename", node, scope })
                   }
                   onRequestTrashNode={requestTrashTreeNode}
+                  onRevealNode={revealTreeNodeInFileManager}
+                  onOpenTerminal={openTerminalAtNode}
                   recentFolders={recentFolders}
                   scratchFolder={scratchFolder}
                   scratchFolderView={scratchFolderView}

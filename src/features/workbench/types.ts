@@ -130,7 +130,28 @@ export type FileTreeNode = {
 
 export type FileTreeClipboard = {
   action: "copy" | "cut";
-  node: FileTreeNode;
+  nodes: FileTreeNode[];
+};
+
+// 文件树多选状态(单一作用域)。anchorPath 是 Shift 区间锚点,leadPath 是方向键光标(也用于定位滚动),
+// paths 是当前高亮的全部路径。与编辑区打开的文件解耦。
+export type TreeSelection = {
+  scope: "main" | "scratch";
+  anchorPath: string;
+  leadPath: string;
+  paths: string[];
+};
+
+// 鼠标点击/键盘移动时的修饰键意图。
+export type TreeSelectionModifiers = {
+  toggle: boolean; // Ctrl / Cmd:切换单项
+  range: boolean; // Shift:区间选择
+};
+
+// 文件树「即输即搜」(类 IDEA speed search):在某棵树内直接键入即开始,只匹配当前可见行的名字。
+export type TreeSearch = {
+  scope: "main" | "scratch";
+  query: string;
 };
 
 export type FileTreeNameDialog =

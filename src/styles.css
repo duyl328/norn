@@ -136,7 +136,7 @@
   }
 
   .windows-titlebar {
-    @apply grid h-9 shrink-0 grid-cols-[minmax(360px,auto)_minmax(80px,1fr)_minmax(260px,430px)_minmax(80px,1fr)_auto] items-center border-b border-border text-foreground;
+    @apply grid h-9 shrink-0 grid-cols-[auto_minmax(80px,1fr)_minmax(80px,1fr)_auto_auto] items-center border-b border-border text-foreground;
     position: relative;
     /* 标题栏(及其下拉菜单)必须盖在主内容之上。面板拖拽手柄是 z-index:80 且会冒泡到根层叠上下文,
        否则菜单展开后,鼠标移到左侧/编辑区交界处会被下面的拖拽手柄抢走 → 显示 col-resize 分割光标。 */
@@ -149,6 +149,11 @@
     @apply relative z-20 flex h-full min-w-0 items-center gap-2 px-2;
   }
 
+  .windows-titlebar-left > .windows-titlebar-menu-button,
+  .windows-titlebar-left > .titlebar-panel-button {
+    transform: translateY(1px);
+  }
+
   .panel-toggle-button {
     @apply relative grid h-6 w-6 shrink-0 place-items-center rounded-[3px] border-0 bg-transparent p-0 text-muted-foreground transition-colors;
   }
@@ -159,7 +164,7 @@
   }
 
   .panel-toggle-badge {
-    @apply absolute -right-1 -top-1 grid h-3.5 min-w-3.5 place-items-center rounded-full border border-background bg-primary px-1 text-ui-2xs font-semibold leading-none text-primary-foreground;
+    @apply absolute -right-0.5 -top-0.5 grid h-3.5 min-w-3.5 place-items-center rounded-full border border-background bg-primary px-1 text-ui-2xs font-semibold leading-none text-primary-foreground;
   }
 
   .titlebar-panel-button {
@@ -324,11 +329,13 @@
   }
 
   .windows-titlebar-right-tools {
-    @apply relative z-20 flex h-full items-center justify-end px-1;
+    @apply relative z-20 flex h-full shrink-0 items-center justify-end px-1;
   }
 
   .windows-titlebar-search-entry {
     @apply absolute left-1/2 z-10 w-[min(392px,29.4vw)] min-w-[252px] -translate-x-1/2 px-2;
+    top: 50%;
+    transform: translate(-50%, -50%);
   }
 
   .windows-titlebar-search-button {
@@ -687,7 +694,7 @@
 
   .project-panel-start {
     @apply flex shrink-0 flex-col gap-2 px-2 pb-2;
-    padding-top: 4px;
+    padding-top: 8px;
   }
 
   .project-panel-resizable-stack {
@@ -1450,7 +1457,7 @@
     /* 第一列是「箭头预留列」:目录显示折叠箭头,文件为空。箭头本身只有 12px,
        原来留 16px + 4px gap 让文件(空箭头列)看起来比父目录更靠右,故收窄到 12px + 2px gap。 */
     /* rounded-[5px]:选中/悬停高亮的圆角比 rounded-sm 略大一点,观感更柔和。 */
-    @apply grid h-6 grid-cols-[12px_minmax(0,1fr)_52px] items-center gap-0.5 rounded-[5px] pr-1.5 text-ui leading-none text-foreground;
+    @apply grid h-7 grid-cols-[12px_minmax(0,1fr)_52px] items-center gap-0.5 rounded-[5px] pr-1.5 text-ui leading-none text-foreground;
     padding-left: calc(0.125rem + var(--tree-indent));
     transition:
       background-color 120ms ease,
@@ -1523,7 +1530,9 @@
   }
 
   .tree-row-name {
-    @apply min-w-0 truncate;
+    /* leading-normal:行高放宽到能容下 g/y/p 的下沿。父行 leading-none + truncate(overflow:hidden)
+       会把 12px 行盒卡到基线,导致小写字母降部被裁;行已是 h-7 居中,放宽不影响行高。 */
+    @apply min-w-0 truncate leading-normal;
   }
 
   .tree-row-size {
@@ -1564,6 +1573,32 @@
        同时覆盖 hover 态,保证选中行被悬停时高亮不被 hover 背景吞掉。 */
     background: hsl(var(--primary) / 0.14);
     color: hsl(var(--foreground));
+  }
+
+  /* 键盘光标行(lead):多选时标出方向键基准行。用内描边而非填充,与选中态(填充)叠加可辨。 */
+  .tree-row-lead {
+    box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.55);
+  }
+
+  /* 即输即搜:命中子串高亮。 */
+  .tree-row-match {
+    background: hsl(var(--primary) / 0.28);
+    color: inherit;
+    border-radius: 2px;
+  }
+
+  /* 即输即搜:树顶部的查询条(显示已键入内容 + 命中数)。 */
+  .file-tree-search-bar {
+    @apply flex items-center justify-between gap-2 border-b border-border px-2 py-1 text-ui;
+    background: hsl(var(--accent) / 0.35);
+  }
+
+  .file-tree-search-query {
+    @apply truncate font-mono text-foreground;
+  }
+
+  .file-tree-search-count {
+    @apply shrink-0 text-ui-sm text-muted-foreground;
   }
 
   .tree-row-error {
