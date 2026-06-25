@@ -17,7 +17,7 @@ import type {
   TreeDropTarget,
   WorkbenchDocument,
 } from "../types";
-import { initialDocument, loadRecentFolders, loadResizeHandleHints } from "../workbench-utils";
+import { initialDocument, loadEditorLineWrapping, loadRecentFolders, loadResizeHandleHints } from "../workbench-utils";
 
 type StateSetter<T> = T | ((current: T) => T);
 
@@ -48,6 +48,7 @@ interface WorkbenchState {
   rightPanelWidth: number;
   resizingPanel: "left" | "right" | null;
   resizeHandleHintsVisible: boolean;
+  editorLineWrapping: boolean;
   scratchPanelHeight: number;
   settingsOpen: boolean;
   searchOpen: boolean;
@@ -57,6 +58,7 @@ interface WorkbenchState {
   setRightPanelWidth: (setter: StateSetter<number>) => void;
   setResizingPanel: (setter: StateSetter<"left" | "right" | null>) => void;
   setResizeHandleHintsVisible: (setter: StateSetter<boolean>) => void;
+  setEditorLineWrapping: (setter: StateSetter<boolean>) => void;
   setScratchPanelHeight: (setter: StateSetter<number>) => void;
   setSettingsOpen: (setter: StateSetter<boolean>) => void;
   setSearchOpen: (setter: StateSetter<boolean>) => void;
@@ -124,6 +126,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   rightPanelWidth: rightPanelDefaultWidth,
   resizingPanel: null,
   resizeHandleHintsVisible: loadResizeHandleHints(),
+  editorLineWrapping: loadEditorLineWrapping(),
   scratchPanelHeight: scratchPanelDefaultHeight,
   settingsOpen: false,
   searchOpen: false,
@@ -134,6 +137,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setResizingPanel: (setter) => set((state) => ({ resizingPanel: resolveSetter(setter, state.resizingPanel) })),
   setResizeHandleHintsVisible: (setter) =>
     set((state) => ({ resizeHandleHintsVisible: resolveSetter(setter, state.resizeHandleHintsVisible) })),
+  setEditorLineWrapping: (setter) =>
+    set((state) => ({ editorLineWrapping: resolveSetter(setter, state.editorLineWrapping) })),
   setScratchPanelHeight: (setter) =>
     set((state) => ({ scratchPanelHeight: resolveSetter(setter, state.scratchPanelHeight) })),
   setSettingsOpen: (setter) => set((state) => ({ settingsOpen: resolveSetter(setter, state.settingsOpen) })),

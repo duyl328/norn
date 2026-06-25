@@ -52,14 +52,18 @@ const settingsGroups: Array<{
 ];
 
 export function SettingsPage({
+  editorLineWrapping,
   gitWorkspace,
   onBack,
+  onToggleEditorLineWrapping,
   onToggleResizeHandleHints,
   resizeHandleHintsVisible,
   showMacTitlebar,
 }: {
+  editorLineWrapping: boolean;
   gitWorkspace: GitWorkspaceState;
   onBack: () => void;
+  onToggleEditorLineWrapping: () => void;
   onToggleResizeHandleHints: () => void;
   resizeHandleHintsVisible: boolean;
   showMacTitlebar: boolean;
@@ -183,7 +187,9 @@ export function SettingsPage({
         <main className="settings-main">
           <SettingsContent
             activeTab={activeTab}
+            editorLineWrapping={editorLineWrapping}
             gitWorkspace={gitWorkspace}
+            onToggleEditorLineWrapping={onToggleEditorLineWrapping}
             onToggleResizeHandleHints={onToggleResizeHandleHints}
             resizeHandleHintsVisible={resizeHandleHintsVisible}
           />
@@ -195,12 +201,16 @@ export function SettingsPage({
 
 export function SettingsContent({
   activeTab,
+  editorLineWrapping,
   gitWorkspace,
+  onToggleEditorLineWrapping,
   onToggleResizeHandleHints,
   resizeHandleHintsVisible,
 }: {
   activeTab: SettingsTabId;
+  editorLineWrapping: boolean;
   gitWorkspace: GitWorkspaceState;
+  onToggleEditorLineWrapping: () => void;
   onToggleResizeHandleHints: () => void;
   resizeHandleHintsVisible: boolean;
 }) {
@@ -272,6 +282,12 @@ export function SettingsContent({
             description="常驻显示左右面板之间的淡色拖拽区域。关闭后仍可拖动，鼠标移入时显示反馈。"
             enabled={resizeHandleHintsVisible}
             onClick={onToggleResizeHandleHints}
+          />
+          <SettingsListRow
+            title="长行自动换行"
+            description="超出宽度的长行自动折到下一行显示，不再横向滚动。"
+            enabled={editorLineWrapping}
+            onClick={onToggleEditorLineWrapping}
           />
         </SettingsList>
       </SettingsPanel>

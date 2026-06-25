@@ -17,6 +17,7 @@ import {
 import {
   EDITOR_MIN_THUMB_SIZE,
   EDITOR_SCROLLBAR_SIZE,
+  editorLineWrappingStorageKey,
   maxRecentFolders,
   projectColorPairs,
   recentFoldersStorageKey,
@@ -525,6 +526,18 @@ export const loadResizeHandleHints = () => {
 
 export const saveResizeHandleHints = (visible: boolean) => {
   window.localStorage.setItem(resizeHandleHintsStorageKey, String(visible));
+};
+
+export const loadEditorLineWrapping = () => {
+  try {
+    return window.localStorage.getItem(editorLineWrappingStorageKey) === "true";
+  } catch {
+    return false;
+  }
+};
+
+export const saveEditorLineWrapping = (enabled: boolean) => {
+  window.localStorage.setItem(editorLineWrappingStorageKey, String(enabled));
 };
 
 export const initialDocument: WorkbenchDocument = {

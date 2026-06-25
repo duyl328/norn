@@ -3,7 +3,7 @@
 import { getSearchQuery, openSearchPanel } from "@codemirror/search";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createCodeMirrorExtensions } from "@/features/workbench/codemirror-setup";
 import type { WorkbenchDocument } from "@/features/workbench/types";
@@ -32,7 +32,7 @@ const mount = (document: WorkbenchDocument) => {
     parent,
     state: EditorState.create({
       doc: document.content,
-      extensions: createCodeMirrorExtensions(new Compartment(), document, () => {}),
+      extensions: createCodeMirrorExtensions(new Compartment(), new Compartment(), document, () => {}, false),
     }),
   });
   return view;
@@ -156,7 +156,9 @@ describe("编辑器查找/替换接线", () => {
     expect(getSearchQuery(editor.state).search).toBe("");
   });
 
-  it("显示匹配计数 当前/总数", () => {
+  // 匹配计数是全文档扫描,故走 120ms 尾随防抖(见 editor-search-panel.ts scheduleCount):
+  // 输入后计数不会同步出现,用 vi.waitFor 等防抖落定再断言。
+  it("显示匹配计数 当前/总数", async () => {
     const editor = mount(doc());
     openSearchPanel(editor);
 
@@ -166,11 +168,13 @@ describe("编辑器查找/替换接线", () => {
 
     const count = editor.dom.querySelector<HTMLElement>(".cm-norn-search-count");
     // 文档含两个 const,输入后自动选中第一个 → 1/2。
-    expect(count?.hidden).toBe(false);
-    expect(count?.textContent).toBe("1/2");
+    await vi.waitFor(() => {
+      expect(count?.hidden).toBe(false);
+      expect(count?.textContent).toBe("1/2");
+    });
   });
 
-  it("无匹配时计数显示无结果", () => {
+  it("无匹配时计数显示无结果", async () => {
     const editor = mount(doc());
     openSearchPanel(editor);
 
@@ -179,11 +183,13 @@ describe("编辑器查找/替换接线", () => {
     input!.dispatchEvent(new Event("input", { bubbles: true }));
 
     const count = editor.dom.querySelector<HTMLElement>(".cm-norn-search-count");
-    expect(count?.textContent).toBe("无结果");
-    expect(count?.classList.contains("cm-norn-search-count-empty")).toBe(true);
+    await vi.waitFor(() => {
+      expect(count?.textContent).toBe("无结果");
+      expect(count?.classList.contains("cm-norn-search-count-empty")).toBe(true);
+    });
   });
 
-  it("大文件(超过计数上限)仍可查找,但暂停匹配计数", () => {
+  it("大文件(超过计数上限)仍可查找,但暂停匹配计数", async () => {
     const big = `${"x".repeat(600_000)}\nNEEDLE\n`;
     const editor = mount(doc({ content: big, savedContent: big }));
     openSearchPanel(editor);
@@ -192,11 +198,13 @@ describe("编辑器查找/替换接线", () => {
     input!.value = "NEEDLE";
     input!.dispatchEvent(new Event("input", { bubbles: true }));
 
-    // 查找仍命中并定位。
+    // 查找仍命中并定位(同步)。
     expect(editor.state.selection.main.from).toBe(600_001);
-    // 文档超过 50 万字符 → 计数暂停,显示省略号而非全量扫描。
+    // 文档超过 50 万字符 → 计数暂停,显示省略号而非全量扫描(防抖后落定)。
     const count = editor.dom.querySelector<HTMLElement>(".cm-norn-search-count");
-    expect(count?.textContent).toBe("…");
+    await vi.waitFor(() => {
+      expect(count?.textContent).toBe("…");
+    });
   });
 
   it("large-readonly 文档:仅查找、禁用替换(避免改动分块加载的文件)", () => {

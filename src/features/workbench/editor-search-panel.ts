@@ -3,12 +3,14 @@ import {
   findNext,
   findPrevious,
   getSearchQuery,
+  openSearchPanel,
   replaceAll,
   replaceNext,
   SearchQuery,
   setSearchQuery,
 } from "@codemirror/search";
-import { EditorView, type Panel } from "@codemirror/view";
+import { StateEffect } from "@codemirror/state";
+import { type Command, EditorView, type Panel } from "@codemirror/view";
 
 /**
  * 自绘的查找/替换面板。
@@ -22,6 +24,57 @@ import { EditorView, type Panel } from "@codemirror/view";
  *
  * 仅负责 UI 与交互;实际匹配/替换仍由 @codemirror/search 的命令驱动。
  */
+
+// 让面板展开/收起「替换行」的指令:Ctrl+F 收起(纯查找)、Ctrl+R 展开(替换)。
+// 面板的展开状态是闭包内的局部状态,外部命令通过这个 effect 驱动它(见 update)。
+const setReplaceMode = StateEffect.define<boolean>();
+
+/**
+ * 用编辑器里的选中文本作为查找词:有选中(单行、非空)就用它覆盖查找框,每次按 Ctrl+F/R
+ * 都按当前选区的新文本走;无选中(光标)则保留原查找内容。按字面查找(关正则),大小写/全词沿用。
+ * 必须在 openSearchPanel 之前 dispatch —— 面板创建时读取的是此刻的查询,这样新开的面板即带上选区文本。
+ */
+const seedFromSelection = (view: EditorView): void => {
+  const { from, to } = view.state.selection.main;
+  if (from === to) {
+    return; // 仅光标、无选中:沿用上次查找词
+  }
+  const text = view.state.sliceDoc(from, to);
+  if (text.includes("\n")) {
+    return; // 跨行选区不灌入查找框
+  }
+  const current = getSearchQuery(view.state);
+  if (current.search === text && !current.regexp) {
+    return; // 已经是这个词,免去重复 dispatch
+  }
+  view.dispatch({
+    effects: setSearchQuery.of(
+      new SearchQuery({
+        search: text,
+        replace: current.replace,
+        caseSensitive: current.caseSensitive,
+        wholeWord: current.wholeWord,
+        regexp: false,
+      }),
+    ),
+  });
+};
+
+/** Ctrl+F:打开查找面板并切到纯查找(收起替换行),焦点回查找框。有选中则以选区文本为查找词。 */
+export const openFind: Command = (view) => {
+  seedFromSelection(view);
+  openSearchPanel(view);
+  view.dispatch({ effects: setReplaceMode.of(false) });
+  return true;
+};
+
+/** Ctrl+R:打开查找面板并直接切到替换(展开替换行),焦点落替换框。有选中则以选区文本为查找词。 */
+export const openReplace: Command = (view) => {
+  seedFromSelection(view);
+  openSearchPanel(view);
+  view.dispatch({ effects: setReplaceMode.of(true) });
+  return true;
+};
 
 type IconNode = [tag: "path" | "circle" | "rect", attrs: Record<string, string>];
 
@@ -513,6 +566,16 @@ export const createEditorSearchPanel = (view: EditorView): Panel => {
       searchInput.select();
     },
     update(update) {
+      // 外部命令(Ctrl+F / Ctrl+R)请求切换查找/替换模式。只读文档无替换行,setReplaceOpen 自身已忽略。
+      for (const transaction of update.transactions) {
+        for (const effect of transaction.effects) {
+          if (effect.is(setReplaceMode)) {
+            setReplaceOpen(effect.value);
+            (effect.value && !readOnly ? replaceInput : searchInput).focus();
+          }
+        }
+      }
+
       const queryChanged = update.transactions.some((transaction) =>
         transaction.effects.some((effect) => effect.is(setSearchQuery)),
       );

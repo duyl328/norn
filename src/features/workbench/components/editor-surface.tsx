@@ -14,6 +14,7 @@ import {
   resolveHighlightMode,
 } from "../editor-highlighting";
 import { useEditorTabs } from "../hooks/use-editor-tabs";
+import { useWorkbenchStore } from "../store/workbench-store";
 import type { EditorScrollbarOrientation, EditorScrollMetrics, WorkbenchDocument } from "../types";
 import {
   clamp,
@@ -53,6 +54,8 @@ export function EditorSurface({
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const languageCompartmentRef = useRef(new Compartment());
+  const lineWrapCompartmentRef = useRef(new Compartment());
+  const lineWrapping = useWorkbenchStore((state) => state.editorLineWrapping);
   const dragRef = useRef<{
     maxScroll: number;
     orientation: EditorScrollbarOrientation;
@@ -95,8 +98,12 @@ export function EditorSurface({
       parent,
       state: EditorState.create({
         doc: document.content,
-        extensions: createCodeMirrorExtensions(languageCompartmentRef.current, document, (content) =>
-          onChangeRef.current(content),
+        extensions: createCodeMirrorExtensions(
+          languageCompartmentRef.current,
+          lineWrapCompartmentRef.current,
+          document,
+          (content) => onChangeRef.current(content),
+          useWorkbenchStore.getState().editorLineWrapping,
         ),
       }),
     });
@@ -202,6 +209,13 @@ export function EditorSurface({
       scrollDOMRef.current = null;
     };
   }, [document.id, document.name]);
+
+  // 设置里切换长行换行时,只重配置 compartment,不重建编辑器(保留光标/滚动/撤销栈)。
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: lineWrapCompartmentRef.current.reconfigure(lineWrapping ? EditorView.lineWrapping : []),
+    });
+  }, [lineWrapping]);
 
   const setScrollPosition = (orientation: EditorScrollbarOrientation, value: number) => {
     const scrollDOM = scrollDOMRef.current;

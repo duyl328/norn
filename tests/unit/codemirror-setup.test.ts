@@ -16,13 +16,19 @@ const doc = (overrides: Partial<WorkbenchDocument> = {}): WorkbenchDocument => (
 
 describe("createCodeMirrorExtensions", () => {
   it("可编辑文档构建出一组扩展", () => {
-    const extensions = createCodeMirrorExtensions(new Compartment(), doc(), () => {});
+    const extensions = createCodeMirrorExtensions(new Compartment(), new Compartment(), doc(), () => {}, false);
     expect(Array.isArray(extensions)).toBe(true);
     expect(extensions.length).toBeGreaterThan(0);
   });
 
   it("large-readonly 文档同样能构建扩展(只读分支)", () => {
-    const extensions = createCodeMirrorExtensions(new Compartment(), doc({ mode: "large-readonly" }), () => {});
+    const extensions = createCodeMirrorExtensions(
+      new Compartment(),
+      new Compartment(),
+      doc({ mode: "large-readonly" }),
+      () => {},
+      false,
+    );
     expect(extensions.length).toBeGreaterThan(0);
   });
 

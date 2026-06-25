@@ -25,7 +25,7 @@ import { usePanelLayout } from "./hooks/use-panel-layout";
 import { useWorkspaceTree } from "./hooks/use-workspace-tree";
 import { isMac, isWindows } from "./platform";
 import { useWorkbenchStore } from "./store/workbench-store";
-import { isDocumentDirty, isTauriRuntime } from "./workbench-utils";
+import { isDocumentDirty, isTauriRuntime, saveEditorLineWrapping } from "./workbench-utils";
 
 export function WorkbenchPage() {
   const document = useWorkbenchStore((state) => state.document);
@@ -37,6 +37,8 @@ export function WorkbenchPage() {
   const rightPanelWidth = useWorkbenchStore((state) => state.rightPanelWidth);
   const resizingPanel = useWorkbenchStore((state) => state.resizingPanel);
   const resizeHandleHintsVisible = useWorkbenchStore((state) => state.resizeHandleHintsVisible);
+  const editorLineWrapping = useWorkbenchStore((state) => state.editorLineWrapping);
+  const setEditorLineWrapping = useWorkbenchStore((state) => state.setEditorLineWrapping);
   const settingsOpen = useWorkbenchStore((state) => state.settingsOpen);
   const setSettingsOpen = useWorkbenchStore((state) => state.setSettingsOpen);
   const fileError = useWorkbenchStore((state) => state.fileError);
@@ -187,8 +189,14 @@ export function WorkbenchPage() {
 
   const settingsPageNode = (
     <SettingsPage
+      editorLineWrapping={editorLineWrapping}
       gitWorkspace={gitWorkspace}
       onBack={() => setSettingsOpen(false)}
+      onToggleEditorLineWrapping={() => {
+        const next = !editorLineWrapping;
+        setEditorLineWrapping(next);
+        saveEditorLineWrapping(next);
+      }}
       onToggleResizeHandleHints={() => updateResizeHandleHintsVisible(!resizeHandleHintsVisible)}
       resizeHandleHintsVisible={resizeHandleHintsVisible}
       showMacTitlebar={showMacTitlebar}

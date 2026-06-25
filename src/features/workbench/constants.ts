@@ -79,6 +79,7 @@ export const recentProjects = [
 
 export const recentFoldersStorageKey = "norn.recentFolders";
 export const resizeHandleHintsStorageKey = "norn.resizeHandleHints";
+export const editorLineWrappingStorageKey = "norn.editorLineWrapping";
 export const maxRecentFolders = 8;
 
 export const projectColorPairs = [
