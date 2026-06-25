@@ -1,13 +1,12 @@
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { history } from "@codemirror/commands";
 import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
-import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
+import { highlightSelectionMatches, search } from "@codemirror/search";
 import { type Compartment, type Extension } from "@codemirror/state";
 import {
   drawSelection,
   EditorView,
   highlightActiveLine,
   highlightActiveLineGutter,
-  keymap,
   lineNumbers,
 } from "@codemirror/view";
 
@@ -72,32 +71,18 @@ export const codeMirrorTheme = EditorView.theme({
 });
 
 /**
- * 编辑器快捷键的单一装配点。CodeMirror keymap 按数组顺序匹配,先命中先生效,
- * 因此这里的次序即优先级。
- *
- * 所有权边界(Phase 0 约定):
- * - 编辑器内操作(查找/替换、缩进、撤销/重做,以及后续的补全、折叠等)归 CodeMirror,
- *   在此装配 —— 这样在桌面(Tauri)与纯 Web 构建下行为一致。
- * - 应用级操作(新建/打开/保存文件、快速打开 Cmd+P、切换面板)归原生菜单,
- *   在 workbench-page 的菜单事件里处理,不在此处。
- *
- * 新增编辑器功能时,在下方预留的插槽追加对应 keymap,无需改动其余装配。
+ * 编辑器快捷键不再在此写死。统一 keymap 的单一真相源是 action 注册表:
+ * - 编辑器命令(查找/注释/行操作…)= scope:"editor" 的 action,由
+ *   `actions/editor-actions.buildEditorKeymapExtension` 按「生效键位」生成,
+ *   经 keymapCompartment 传入(见 editor-surface),改键/禁用即时生效。
+ * - 纯编辑原语(光标/退格/撤销)也在该扩展里(standardKeymap/historyKeymap)。
+ * 因此这里只接收一个已装配好的 keymap 扩展。
  */
-const editorKeymap = keymap.of([
-  indentWithTab,
-  ...searchKeymap, // 查找/替换:Mod-f 打开查找,Mod-Alt-f / Mod-h 替换
-  // 预留插槽(随对应功能落地时启用):
-  // ...closeBracketsKeymap,
-  // ...completionKeymap,
-  // ...foldKeymap,
-  ...defaultKeymap,
-  ...historyKeymap,
-]);
-
 export const createCodeMirrorExtensions = (
   languageCompartment: Compartment,
   document: WorkbenchDocument,
   onChange: (content: string) => void,
+  keymapExtension: Extension,
 ): Extension[] => [
   lineNumbers(),
   highlightActiveLineGutter(),
@@ -109,7 +94,7 @@ export const createCodeMirrorExtensions = (
   highlightActiveLine(),
   highlightSelectionMatches(),
   search({ top: true, createPanel: createEditorSearchPanel }),
-  editorKeymap,
+  keymapExtension,
   languageCompartment.of([]),
   ...createSmartOverlayExtension(document.content.length),
   EditorView.editable.of(document.mode !== "large-readonly"),

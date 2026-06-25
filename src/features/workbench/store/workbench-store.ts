@@ -24,7 +24,7 @@ type StateSetter<T> = T | ((current: T) => T);
 const resolveSetter = <T>(setter: StateSetter<T>, current: T): T =>
   typeof setter === "function" ? (setter as (value: T) => T)(current) : setter;
 
-interface WorkbenchState {
+export interface WorkbenchState {
   // ---------------------------------------------------------------------------
   // documents
   // ---------------------------------------------------------------------------
@@ -51,6 +51,8 @@ interface WorkbenchState {
   scratchPanelHeight: number;
   settingsOpen: boolean;
   searchOpen: boolean;
+  commandPaletteOpen: boolean;
+  keymapOverrides: Record<string, string[]>;
   setLeftPanelOpen: (setter: StateSetter<boolean>) => void;
   setLeftPanelWidth: (setter: StateSetter<number>) => void;
   setRightPanelOpen: (setter: StateSetter<boolean>) => void;
@@ -60,6 +62,8 @@ interface WorkbenchState {
   setScratchPanelHeight: (setter: StateSetter<number>) => void;
   setSettingsOpen: (setter: StateSetter<boolean>) => void;
   setSearchOpen: (setter: StateSetter<boolean>) => void;
+  setCommandPaletteOpen: (setter: StateSetter<boolean>) => void;
+  setKeymapOverrides: (setter: StateSetter<Record<string, string[]>>) => void;
 
   // ---------------------------------------------------------------------------
   // workspace
@@ -127,6 +131,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   scratchPanelHeight: scratchPanelDefaultHeight,
   settingsOpen: false,
   searchOpen: false,
+  commandPaletteOpen: false,
+  // 启动时由 workbench-page 异步从 keybindings.json 载入(见 WorkbenchActionsRuntime)。
+  keymapOverrides: {},
   setLeftPanelOpen: (setter) => set((state) => ({ leftPanelOpen: resolveSetter(setter, state.leftPanelOpen) })),
   setLeftPanelWidth: (setter) => set((state) => ({ leftPanelWidth: resolveSetter(setter, state.leftPanelWidth) })),
   setRightPanelOpen: (setter) => set((state) => ({ rightPanelOpen: resolveSetter(setter, state.rightPanelOpen) })),
@@ -138,6 +145,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({ scratchPanelHeight: resolveSetter(setter, state.scratchPanelHeight) })),
   setSettingsOpen: (setter) => set((state) => ({ settingsOpen: resolveSetter(setter, state.settingsOpen) })),
   setSearchOpen: (setter) => set((state) => ({ searchOpen: resolveSetter(setter, state.searchOpen) })),
+  setCommandPaletteOpen: (setter) =>
+    set((state) => ({ commandPaletteOpen: resolveSetter(setter, state.commandPaletteOpen) })),
+  setKeymapOverrides: (setter) =>
+    set((state) => ({ keymapOverrides: resolveSetter(setter, state.keymapOverrides) })),
 
   // ---------------------------------------------------------------------------
   // workspace

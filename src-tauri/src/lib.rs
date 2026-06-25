@@ -6,6 +6,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use serde::Serialize;
 use std::{
+    collections::HashMap,
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -1200,6 +1201,74 @@ fn format_file_error(context: &str, path: &Path, error: std::io::Error) -> Strin
     format!("{} for {}: {}", context, path.display(), error)
 }
 
+// ---------------------------------------------------------------------------
+// keybindings.json:前端自定义快捷键的单一存储,放 appConfigDir。
+// JS 通过 read/write 命令读写;mac 原生菜单加速键也从这里取,使两者一致。
+// ---------------------------------------------------------------------------
+fn keybindings_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| format!("Unable to resolve app config directory: {error}"))?;
+    Ok(dir.join("keybindings.json"))
+}
+
+#[tauri::command]
+fn read_keybindings(app: tauri::AppHandle) -> Result<String, String> {
+    let path = keybindings_path(&app)?;
+    match fs::read_to_string(&path) {
+        Ok(contents) => Ok(contents),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok("{}".to_string()),
+        Err(error) => Err(format!("Unable to read keybindings: {error}")),
+    }
+}
+
+#[tauri::command]
+fn write_keybindings(app: tauri::AppHandle, contents: String) -> Result<(), String> {
+    let path = keybindings_path(&app)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Unable to create config directory: {error}"))?;
+    }
+    fs::write(&path, contents).map_err(|error| format!("Unable to write keybindings: {error}"))?;
+    Ok(())
+}
+
+/// 读 keybindings.json 为 actionId → 键位串数组。任何错误都退化为空表(用默认加速键)。
+fn read_keybindings_map<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> HashMap<String, Vec<String>> {
+    let Ok(path) = keybindings_path(app) else {
+        return HashMap::new();
+    };
+    let Ok(contents) = fs::read_to_string(&path) else {
+        return HashMap::new();
+    };
+    serde_json::from_str(&contents).unwrap_or_default()
+}
+
+/// 前端键位串("Mod+Shift+S")→ Tauri 加速键串("CmdOrCtrl+Shift+S")。
+fn spec_to_accelerator(spec: &str) -> String {
+    spec.split('+')
+        .map(|part| match part {
+            "Mod" => "CmdOrCtrl".to_string(),
+            "Meta" | "Cmd" | "Command" => "Cmd".to_string(),
+            "Ctrl" | "Control" => "Ctrl".to_string(),
+            "Alt" | "Option" => "Alt".to_string(),
+            "Shift" => "Shift".to_string(),
+            other if other.chars().count() == 1 => other.to_uppercase(),
+            other => other.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("+")
+}
+
+/// 某菜单动作的加速键:用户自定义的第一个键位,否则回退默认。
+fn menu_accelerator(map: &HashMap<String, Vec<String>>, action_id: &str, default: &str) -> String {
+    match map.get(action_id).and_then(|keys| keys.first()) {
+        Some(spec) => spec_to_accelerator(spec),
+        None => default.to_string(),
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn build_macos_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<Menu<R>> {
     let package_info = app.package_info();
@@ -1233,34 +1302,43 @@ fn build_macos_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Resu
         ],
     )?;
 
+    // 菜单加速键从 keybindings.json 取(没改过则用默认),与前端 action 键位保持一致。
+    let bindings = read_keybindings_map(app);
+    let new_file_accel = menu_accelerator(&bindings, "file.new", "CmdOrCtrl+N");
+    let open_file_accel = menu_accelerator(&bindings, "file.open", "CmdOrCtrl+O");
+    let open_folder_accel = menu_accelerator(&bindings, "file.openFolder", "CmdOrCtrl+Shift+O");
+    let save_accel = menu_accelerator(&bindings, "file.save", "CmdOrCtrl+S");
+    let save_as_accel = menu_accelerator(&bindings, "file.saveAs", "CmdOrCtrl+Shift+S");
+    let find_accel = menu_accelerator(&bindings, "navigate.goToFile", "CmdOrCtrl+P");
+
     let file_menu = Submenu::with_items(
         app,
         "File",
         true,
         &[
-            &MenuItem::with_id(app, MENU_NEW_FILE, "New File", true, Some("CmdOrCtrl+N"))?,
+            &MenuItem::with_id(app, MENU_NEW_FILE, "New File", true, Some(new_file_accel.as_str()))?,
             &MenuItem::with_id(
                 app,
                 MENU_OPEN_FILE,
                 "Open File...",
                 true,
-                Some("CmdOrCtrl+O"),
+                Some(open_file_accel.as_str()),
             )?,
             &MenuItem::with_id(
                 app,
                 MENU_OPEN_FOLDER,
                 "Open Folder...",
                 true,
-                Some("CmdOrCtrl+Shift+O"),
+                Some(open_folder_accel.as_str()),
             )?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, MENU_SAVE_FILE, "Save", true, Some("CmdOrCtrl+S"))?,
+            &MenuItem::with_id(app, MENU_SAVE_FILE, "Save", true, Some(save_accel.as_str()))?,
             &MenuItem::with_id(
                 app,
                 MENU_SAVE_FILE_AS,
                 "Save As...",
                 true,
-                Some("CmdOrCtrl+Shift+S"),
+                Some(save_as_accel.as_str()),
             )?,
             &PredefinedMenuItem::separator(app)?,
             &PredefinedMenuItem::close_window(app, None)?,
@@ -1280,7 +1358,7 @@ fn build_macos_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Resu
             &PredefinedMenuItem::paste(app, None)?,
             &PredefinedMenuItem::select_all(app, None)?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, MENU_FIND, "Find", true, Some("CmdOrCtrl+P"))?,
+            &MenuItem::with_id(app, MENU_FIND, "Find", true, Some(find_accel.as_str()))?,
         ],
     )?;
 
@@ -1451,6 +1529,8 @@ pub fn run() {
             copy_path,
             copy_external_paths,
             trash_path,
+            read_keybindings,
+            write_keybindings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running norn");

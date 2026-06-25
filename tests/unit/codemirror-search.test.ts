@@ -5,6 +5,7 @@ import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { buildEditorKeymapExtension } from "@/features/workbench/actions/editor-actions";
 import { createCodeMirrorExtensions } from "@/features/workbench/codemirror-setup";
 import type { WorkbenchDocument } from "@/features/workbench/types";
 
@@ -32,7 +33,7 @@ const mount = (document: WorkbenchDocument) => {
     parent,
     state: EditorState.create({
       doc: document.content,
-      extensions: createCodeMirrorExtensions(new Compartment(), document, () => {}),
+      extensions: createCodeMirrorExtensions(new Compartment(), document, () => {}, buildEditorKeymapExtension({})),
     }),
   });
   return view;

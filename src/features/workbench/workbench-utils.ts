@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import {
   Braces,
   Database,
@@ -17,6 +18,7 @@ import {
 import {
   EDITOR_MIN_THUMB_SIZE,
   EDITOR_SCROLLBAR_SIZE,
+  keymapOverridesStorageKey,
   maxRecentFolders,
   projectColorPairs,
   recentFoldersStorageKey,
@@ -525,6 +527,50 @@ export const loadResizeHandleHints = () => {
 
 export const saveResizeHandleHints = (visible: boolean) => {
   window.localStorage.setItem(resizeHandleHintsStorageKey, String(visible));
+};
+
+/**
+ * 用户自定义快捷键:actionId → 键位串数组(稀疏,缺失即用默认)。
+ * Tauri 桌面下落到 `appConfigDir/keybindings.json`(用户可编辑、Rust 菜单也读它);
+ * 纯 Web 预览回退 localStorage。
+ */
+export const loadKeymapOverrides = async (): Promise<Record<string, string[]>> => {
+  if (isTauriRuntime()) {
+    try {
+      const raw = await invoke<string>("read_keybindings");
+      const parsed = JSON.parse(raw || "{}");
+      return parsed && typeof parsed === "object" ? (parsed as Record<string, string[]>) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  try {
+    const value = window.localStorage.getItem(keymapOverridesStorageKey);
+    const parsed = value ? JSON.parse(value) : {};
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, string[]>) : {};
+  } catch {
+    return {};
+  }
+};
+
+export const saveKeymapOverrides = async (overrides: Record<string, string[]>) => {
+  const contents = JSON.stringify(overrides, null, 2);
+
+  if (isTauriRuntime()) {
+    try {
+      await invoke("write_keybindings", { contents });
+    } catch {
+      // 写失败时静默:内存态仍生效,下次再写。
+    }
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(keymapOverridesStorageKey, contents);
+  } catch {
+    // localStorage 不可用时忽略。
+  }
 };
 
 export const initialDocument: WorkbenchDocument = {

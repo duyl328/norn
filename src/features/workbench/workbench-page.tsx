@@ -4,6 +4,9 @@ import { type CSSProperties, useEffect, useMemo } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { type ActionDeps, ActionsProvider, useActions } from "./actions/use-actions";
+import { useKeybindings } from "./actions/use-keybindings";
+import { CommandPalette } from "./components/command-palette";
 import { SaveConflictDialog, UnsavedChangesDialog } from "./components/dialogs";
 import { EditorSurface } from "./components/editor-surface";
 import { FileTreeNameDialogView, FileTreeTrashDialog } from "./components/file-tree";
@@ -25,7 +28,7 @@ import { usePanelLayout } from "./hooks/use-panel-layout";
 import { useWorkspaceTree } from "./hooks/use-workspace-tree";
 import { isMac, isWindows } from "./platform";
 import { useWorkbenchStore } from "./store/workbench-store";
-import { isDocumentDirty, isTauriRuntime } from "./workbench-utils";
+import { isDocumentDirty, isTauriRuntime, loadKeymapOverrides } from "./workbench-utils";
 
 export function WorkbenchPage() {
   const document = useWorkbenchStore((state) => state.document);
@@ -118,72 +121,17 @@ export function WorkbenchPage() {
     openFileTreeContextMenu,
   } = useWorkspaceTree({ requestFileOpen });
 
-  useEffect(() => {
-    if (!isTauriRuntime()) {
-      return;
-    }
-
-    let disposed = false;
-    let unlisten: UnlistenFn | undefined;
-
-    listen<string>(nativeMenuEvent, (event) => {
-      if (event.payload === nativeMenuCommands.newFile) {
-        createFile();
-      }
-
-      if (event.payload === nativeMenuCommands.openFile) {
-        openFilePicker();
-      }
-
-      if (event.payload === nativeMenuCommands.openFolder) {
-        openFolderPicker();
-      }
-
-      if (event.payload === nativeMenuCommands.saveFile) {
-        void saveDocument();
-      }
-
-      if (event.payload === nativeMenuCommands.saveFileAs) {
-        void saveDocumentAs();
-      }
-
-      if (event.payload === nativeMenuCommands.showExplorer) {
-        toggleFilesTool();
-      }
-
-      if (event.payload === nativeMenuCommands.find) {
-        openSearchTool();
-      }
-
-      if (event.payload === nativeMenuCommands.toggleGitPanel) {
-        setRightPanelOpen((value) => !value);
-      }
-    })
-      .then((cleanup) => {
-        if (disposed) {
-          cleanup();
-          return;
-        }
-
-        unlisten = cleanup;
-      })
-      .catch(() => {
-        unlisten = undefined;
-      });
-
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [
-    document.content,
-    document.savedContent,
-    document.path,
-    document.lastModified,
-    document.mode,
-    document.isUntitled,
-    saveState,
-  ]);
+  // action 系统的回调来源:全部复用上面的 hook 输出,不重写业务逻辑。
+  const actionDeps: ActionDeps = {
+    createFile,
+    openFilePicker,
+    openFolderPicker,
+    saveDocument: () => saveDocument(),
+    saveDocumentAs: () => saveDocumentAs(),
+    toggleFilesTool,
+    openSearchTool,
+    openSettingsTool,
+  };
 
   const settingsPageNode = (
     <SettingsPage
@@ -196,13 +144,15 @@ export function WorkbenchPage() {
   );
 
   return (
-    <TooltipProvider delayDuration={250}>
-      <div
-        className={cn(
-          "h-full bg-transparent text-ui text-foreground",
-          showMacTitlebar && "mac-titlebar-overlay-layout",
-        )}
-      >
+    <ActionsProvider deps={actionDeps}>
+      <TooltipProvider delayDuration={250}>
+        <WorkbenchActionsRuntime />
+        <div
+          className={cn(
+            "h-full bg-transparent text-ui text-foreground",
+            showMacTitlebar && "mac-titlebar-overlay-layout",
+          )}
+        >
         {settingsOpen ? (
           showWindowsTitlebar ? (
             // Windows 无边框窗口:设置页也要有自绘标题栏(窗口控制 + 汉堡菜单),否则无法关闭窗口 / 访问菜单。
@@ -210,21 +160,7 @@ export function WorkbenchPage() {
               <WindowsTitleBar
                 variant="settings"
                 leftPanelOpen={leftPanelOpen}
-                onCreateFile={() => {
-                  setSettingsOpen(false);
-                  createFile();
-                }}
                 onToggleLeftPanel={toggleFilesTool}
-                onOpenFile={() => {
-                  setSettingsOpen(false);
-                  openFilePicker();
-                }}
-                onOpenFolder={() => {
-                  setSettingsOpen(false);
-                  openFolderPicker();
-                }}
-                onSaveFile={() => void saveDocument()}
-                onSaveFileAs={() => void saveDocumentAs()}
                 onOpenSearch={openSearchTool}
                 onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
                 rightPanelOpen={rightPanelOpen}
@@ -241,12 +177,7 @@ export function WorkbenchPage() {
             {showWindowsTitlebar ? (
               <WindowsTitleBar
                 leftPanelOpen={leftPanelOpen}
-                onCreateFile={createFile}
                 onToggleLeftPanel={toggleFilesTool}
-                onOpenFile={openFilePicker}
-                onOpenFolder={openFolderPicker}
-                onSaveFile={() => void saveDocument()}
-                onSaveFileAs={() => void saveDocumentAs()}
                 onOpenSearch={openSearchTool}
                 onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
                 rightPanelOpen={rightPanelOpen}
@@ -291,6 +222,8 @@ export function WorkbenchPage() {
                   !leftPanelOpen && "workbench-side-panel-closed",
                 )}
                 aria-hidden={!leftPanelOpen}
+                data-focus-zone="fileTree"
+                tabIndex={-1}
               >
                 <ProjectPanel
                   activePath={document.path}
@@ -378,6 +311,8 @@ export function WorkbenchPage() {
                   !rightPanelOpen && "workbench-side-panel-closed",
                 )}
                 aria-hidden={!rightPanelOpen}
+                data-focus-zone="git"
+                tabIndex={-1}
               >
                 <GitPanel folderView={folderView} gitWorkspace={gitWorkspace} />
               </div>
@@ -434,7 +369,71 @@ export function WorkbenchPage() {
             />
           </div>
         )}
-      </div>
-    </TooltipProvider>
+        </div>
+      </TooltipProvider>
+    </ActionsProvider>
   );
+}
+
+const NATIVE_MENU_TO_ACTION: Record<string, string> = {
+  [nativeMenuCommands.newFile]: "file.new",
+  [nativeMenuCommands.openFile]: "file.open",
+  [nativeMenuCommands.openFolder]: "file.openFolder",
+  [nativeMenuCommands.saveFile]: "file.save",
+  [nativeMenuCommands.saveFileAs]: "file.saveAs",
+  [nativeMenuCommands.showExplorer]: "view.toggleExplorer",
+  [nativeMenuCommands.find]: "navigate.goToFile",
+  [nativeMenuCommands.toggleGitPanel]: "view.toggleGit",
+};
+
+/**
+ * action 运行时:挂全局快捷键、把原生菜单事件转成 action 分发、渲染命令面板。
+ * 必须在 ActionsProvider 内,才能拿到 dispatch。
+ */
+function WorkbenchActionsRuntime() {
+  useKeybindings();
+  const { dispatch } = useActions();
+  const setKeymapOverrides = useWorkbenchStore((state) => state.setKeymapOverrides);
+
+  // 启动时从 keybindings.json(Tauri)/ localStorage(Web)载入自定义快捷键。
+  useEffect(() => {
+    let cancelled = false;
+    void loadKeymapOverrides().then((overrides) => {
+      if (!cancelled) setKeymapOverrides(overrides);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [setKeymapOverrides]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    let disposed = false;
+    let unlisten: UnlistenFn | undefined;
+
+    listen<string>(nativeMenuEvent, (event) => {
+      const actionId = NATIVE_MENU_TO_ACTION[event.payload];
+      if (actionId) dispatch(actionId);
+    })
+      .then((cleanup) => {
+        if (disposed) {
+          cleanup();
+          return;
+        }
+        unlisten = cleanup;
+      })
+      .catch(() => {
+        unlisten = undefined;
+      });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [dispatch]);
+
+  return <CommandPalette />;
 }

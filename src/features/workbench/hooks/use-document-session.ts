@@ -484,38 +484,7 @@ export function useDocumentSession() {
     saveState,
   ]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const isSaveShortcut = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s";
-
-      if (!isSaveShortcut) {
-        return;
-      }
-
-      event.preventDefault();
-
-      if (event.shiftKey) {
-        void saveDocumentAs();
-        return;
-      }
-
-      void saveDocument();
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [
-    document.content,
-    document.savedContent,
-    document.path,
-    document.lastModified,
-    document.mode,
-    document.isUntitled,
-    saveState,
-  ]);
+  // Ctrl/Cmd+S 已迁移到全局快捷键分发器(actions/use-keybindings),此处不再单独监听。
 
   return {
     activateDocument,

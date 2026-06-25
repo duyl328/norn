@@ -15,11 +15,15 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  useEffect,
   useState,
 } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { EDITOR_PRIMITIVES } from "../actions/editor-actions";
+import { eventToSpec, formatKey } from "../actions/registry";
+import { useActions } from "../actions/use-actions";
 import { settingsSidebarDefaultWidth, settingsSidebarMaxWidth, settingsSidebarMinWidth } from "../constants";
 import type { GitWorkspaceState } from "../types";
 import { clamp } from "../workbench-utils";
@@ -280,12 +284,11 @@ export function SettingsContent({
 
   if (activeTab === "shortcuts") {
     return (
-      <SettingsPanel title="快捷键" description="当前采用接近 JetBrains 的默认快捷键方案。">
-        <SettingsList>
-          <SettingsInfoRow title="保存文件" value="Cmd / Ctrl + S" />
-          <SettingsInfoRow title="另存为" value="Cmd / Ctrl + Shift + S" />
-          <SettingsInfoRow title="打开搜索" value="Cmd / Ctrl + F" />
-        </SettingsList>
+      <SettingsPanel
+        title="快捷键"
+        description="点击某条的键位按钮，按下新组合即可改键；重复键位会自动从原命令解绑。Esc 取消录制。"
+      >
+        <KeymapEditor />
       </SettingsPanel>
     );
   }
@@ -352,6 +355,99 @@ export function SettingsPanel({
 
 export function SettingsList({ children }: { children: ReactNode }) {
   return <div className="settings-list">{children}</div>;
+}
+
+/** 可编辑的快捷键列表:点击键位按钮录制新组合,自动解绑冲突,支持恢复默认。 */
+function KeymapEditor() {
+  const { actions, defaultKeysOf, setBinding, resetBinding } = useActions();
+  const [recordingId, setRecordingId] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!recordingId) return;
+
+    // 捕获阶段拦截,避免录制的按键被全局快捷键分发器同时触发。
+    const onKeyDown = (event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (event.key === "Escape") {
+        setRecordingId(null);
+        return;
+      }
+
+      const spec = eventToSpec(event);
+      if (!spec) return; // 仅按下修饰键,继续等待主键
+
+      const owner = actions.find((action) => action.id !== recordingId && (action.keys ?? []).includes(spec));
+      setBinding(recordingId, spec);
+      setNote(owner ? `已将「${owner.title}」原本的该键位解绑。` : null);
+      setRecordingId(null);
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [recordingId, actions, setBinding]);
+
+  return (
+    <>
+      {note ? <div className="px-1 pb-2 text-ui text-muted-foreground">{note}</div> : null}
+      <SettingsList>
+        {actions.map((action) => {
+          const current = action.keys?.[0];
+          const isDefault = JSON.stringify(action.keys ?? []) === JSON.stringify(defaultKeysOf(action.id));
+          const recording = recordingId === action.id;
+
+          return (
+            <div className="settings-row" key={action.id}>
+              <div className="settings-row-copy">
+                <div className="settings-row-title">{action.title}</div>
+                <div className="settings-row-description">{action.category}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className={cn(
+                    "min-w-[120px] rounded border border-border px-2 py-1 text-ui",
+                    recording ? "border-primary text-primary" : "text-foreground hover:bg-accent",
+                  )}
+                  onClick={() => {
+                    setNote(null);
+                    setRecordingId(action.id);
+                  }}
+                >
+                  {recording ? "按下快捷键…" : current ? formatKey(current) : "未绑定"}
+                </button>
+                {!isDefault ? (
+                  <button
+                    type="button"
+                    className="rounded border border-border px-2 py-1 text-ui text-muted-foreground hover:bg-accent"
+                    title="恢复默认"
+                    onClick={() => {
+                      setNote(null);
+                      resetBinding(action.id);
+                    }}
+                  >
+                    ↺
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          );
+        })}
+      </SettingsList>
+
+      <div className="px-1 pb-1 pt-4 text-ui font-medium text-foreground">编辑器原语(只读)</div>
+      <div className="px-1 pb-2 text-ui text-muted-foreground">
+        这些是 CodeMirror 的基础编辑键,不参与改键,仅供你了解哪些键位已被占用。
+      </div>
+      <SettingsList>
+        {EDITOR_PRIMITIVES.map((item) => (
+          <SettingsInfoRow key={item.title} title={item.title} value={item.keys} />
+        ))}
+      </SettingsList>
+    </>
+  );
 }
 
 export function SettingsInfoRow({ title, value }: { title: string; value: string }) {
