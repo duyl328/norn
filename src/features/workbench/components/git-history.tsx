@@ -1,12 +1,14 @@
-import { Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
+import { buildFileTree, type FileTreeNode } from "../change-tree";
 import { assignGraphColumns } from "../git-graph";
 import { gitActions } from "../hooks/use-git";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type { GitCommitFile, GitGraphCommit } from "../types";
+import { getPathIcon } from "../workbench-utils";
 import { getChangeStatusLabel } from "./git-panel";
 
 const LANE_COLORS = ["hsl(var(--primary))", "#10b981", "#f59e0b", "#a855f7", "#ec4899", "#06b6d4"];
@@ -46,7 +48,7 @@ const DOT_R = 4;
  * 历史模式:上=分支拓扑图(地铁/IDEA 式正交圆角走线),下=选中提交的改动。
  * 直接集成在右侧面板,点一条提交,下方列出它的改动文件。
  */
-export function GitHistoryPane() {
+export function GitHistoryPane({ onOpenCommitDiff }: { onOpenCommitDiff: (hash: string, file: string) => void }) {
   const [allCommits, setAllCommits] = useState<GitGraphCommit[]>([]);
   const [query, setQuery] = useState("");
   const [selectedHash, setSelectedHash] = useState("");
@@ -131,7 +133,7 @@ export function GitHistoryPane() {
         {filtered.length === 0 ? <div className="git-branch-empty">无提交记录</div> : null}
       </div>
 
-      <CommitDetail commit={selected} files={files} />
+      <CommitDetail commit={selected} files={files} onOpenCommitDiff={onOpenCommitDiff} />
     </div>
   );
 }
@@ -230,7 +232,17 @@ function GitGraph({
   );
 }
 
-function CommitDetail({ commit, files }: { commit: GitGraphCommit | null; files: GitCommitFile[] }) {
+function CommitDetail({
+  commit,
+  files,
+  onOpenCommitDiff,
+}: {
+  commit: GitGraphCommit | null;
+  files: GitCommitFile[];
+  onOpenCommitDiff: (hash: string, file: string) => void;
+}) {
+  const tree = useMemo(() => buildFileTree(files), [files]);
+
   if (!commit) {
     return <div className="git-graph-detail git-graph-detail-empty">选择一条提交查看改动</div>;
   }
@@ -244,23 +256,74 @@ function CommitDetail({ commit, files }: { commit: GitGraphCommit | null; files:
       {commit.body ? <div className="git-graph-detail-body">{commit.body}</div> : null}
       <div className="git-graph-detail-label">{commit.isMerge ? "合并提交" : `改动文件 (${files.length})`}</div>
       <div className="git-graph-detail-files">
-        {files.map((file) => {
-          const fileName = file.path.split("/").pop() ?? file.path;
-          const dir = file.path.slice(0, file.path.length - fileName.length).replace(/\/$/, "");
-          return (
-            <div className="git-history-file" key={file.path} title={file.path}>
-              <span className={cn("git-change-status", `git-change-status-${file.status}`)}>
-                {getChangeStatusLabel(file.status)}
-              </span>
-              <span className="git-file-name">
-                {fileName}
-                {dir ? <span className="git-file-dir">{dir}</span> : null}
-              </span>
-            </div>
-          );
-        })}
+        <CommitFileTree nodes={tree} depth={0} onOpen={(file) => onOpenCommitDiff(commit.hash, file)} />
         {files.length === 0 && !commit.isMerge ? <div className="git-branch-empty">无改动文件</div> : null}
       </div>
     </div>
+  );
+}
+
+function CommitFileTree({
+  depth,
+  nodes,
+  onOpen,
+}: {
+  depth: number;
+  nodes: FileTreeNode<GitCommitFile>[];
+  onOpen: (file: string) => void;
+}) {
+  return (
+    <>
+      {nodes.map((node) => {
+        if (node.kind === "folder") {
+          return <CommitFileFolder key={`folder:${node.path}`} node={node} depth={depth} onOpen={onOpen} />;
+        }
+        const fileIcon = getPathIcon(node.item.path, "file");
+        return (
+          <button
+            key={`file:${node.item.path}`}
+            type="button"
+            className="git-history-file git-history-file-clickable"
+            style={{ paddingLeft: `${depth * 12 + 4}px` }}
+            title={`${node.item.path}（点击查看该提交的改动）`}
+            onClick={() => onOpen(node.item.path)}
+          >
+            <fileIcon.Icon className={cn("tree-row-icon", fileIcon.className)} />
+            <span className="min-w-0 flex-1 truncate text-ui-md">{node.name}</span>
+            <span className={cn("git-change-status", `git-change-status-${node.item.status}`)}>
+              {getChangeStatusLabel(node.item.status)}
+            </span>
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+function CommitFileFolder({
+  depth,
+  node,
+  onOpen,
+}: {
+  depth: number;
+  node: Extract<FileTreeNode<GitCommitFile>, { kind: "folder" }>;
+  onOpen: (file: string) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const folderIcon = getPathIcon(node.name, "directory", open);
+  return (
+    <>
+      <button
+        type="button"
+        className="git-branch-folder"
+        style={{ paddingLeft: `${depth * 12 + 4}px` }}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+        <folderIcon.Icon className={cn("tree-row-icon", folderIcon.className)} />
+        <span className="truncate">{node.name}</span>
+      </button>
+      {open ? <CommitFileTree nodes={node.children} depth={depth + 1} onOpen={onOpen} /> : null}
+    </>
   );
 }

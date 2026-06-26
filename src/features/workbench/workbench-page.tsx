@@ -80,6 +80,7 @@ export function WorkbenchPage() {
   const {
     activateDocument,
     openDiff,
+    openCommitDiff,
     closeDocument,
     requestCloseDocument,
     saveAndClosePendingDocument,
@@ -385,6 +386,9 @@ export function WorkbenchPage() {
                   folderView={folderView}
                   gitWorkspace={gitWorkspace}
                   onOpenDiff={(file) => void gitActions.loadFileVersions(file).then((versions) => openDiff(file, versions))}
+                  onOpenCommitDiff={(hash, file) =>
+                    void gitActions.loadCommitFileVersions(hash, file).then((versions) => openCommitDiff(hash, file, versions))
+                  }
                 />
               </div>
             </main>

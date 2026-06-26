@@ -1987,22 +1987,187 @@
     @apply text-ui-md leading-5 text-muted-foreground;
   }
 
-  /* ── IDEA 式并排 diff(@codemirror/merge) ── */
+  /* ── IDEA 式并排 diff(@codemirror/merge) ──
+     内部高度链总有边界拿不到 → CM 不出滚动条。改为让编辑器按内容铺开、由外层
+     .diff-view-frame(overflow-auto)统一滚动,稳定可靠;两栏靠 spacer 行对齐。 */
+  .merge-diff-wrap {
+    @apply min-w-0;
+  }
+
+  /* 两栏标题(原始 / 修改后),随外层滚动时吸顶,始终能看清左右是旧是新。 */
+  .merge-diff-head {
+    @apply sticky top-0 z-10 grid grid-cols-2 border-b border-border;
+    background: hsl(var(--editor-background));
+  }
+
+  .merge-diff-head-cell {
+    @apply truncate px-3 py-1 text-ui-sm font-semibold;
+  }
+
+  .merge-diff-head-old {
+    @apply text-red-700 dark:text-red-300;
+  }
+
+  .merge-diff-head-new {
+    @apply border-l border-border text-emerald-700 dark:text-emerald-300;
+  }
+
   .merge-diff {
-    @apply h-full min-h-0 text-ui;
+    @apply min-w-0 text-ui;
   }
 
   .merge-diff .cm-mergeView,
-  .merge-diff .cm-mergeViewEditors {
-    height: 100%;
+  .merge-diff .cm-mergeViewEditors,
+  .merge-diff .cm-mergeViewEditor,
+  .merge-diff .cm-editor {
+    height: auto;
   }
 
-  .merge-diff .cm-editor {
-    height: 100%;
+  .merge-diff .cm-scroller {
+    overflow: visible;
   }
 
   .merge-diff .cm-editor.cm-focused {
     outline: none;
+  }
+
+  /* 新增行(右侧):绿底 + 左侧绿色竖条,一眼定位「多了哪行」 */
+  .merge-diff .cm-insertedLine {
+    background: rgb(16 185 129 / 0.16);
+    box-shadow: inset 2px 0 0 rgb(16 185 129 / 0.85);
+  }
+
+  /* 删除行(左侧):红底 + 左红竖条 */
+  .merge-diff .cm-deletedLine,
+  .merge-diff .cm-deletedChunk {
+    background: rgb(239 68 68 / 0.16);
+    box-shadow: inset 2px 0 0 rgb(239 68 68 / 0.85);
+  }
+
+  /* 修改行:琥珀底 + 左琥珀竖条 */
+  .merge-diff .cm-changedLine {
+    background: rgb(245 158 11 / 0.15);
+    box-shadow: inset 2px 0 0 rgb(245 158 11 / 0.85);
+  }
+
+  /* 行内词级改动:同一行里真正变了的片段,重底标注「多了什么」 */
+  .merge-diff .cm-changedText {
+    background: rgb(16 185 129 / 0.38);
+    border-radius: 2px;
+  }
+
+  .merge-diff .cm-deletedText {
+    background: rgb(239 68 68 / 0.4);
+    border-radius: 2px;
+    text-decoration: line-through;
+    text-decoration-color: rgb(239 68 68 / 0.85);
+  }
+
+  /* 对侧空缺填充块:斜纹灰,看清「这一侧没有对应行 / 多出来的内容在另一侧」 */
+  .merge-diff .cm-mergeSpacer {
+    background: repeating-linear-gradient(
+      45deg,
+      hsl(var(--muted) / 0.6),
+      hsl(var(--muted) / 0.6) 6px,
+      transparent 6px,
+      transparent 12px
+    );
+  }
+
+  /* 改动行的行号 gutter 染色,中间一栏行号也能指示改动位置 */
+  .merge-diff .cm-changedLineGutter {
+    background: rgb(245 158 11 / 0.2);
+  }
+
+  .merge-diff .cm-deletedLineGutter {
+    background: rgb(239 68 68 / 0.2);
+  }
+
+  /* 未改动段落折叠条:可点击展开 */
+  .merge-diff .cm-collapsedLines {
+    @apply cursor-pointer text-ui-sm italic text-muted-foreground;
+    background: hsl(var(--muted) / 0.5);
+    padding: 2px 8px;
+  }
+
+  .merge-diff .cm-collapsedLines:hover {
+    background: hsl(var(--muted));
+    color: hsl(var(--foreground));
+  }
+
+  /* ── 冲突解决视图 ── */
+  .conflict-view {
+    @apply flex h-full min-h-0 flex-col bg-background;
+  }
+
+  .conflict-view-head {
+    @apply flex h-10 shrink-0 items-center justify-between border-b border-border px-3;
+  }
+
+  .conflict-view-title {
+    @apply text-ui font-semibold;
+  }
+
+  .conflict-view-body {
+    @apply min-h-0 flex-1 overflow-auto p-3;
+  }
+
+  .conflict-context {
+    @apply my-1 whitespace-pre-wrap break-all font-mono text-ui-sm leading-5 text-muted-foreground;
+  }
+
+  .conflict-block {
+    @apply my-2 overflow-hidden rounded-[6px] border border-border;
+  }
+
+  .conflict-actions {
+    @apply flex items-center gap-1 border-b border-border bg-muted/40 p-1.5;
+  }
+
+  .conflict-choice {
+    @apply inline-flex items-center gap-1 rounded-[4px] border border-border/70 bg-background px-2 py-0.5 text-ui-sm text-muted-foreground transition-colors;
+  }
+
+  .conflict-choice:hover {
+    @apply border-border text-foreground;
+  }
+
+  .conflict-choice-active {
+    border-color: hsl(var(--primary));
+    background: hsl(var(--primary) / 0.12);
+    color: hsl(var(--primary));
+  }
+
+  .conflict-side {
+    @apply border-t border-border/60;
+  }
+
+  .conflict-side-label {
+    @apply px-2 py-0.5 text-ui-sm font-medium text-muted-foreground;
+  }
+
+  .conflict-side-ours .conflict-side-label {
+    @apply text-emerald-700 dark:text-emerald-300;
+  }
+
+  .conflict-side-theirs .conflict-side-label {
+    @apply text-sky-700 dark:text-sky-300;
+  }
+
+  .conflict-code {
+    @apply whitespace-pre-wrap break-all px-2 pb-1 font-mono text-ui-sm leading-5;
+  }
+
+  .conflict-side-ours .conflict-code {
+    @apply bg-emerald-500/5;
+  }
+
+  .conflict-side-theirs .conflict-code {
+    @apply bg-sky-500/5;
+  }
+
+  .conflict-code-dim {
+    @apply opacity-40;
   }
 
   /* ── 并排对照视图(左旧右新) ── */
@@ -2312,13 +2477,29 @@
     @apply grid min-h-6 min-w-0 grid-cols-[18px_minmax(0,1fr)] items-center gap-2 px-1;
   }
 
+  .git-history-file-clickable {
+    @apply flex w-full rounded-[4px] border border-transparent text-left transition-colors;
+  }
+
+  .git-history-file-clickable:hover {
+    @apply border-border/60 bg-muted/80;
+  }
+
   /* ── 提交模式:变更文件树 ── */
   .git-changes-tree {
     @apply grid min-w-0;
   }
 
+  .git-tree-folder {
+    @apply gap-1.5;
+  }
+
+  .git-tree-folder-label {
+    @apply flex min-w-0 flex-1 items-center gap-1 text-left;
+  }
+
   .git-tree-file {
-    @apply flex min-h-7 min-w-0 items-center gap-2 rounded-[4px] border border-transparent pr-1.5 text-left transition-colors;
+    @apply flex min-h-7 min-w-0 items-center gap-1.5 rounded-[4px] border border-transparent pr-1.5 transition-colors;
   }
 
   .git-tree-file:hover {
@@ -2329,8 +2510,43 @@
     @apply border-primary/35 bg-primary/10;
   }
 
+  .git-tree-file-main {
+    @apply flex min-w-0 flex-1 items-center gap-2 py-0.5 text-left;
+  }
+
   .git-tree-file-stat {
     @apply ml-auto flex shrink-0 items-center gap-1 font-mono text-ui-sm leading-none;
+  }
+
+  .git-tree-file-trailing {
+    @apply ml-auto flex shrink-0 items-center gap-1 font-mono text-ui-sm leading-none;
+  }
+
+  .git-history-file-clickable {
+    @apply items-center gap-2 px-1.5;
+  }
+
+  .git-checkbox {
+    @apply grid h-[14px] w-[14px] shrink-0 place-items-center rounded-[3px] border border-border bg-background text-transparent transition-colors;
+  }
+
+  .git-checkbox-on {
+    border-color: hsl(var(--primary));
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+  }
+
+  /* split 提交按钮:主按钮 + 下拉箭头拼接 */
+  .git-commit-split {
+    @apply flex shrink-0 items-stretch;
+  }
+
+  .git-commit-split-main {
+    @apply rounded-r-none;
+  }
+
+  .git-commit-split-caret {
+    @apply rounded-l-none border-l border-l-black/15 px-1.5;
   }
 
   /* ── 分支模式:分支树 + 关系 ── */
@@ -2339,7 +2555,67 @@
   }
 
   .git-branches-toolbar {
-    @apply mb-1 flex items-center justify-end;
+    @apply mb-1 flex items-center gap-1;
+  }
+
+  .git-branches-toolbar-spacer {
+    @apply flex-1;
+  }
+
+  /* 顶部状态卡:当前分支 + 是否有未提交变更 + 与上游领先/落后 */
+  .git-branch-summary {
+    @apply mb-2 grid gap-1.5 rounded-[6px] border border-border/70 bg-background/60 p-2;
+  }
+
+  .git-branch-summary-head {
+    @apply flex min-w-0 items-center gap-1.5;
+  }
+
+  .git-branch-summary-name {
+    @apply truncate text-ui font-semibold;
+  }
+
+  .git-branch-summary-rows {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  .git-branch-summary-pill {
+    @apply inline-flex items-center rounded-[4px] border border-border/70 bg-muted/40 px-1.5 py-0.5 text-ui-sm text-muted-foreground;
+  }
+
+  .git-branch-summary-pill-warn {
+    border-color: rgb(245 158 11 / 0.4);
+    background: rgb(245 158 11 / 0.12);
+    color: rgb(180 83 9);
+  }
+
+  :is(.dark) .git-branch-summary-pill-warn {
+    color: rgb(252 211 77);
+  }
+
+  .git-branch-summary-pill-ok {
+    @apply text-emerald-700 dark:text-emerald-300;
+  }
+
+  .git-branch-summary-pill-ahead {
+    border-color: rgb(16 185 129 / 0.4);
+    background: rgb(16 185 129 / 0.12);
+    @apply text-emerald-700 dark:text-emerald-300;
+  }
+
+  .git-branch-summary-pill-behind {
+    border-color: rgb(239 68 68 / 0.4);
+    background: rgb(239 68 68 / 0.12);
+    @apply text-red-700 dark:text-red-300;
+  }
+
+  .git-branch-summary-track {
+    @apply gap-2 font-mono;
+  }
+
+  /* 分支行内:相对 base(main)的领先/落后小徽标,不必点开即可见 */
+  .git-branch-base-chip {
+    @apply inline-flex shrink-0 items-center gap-1 rounded-[3px] border border-border/60 bg-muted/40 px-1 font-mono text-ui-sm leading-none text-muted-foreground;
   }
 
   .git-branches-group-label {

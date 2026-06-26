@@ -325,6 +325,8 @@ export type WorkbenchDocument = {
   mode?: "editable" | "large-readonly" | "diff";
   // diff 模式:并排对照的两个完整版本(原始 HEAD / 修改后工作区)。
   diff?: { original: string; modified: string };
+  // diff 模式且文件存在冲突标记时为 true,改用冲突解决视图。
+  conflict?: boolean;
   range?: {
     endOffset: number;
     hasMoreAfter: boolean;

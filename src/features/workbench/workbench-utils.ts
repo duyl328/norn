@@ -141,6 +141,10 @@ export const getFileTreeIcon = (node: FileTreeNode) => {
   return { className: "tree-row-icon-file", Icon: FileText };
 };
 
+/** 按名称 / 类型取与主文件树一致的图标(供 Git 各文件树复用),不需要完整 FileTreeNode。 */
+export const getPathIcon = (name: string, kind: "file" | "directory", expanded = false) =>
+  getFileTreeIcon({ name, path: name, relativePath: name, kind, expanded });
+
 export const getParentPath = (path: string) => {
   const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
 

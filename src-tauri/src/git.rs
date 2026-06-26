@@ -411,14 +411,112 @@ pub fn git_file_versions(path: String, file: String) -> Result<GitFileVersions, 
     Ok(GitFileVersions { original, modified })
 }
 
+/// 取某历史提交里某文件的两个版本:original = 父提交版本(新增 / 根提交时为空),
+/// modified = 该提交版本(删除时为空)。供历史页点击文件查看该次改动。
 #[tauri::command]
-pub fn git_commit(path: String, message: String, push: bool) -> Result<(), GitError> {
+pub fn git_commit_file_versions(
+    path: String,
+    hash: String,
+    file: String,
+) -> Result<GitFileVersions, GitError> {
     let workspace = PathBuf::from(path);
-    git_text(&workspace, &["add", "-A"])?;
-    git_text(&workspace, &["commit", "-m", &message])?;
+    let show = |spec: String| {
+        run_git(&workspace, &["show", &spec])
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+            .unwrap_or_default()
+    };
+    let original = show(format!("{hash}^:{file}"));
+    let modified = show(format!("{hash}:{file}"));
+    Ok(GitFileVersions { original, modified })
+}
+
+#[tauri::command]
+pub fn git_commit(
+    path: String,
+    message: String,
+    push: bool,
+    amend: bool,
+    files: Vec<String>,
+) -> Result<(), GitError> {
+    let workspace = PathBuf::from(path);
+
+    // 暂存:有选中文件就只暂存这些(含未跟踪 / 删除),否则全量。
+    if files.is_empty() {
+        git_text(&workspace, &["add", "-A"])?;
+    } else {
+        let mut args: Vec<&str> = vec!["add", "-A", "--"];
+        args.extend(files.iter().map(String::as_str));
+        git_text(&workspace, &args)?;
+    }
+
+    // 提交:选中文件用 pathspec 限定;amend 改写上一条(无新说明则保留原说明)。
+    let mut args: Vec<&str> = vec!["commit"];
+    if amend {
+        args.push("--amend");
+        if message.trim().is_empty() {
+            args.push("--no-edit");
+        } else {
+            args.push("-m");
+            args.push(message.as_str());
+        }
+    } else {
+        args.push("-m");
+        args.push(message.as_str());
+    }
+    if !files.is_empty() {
+        args.push("--");
+        args.extend(files.iter().map(String::as_str));
+    }
+    git_text(&workspace, &args)?;
+
     if push {
         push_current(&workspace)?;
     }
+    Ok(())
+}
+
+/// 把一条规则追加进 .gitignore(去重、自动补换行、文件不存在则创建)。
+#[tauri::command]
+pub fn git_ignore_path(path: String, entry: String) -> Result<(), GitError> {
+    let workspace = PathBuf::from(path);
+    let gitignore = workspace.join(".gitignore");
+    let rule = entry.trim();
+    if rule.is_empty() {
+        return Ok(());
+    }
+    let mut content = std::fs::read_to_string(&gitignore).unwrap_or_default();
+    if content.lines().any(|line| line.trim() == rule) {
+        return Ok(());
+    }
+    if !content.is_empty() && !content.ends_with('\n') {
+        content.push('\n');
+    }
+    content.push_str(rule);
+    content.push('\n');
+    std::fs::write(&gitignore, content).map_err(|error| GitError::new(GitErrorKind::Io, error.to_string()))?;
+    Ok(())
+}
+
+/// 列出被忽略的条目(目录折叠为 dir/,避免 node_modules 之类铺出上千文件)。
+#[tauri::command]
+pub fn git_ignored_files(path: String) -> Result<Vec<String>, GitError> {
+    let workspace = PathBuf::from(path);
+    let text = git_text(
+        &workspace,
+        &["ls-files", "--others", "--ignored", "--exclude-standard", "--directory"],
+    )?;
+    Ok(text.lines().filter(|line| !line.is_empty()).map(|line| line.to_string()).collect())
+}
+
+/// 写入解决冲突后的文件内容,并 git add 标记为已解决。
+#[tauri::command]
+pub fn git_resolve_conflict(path: String, file: String, content: String) -> Result<(), GitError> {
+    let workspace = PathBuf::from(path);
+    std::fs::write(workspace.join(&file), content)
+        .map_err(|error| GitError::new(GitErrorKind::Io, error.to_string()))?;
+    git_text(&workspace, &["add", "--", &file])?;
     Ok(())
 }
 

@@ -22,6 +22,7 @@ import {
   getFileTreeIcon,
   getTabBorderAccent,
 } from "../workbench-utils";
+import { ConflictResolverView } from "./conflict-resolver-view";
 import { DiffView } from "./diff-view";
 import { MergeDiffView } from "./merge-diff-view";
 import { TabFoldStack } from "./titlebar";
@@ -436,7 +437,12 @@ export function EditorSurface({
       ) : null}
       {document.mode === "diff" ? (
         <div className="diff-view-frame min-h-0 flex-1 overflow-auto">
-          {document.diff ? (
+          {document.conflict && document.diff ? (
+            <ConflictResolverView
+              filePath={document.path.replace(/^diff:\/\//, "")}
+              text={document.diff.modified}
+            />
+          ) : document.diff ? (
             <MergeDiffView
               filePath={document.path.replace(/^diff:\/\//, "")}
               name={document.name}

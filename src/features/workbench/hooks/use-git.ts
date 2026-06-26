@@ -68,9 +68,24 @@ const withBusy = async (run: (path: string) => Promise<unknown>): Promise<boolea
 
 export const gitActions = {
   refresh: refreshGit,
-  commit: (message: string, push: boolean) =>
-    withBusy((path) => invoke("git_commit", { path, message, push })),
+  commit: (message: string, push: boolean, files: string[] = [], amend = false) =>
+    withBusy((path) => invoke("git_commit", { path, message, push, amend, files })),
   push: () => withBusy((path) => invoke("git_push", { path })),
+  resolveConflict: (file: string, content: string) =>
+    withBusy((path) => invoke("git_resolve_conflict", { path, file, content })),
+  addToGitignore: (entry: string) => withBusy((path) => invoke("git_ignore_path", { path, entry })),
+  loadIgnored: async (): Promise<string[]> => {
+    const path = repoPath();
+    if (!path) {
+      return [];
+    }
+    try {
+      return await invoke<string[]>("git_ignored_files", { path });
+    } catch (error) {
+      useWorkbenchStore.getState().setGitError(getGitError(error));
+      return [];
+    }
+  },
   pull: () => withBusy((path) => invoke("git_pull", { path })),
   checkout: (branch: string) => withBusy((path) => invoke("git_checkout", { path, branch })),
   createBranch: (name: string) => withBusy((path) => invoke("git_create_branch", { path, name })),
@@ -100,6 +115,18 @@ export const gitActions = {
     }
     try {
       return await invoke<GitFileVersions>("git_file_versions", { path, file });
+    } catch (error) {
+      useWorkbenchStore.getState().setGitError(getGitError(error));
+      return { original: "", modified: "" };
+    }
+  },
+  loadCommitFileVersions: async (hash: string, file: string): Promise<GitFileVersions> => {
+    const path = repoPath();
+    if (!path) {
+      return { original: "", modified: "" };
+    }
+    try {
+      return await invoke<GitFileVersions>("git_commit_file_versions", { path, hash, file });
     } catch (error) {
       useWorkbenchStore.getState().setGitError(getGitError(error));
       return { original: "", modified: "" };

@@ -1,5 +1,5 @@
 import { MergeView } from "@codemirror/merge";
-import { EditorState } from "@codemirror/state";
+import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, lineNumbers } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 
@@ -32,40 +32,31 @@ export function MergeDiffView({
     let view: MergeView | null = null;
     let disposed = false;
 
-    const readonly = [
-      lineNumbers(),
-      EditorView.editable.of(false),
-      EditorState.readOnly.of(true),
-      EditorView.lineWrapping,
-    ];
+    // 只读基础。行号只给右侧(b),让行号落在两栏中间;左侧(a)不显示行号。
+    const base = [EditorView.editable.of(false), EditorState.readOnly.of(true), EditorView.lineWrapping];
     const mode = resolveHighlightMode({ content: modified, name, path: filePath });
+
+    const build = (highlight: Extension[]) =>
+      new MergeView({
+        parent,
+        a: { doc: original, extensions: [...base, ...highlight] },
+        b: { doc: modified, extensions: [lineNumbers(), ...base, ...highlight] },
+        highlightChanges: true,
+        // 中间不放改动 gutter,只留行号;改动靠行 / 词级背景表达。
+        gutter: false,
+        collapseUnchanged: { margin: 3, minSize: 4 },
+      });
 
     void loadHighlightExtensions(mode)
       .then((highlight) => {
-        if (disposed) {
-          return;
+        if (!disposed) {
+          view = build(highlight);
         }
-        view = new MergeView({
-          parent,
-          a: { doc: original, extensions: [...readonly, ...highlight] },
-          b: { doc: modified, extensions: [...readonly, ...highlight] },
-          highlightChanges: true,
-          gutter: true,
-          collapseUnchanged: { margin: 3, minSize: 4 },
-        });
       })
       .catch(() => {
-        if (disposed) {
-          return;
+        if (!disposed) {
+          view = build([]);
         }
-        view = new MergeView({
-          parent,
-          a: { doc: original, extensions: readonly },
-          b: { doc: modified, extensions: readonly },
-          highlightChanges: true,
-          gutter: true,
-          collapseUnchanged: { margin: 3, minSize: 4 },
-        });
       });
 
     return () => {
@@ -74,5 +65,13 @@ export function MergeDiffView({
     };
   }, [filePath, original, modified, name]);
 
-  return <div className="merge-diff" ref={ref} />;
+  return (
+    <div className="merge-diff-wrap">
+      <div className="merge-diff-head">
+        <span className="merge-diff-head-cell merge-diff-head-old">原始 (HEAD)</span>
+        <span className="merge-diff-head-cell merge-diff-head-new">修改后（工作区）</span>
+      </div>
+      <div className="merge-diff" ref={ref} />
+    </div>
+  );
 }

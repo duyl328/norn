@@ -1,8 +1,14 @@
-import { GitCommitVertical, GitFork, History, RefreshCw } from "lucide-react";
+import { ChevronDown, GitCommitVertical, GitFork, History, RefreshCw } from "lucide-react";
 import { type ComponentType, type CSSProperties, type ReactNode, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,10 +37,12 @@ const RefreshButton = ({ busy }: { busy: boolean }) => (
 export function GitPanel({
   folderView,
   gitWorkspace,
+  onOpenCommitDiff,
   onOpenDiff,
 }: {
   folderView: FolderView | null;
   gitWorkspace: GitWorkspaceState;
+  onOpenCommitDiff: (hash: string, file: string) => void;
   onOpenDiff: (file: string) => void;
 }) {
   const mode = useWorkbenchStore((state) => state.gitPanelMode);
@@ -59,7 +67,7 @@ export function GitPanel({
             <GitBranchMode />
           </div>
           <div className="git-panel-pane" style={{ height: paneHeight }} aria-hidden={mode !== "history"}>
-            <GitHistoryMode />
+            <GitHistoryMode onOpenCommitDiff={onOpenCommitDiff} />
           </div>
         </div>
       </div>
@@ -117,11 +125,27 @@ function GitCommitMode({
   const gitError = useWorkbenchStore((state) => state.gitError);
   const changes = gitStatus?.changes ?? [];
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
+  // 记录被取消勾选的文件;新文件默认勾选(选中=不在该集合中),刷新无需重新同步。
+  const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
 
   const hasWorkspace = Boolean(folderView);
   const isNonRepository = gitWorkspace.kind === "ready" && !gitWorkspace.inspection.isRepository;
   const changeCount = changes.length;
   const hasChanges = changeCount > 0;
+  const selectedFiles = changes.filter((change) => !unchecked.has(change.path)).map((change) => change.path);
+
+  const togglePaths = (paths: string[], value: boolean) =>
+    setUnchecked((prev) => {
+      const next = new Set(prev);
+      for (const path of paths) {
+        if (value) {
+          next.delete(path);
+        } else {
+          next.add(path);
+        }
+      }
+      return next;
+    });
 
   return (
     <RightTaskPanel
@@ -129,7 +153,7 @@ function GitCommitMode({
       title="变更"
       badge={<Badge tone={hasChanges ? "info" : "muted"}>{changeCount}</Badge>}
       toolbar={<RefreshButton busy={gitBusy} />}
-      footer={isNonRepository ? null : <GitCommitBox disabled={!hasChanges} busy={gitBusy} changeCount={changeCount} />}
+      footer={isNonRepository ? null : <GitCommitBox disabled={!hasChanges} busy={gitBusy} files={selectedFiles} />}
     >
       <div className="git-panel-body">
         {gitError ? <GitErrorNotice error={gitError} /> : null}
@@ -139,7 +163,9 @@ function GitCommitMode({
           <GitChangesTree
             changes={changes}
             selectedPath={selectedPath}
+            isChecked={(path) => !unchecked.has(path)}
             onSelect={setSelectedPath}
+            onTogglePaths={togglePaths}
             onOpen={onOpenDiff}
           />
         ) : (
@@ -171,31 +197,34 @@ function GitBranchMode() {
   );
 }
 
-function GitHistoryMode() {
+function GitHistoryMode({ onOpenCommitDiff }: { onOpenCommitDiff: (hash: string, file: string) => void }) {
   const gitBusy = useWorkbenchStore((state) => state.gitBusy);
   return (
     <RightTaskPanel eyebrow="Git" title="历史" toolbar={<RefreshButton busy={gitBusy} />} scroll={false}>
-      <GitHistoryPane />
+      <GitHistoryPane onOpenCommitDiff={onOpenCommitDiff} />
     </RightTaskPanel>
   );
 }
 
 export function GitCommitBox({
   busy,
-  changeCount,
   disabled,
+  files,
 }: {
   busy: boolean;
-  changeCount: number;
   disabled: boolean;
+  files: string[];
 }) {
   const [summary, setSummary] = useState("");
   const [body, setBody] = useState("");
-  const canCommit = !disabled && !busy && summary.trim().length > 0;
+  const fileCount = files.length;
+  const canCommit = !disabled && !busy && summary.trim().length > 0 && fileCount > 0;
+  // amend 可不填摘要(保留上一条说明)。
+  const canAmend = !disabled && !busy && fileCount > 0;
 
-  const submit = async (push: boolean) => {
+  const submit = async (push: boolean, amend: boolean) => {
     const message = body.trim() ? `${summary.trim()}\n\n${body.trim()}` : summary.trim();
-    const ok = await gitActions.commit(message, push);
+    const ok = await gitActions.commit(message, push, files, amend);
     if (ok) {
       setSummary("");
       setBody("");
@@ -219,14 +248,34 @@ export function GitCommitBox({
         onChange={(event) => setBody(event.target.value)}
       />
       <div className="git-commit-actions">
-        <span className="git-commit-hint">{disabled ? "暂无可提交的变更" : `将提交 ${changeCount} 个文件`}</span>
-        <div className="flex items-center gap-1.5">
-          <Button size="sm" variant="default" disabled={!canCommit} onClick={() => void submit(true)}>
-            提交并推送
-          </Button>
-          <Button size="sm" variant="primary" disabled={!canCommit} onClick={() => void submit(false)}>
+        <span className="git-commit-hint">
+          {disabled ? "暂无可提交的变更" : fileCount > 0 ? `将提交 ${fileCount} 个文件` : "未勾选任何文件"}
+        </span>
+        <div className="git-commit-split">
+          <Button
+            className="git-commit-split-main"
+            size="sm"
+            variant="primary"
+            disabled={!canCommit}
+            onClick={() => void submit(false, false)}
+          >
             提交
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button className="git-commit-split-caret" size="sm" variant="primary" disabled={disabled || busy}>
+                <ChevronDown className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" sideOffset={6}>
+              <DropdownMenuItem disabled={!canCommit} onClick={() => void submit(true, false)}>
+                提交并推送
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!canAmend} onClick={() => void submit(false, true)}>
+                修订上一条提交（amend）
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </div>
