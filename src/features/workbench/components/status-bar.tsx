@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-import { gitChangeSummary, gitRepositoryMock } from "../mock-data";
+import { useWorkbenchStore } from "../store/workbench-store";
 import type { GitWorkspaceState, SaveState, TextEncodingOption, WorkbenchDocument } from "../types";
 import { formatFileSize, getDocumentLines, getTailPath, textEncodingOptions } from "../workbench-utils";
 import { GitBranchMenu } from "./git-branch-menu";
@@ -45,12 +45,15 @@ export function StatusBar({
   const triggerEncodingLabel = isEncodingAmbiguous ? `${encodingLabel} ?` : encodingLabel;
   const [pathCopied, setPathCopied] = useState(false);
   const pathCopiedTimeoutRef = useRef<number | null>(null);
-  // Mock 阶段:分支与改动量始终展示假数据的最终效果。
-  const isNonRepository = gitWorkspace.kind === "ready" && !gitWorkspace.inspection.isRepository;
+  const gitStatus = useWorkbenchStore((state) => state.gitStatus);
+  const hasGit = gitWorkspace.kind === "ready" && gitWorkspace.inspection.isRepository && gitStatus !== null;
   const branchLabel =
-    gitWorkspace.kind === "ready" && gitWorkspace.inspection.branch
-      ? gitWorkspace.inspection.branch
-      : gitRepositoryMock.branch;
+    gitStatus?.branch ?? (gitWorkspace.kind === "ready" ? gitWorkspace.inspection.branch : null) ?? "-";
+  const changeFiles = gitStatus?.changes.length ?? 0;
+  const additions = gitStatus?.changes.reduce((total, change) => total + change.additions, 0) ?? 0;
+  const deletions = gitStatus?.changes.reduce((total, change) => total + change.deletions, 0) ?? 0;
+  const ahead = gitStatus?.ahead ?? 0;
+  const behind = gitStatus?.behind ?? 0;
   const saveLabel =
     document.mode === "large-readonly"
       ? "Read-only"
@@ -61,6 +64,7 @@ export function StatusBar({
           : isDirty || document.isUntitled
             ? "Unsaved"
             : "Saved";
+
   const copyDocumentPath = () => {
     const done = () => {
       if (pathCopiedTimeoutRef.current) {
@@ -170,10 +174,10 @@ export function StatusBar({
         <span className="status-token">{saveLabel}</span>
       </div>
       <div className="status-right-tokens">
-        {isNonRepository ? (
+        {!hasGit ? (
           <span className="status-token">
             <GitBranch className="h-3 w-3" />
-            未打开 Git
+            No Git
           </span>
         ) : (
           <>
@@ -181,17 +185,17 @@ export function StatusBar({
               <button type="button" className="status-token status-token-button">
                 <GitBranch className="h-3 w-3" />
                 {branchLabel}
-                {gitRepositoryMock.ahead > 0 ? <span className="status-ahead">↑{gitRepositoryMock.ahead}</span> : null}
-                {gitRepositoryMock.behind > 0 ? (
-                  <span className="status-behind">↓{gitRepositoryMock.behind}</span>
-                ) : null}
+                {ahead > 0 ? <span className="status-ahead">+{ahead}</span> : null}
+                {behind > 0 ? <span className="status-behind">-{behind}</span> : null}
               </button>
             </GitBranchMenu>
-            <span className="status-token">
-              {gitChangeSummary.files} 个文件
-              <span className="status-additions">+{gitChangeSummary.additions}</span>
-              <span className="status-deletions">−{gitChangeSummary.deletions}</span>
-            </span>
+            {changeFiles > 0 ? (
+              <span className="status-token">
+                {changeFiles} files
+                <span className="status-additions">+{additions}</span>
+                <span className="status-deletions">-{deletions}</span>
+              </span>
+            ) : null}
           </>
         )}
         <span className="status-token">

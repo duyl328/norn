@@ -55,6 +55,7 @@ import {
   toggleFolderRoot,
   toggleScratchRoot,
 } from "../workspace-tree-reducers";
+import { refreshGit } from "./use-git";
 
 interface UseWorkspaceTreeParams {
   requestFileOpen: (pendingOpen: PendingFileOpen) => void;
@@ -115,6 +116,9 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     try {
       const inspection = await invoke<GitWorkspaceInspection>("inspect_git_workspace", { path });
       setGitWorkspace({ kind: "ready", inspection });
+      if (inspection.isRepository) {
+        void refreshGit();
+      }
     } catch (error) {
       setGitWorkspace({
         kind: "error",

@@ -8,6 +8,11 @@ import type {
   FileTreeNode,
   FileTreeTrashTarget,
   FolderView,
+  GitBranches,
+  GitCommit,
+  GitError,
+  GitPanelMode,
+  GitStatus,
   GitWorkspaceState,
   RecentFolder,
   SaveConflict,
@@ -83,12 +88,24 @@ export interface WorkbenchState {
   fileError: string | null;
   folderView: FolderView | null;
   gitWorkspace: GitWorkspaceState;
+  gitStatus: GitStatus | null;
+  gitBranches: GitBranches | null;
+  gitRecentCommits: GitCommit[];
+  gitBusy: boolean;
+  gitError: GitError | null;
+  gitPanelMode: GitPanelMode;
   recentFolders: RecentFolder[];
   scratchFolder: ScratchFolder | null;
   scratchFolderView: ScratchFolderView;
   setFileError: (setter: StateSetter<string | null>) => void;
   setFolderView: (setter: StateSetter<FolderView | null>) => void;
   setGitWorkspace: (setter: StateSetter<GitWorkspaceState>) => void;
+  setGitStatus: (setter: StateSetter<GitStatus | null>) => void;
+  setGitBranches: (setter: StateSetter<GitBranches | null>) => void;
+  setGitRecentCommits: (setter: StateSetter<GitCommit[]>) => void;
+  setGitBusy: (setter: StateSetter<boolean>) => void;
+  setGitError: (setter: StateSetter<GitError | null>) => void;
+  setGitPanelMode: (setter: StateSetter<GitPanelMode>) => void;
   setRecentFolders: (setter: StateSetter<RecentFolder[]>) => void;
   setScratchFolder: (setter: StateSetter<ScratchFolder | null>) => void;
   setScratchFolderView: (setter: StateSetter<ScratchFolderView>) => void;
@@ -177,6 +194,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   fileError: null,
   folderView: null,
   gitWorkspace: { kind: "idle" },
+  gitStatus: null,
+  gitBranches: null,
+  gitRecentCommits: [],
+  gitBusy: false,
+  gitError: null,
+  gitPanelMode: "commit",
   recentFolders: loadRecentFolders(),
   scratchFolder: null,
   scratchFolderView: {
@@ -189,6 +212,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setFileError: (setter) => set((state) => ({ fileError: resolveSetter(setter, state.fileError) })),
   setFolderView: (setter) => set((state) => ({ folderView: resolveSetter(setter, state.folderView) })),
   setGitWorkspace: (setter) => set((state) => ({ gitWorkspace: resolveSetter(setter, state.gitWorkspace) })),
+  setGitStatus: (setter) => set((state) => ({ gitStatus: resolveSetter(setter, state.gitStatus) })),
+  setGitBranches: (setter) => set((state) => ({ gitBranches: resolveSetter(setter, state.gitBranches) })),
+  setGitRecentCommits: (setter) => set((state) => ({ gitRecentCommits: resolveSetter(setter, state.gitRecentCommits) })),
+  setGitBusy: (setter) => set((state) => ({ gitBusy: resolveSetter(setter, state.gitBusy) })),
+  setGitError: (setter) => set((state) => ({ gitError: resolveSetter(setter, state.gitError) })),
+  setGitPanelMode: (setter) => set((state) => ({ gitPanelMode: resolveSetter(setter, state.gitPanelMode) })),
   setRecentFolders: (setter) => set((state) => ({ recentFolders: resolveSetter(setter, state.recentFolders) })),
   setScratchFolder: (setter) => set((state) => ({ scratchFolder: resolveSetter(setter, state.scratchFolder) })),
   setScratchFolderView: (setter) =>

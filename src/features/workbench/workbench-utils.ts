@@ -34,6 +34,7 @@ import type {
   EditorScrollbarOrientation,
   EditorScrollMetrics,
   FileTreeNode,
+  GitError,
   NativeDirectoryEntry,
   NativeFileOperationError,
   NativeSaveError,
@@ -435,6 +436,10 @@ export const getFileTreeDisplayIcon = (node: FileTreeNode) => {
   return { className: "tree-row-icon-file", Icon: FileText };
 };
 
+/** 按名称 / 类型取与主文件树一致的图标(供 Git 各文件树复用),不需要完整 FileTreeNode。 */
+export const getPathIcon = (name: string, kind: "file" | "directory", expanded = false) =>
+  getFileTreeIcon({ name, path: name, relativePath: name, kind, expanded });
+
 export const getParentPath = (path: string) => {
   const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
 
@@ -715,6 +720,14 @@ export const getTreeAncestorDirectoryPaths = (filePath: string, rootPath: string
 export const getNativeFileOperationError = (error: unknown): NativeFileOperationError => {
   if (error && typeof error === "object") {
     return error as NativeFileOperationError;
+  }
+
+  return { message: error instanceof Error ? error.message : String(error) };
+};
+
+export const getGitError = (error: unknown): GitError => {
+  if (error && typeof error === "object") {
+    return error as GitError;
   }
 
   return { message: error instanceof Error ? error.message : String(error) };

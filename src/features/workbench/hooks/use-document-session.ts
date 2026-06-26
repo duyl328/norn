@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useRef } from "react";
 
+import { hasConflictMarkers } from "../conflict-parse";
 import {
   LARGE_FILE_CHUNK_BYTES,
   LARGE_FILE_CONFIRM_BYTES,
@@ -27,6 +28,7 @@ import {
   getFileOpenId,
   getNativeSaveError,
   getParentPath,
+  getPathName,
   isAbsolutePath,
   isDocumentDirty,
   isTauriRuntime,
@@ -85,6 +87,36 @@ export function useDocumentSession() {
     });
     setSaveConflict(nextDocument.diskConflict ?? null);
     setSaveState("saved");
+  };
+
+  // 在中间编辑区以只读标签打开并排 diff。conflict 时由编辑区切到冲突解决视图。
+  const openDiffDoc = (
+    id: string,
+    name: string,
+    file: string,
+    versions: { original: string; modified: string },
+  ) => {
+    const conflict = hasConflictMarkers(versions.modified);
+    activateDocument({
+      id,
+      name,
+      path: `diff://${file}`,
+      content: versions.modified,
+      savedContent: versions.modified,
+      mode: "diff",
+      diff: versions,
+      conflict,
+    });
+  };
+
+  // 工作区改动:HEAD ↔ 工作区。同一文件复用同一标签。
+  const openDiff = (file: string, versions: { original: string; modified: string }) => {
+    openDiffDoc(`diff:${file}`, `${getPathName(file)}${hasConflictMarkers(versions.modified) ? " · 冲突" : " · diff"}`, file, versions);
+  };
+
+  // 历史提交里某文件的改动:父提交 ↔ 该提交。按 提交+文件 复用标签。
+  const openCommitDiff = (hash: string, file: string, versions: { original: string; modified: string }) => {
+    openDiffDoc(`diff:${hash}:${file}`, `${getPathName(file)} @ ${hash.slice(0, 7)}`, file, versions);
   };
 
   const closeDocument = (targetDocument: WorkbenchDocument) => {
@@ -918,6 +950,8 @@ export function useDocumentSession() {
 
   return {
     activateDocument,
+    openDiff,
+    openCommitDiff,
     closeDocument,
     requestCloseDocument,
     saveAndClosePendingDocument,

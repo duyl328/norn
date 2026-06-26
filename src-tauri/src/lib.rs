@@ -1,3 +1,5 @@
+mod git;
+
 use encoding_rs::{
     Encoding, BIG5, EUC_JP, EUC_KR, GBK, SHIFT_JIS, UTF_16BE, UTF_16LE, UTF_8, WINDOWS_1252,
 };
@@ -2269,6 +2271,24 @@ pub fn run() {
             trash_path,
             read_keybindings,
             write_keybindings,
+            git::git_status,
+            git::git_file_diff,
+            git::git_file_versions,
+            git::git_commit_file_versions,
+            git::git_ignore_path,
+            git::git_ignored_files,
+            git::git_resolve_conflict,
+            git::git_commit,
+            git::git_push,
+            git::git_pull,
+            git::git_checkout,
+            git::git_create_branch,
+            git::git_init,
+            git::git_branches,
+            git::git_recent_commits,
+            git::git_log,
+            git::git_commit_files,
+            git::git_branch_divergence,
         ])
         .build(tauri::generate_context!())
         .expect("error while building norn")

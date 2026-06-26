@@ -21,6 +21,37 @@
 - [ ] 接入真实 Git CLI 变更操作（status / diff / stage / commit / push / pull，当前为 mock）
 - [ ] 后续补 Windows 平台验证（当前手头仅 Mac，Windows 路径 / 权限 / UI 差异待单独处理）
 
+## Git UI / 交互改进（进行中）
+
+已完成（本轮重做，记录在案）：
+
+- [x] 右侧 Git 面板改为竖向 tab 三模式（提交 / 分支 / 历史），纵向滑动切换；删除全屏浮层 `git-preview`
+- [x] 分支模式：分支树（按 `/` 折叠成文件夹）+ 选中分支的关系（上游、领先/落后、独有提交）
+- [x] 历史模式：面板内分支拓扑图（地铁 / IDEA 式正交圆角走线）+ 选中提交的改动；ref 徽章整理（当前分支 / 标签 / 远程 / 本地）
+- [x] 提交模式：变更列表改为文件树（按目录折叠）
+- [x] 双击变更文件 → `@codemirror/merge` IDEA 式并排 diff（行级 + 词级高亮、改动 gutter、折叠未改动、语法高亮）；后端新增 `git_file_versions`
+- [x] 修复提交图连线缺失（`git.rs` log 格式 `%P` → `%p`，父子 hash 对齐）
+
+已完成（续）：
+
+- [x] ③ 文件级选择性提交
+  - [x] 变更文件树加勾选框（文件 / 文件夹三态），按勾选提交
+  - [x] 后端 `git_commit` 支持 pathspec（只提交选中文件）+ amend
+  - [x] 两个提交按钮合并为 split 按钮：提交 / 提交并推送 / 修订(amend)
+- [x] ④ 冲突合并能力（含 Rust）
+  - [x] 含冲突标记的文件双击打开「冲突解决视图」（采用当前 / 采用传入 / 两者都要，逐块选择）
+  - [x] 解析普通与 diff3 两种冲突标记（`conflict-parse.ts` + 单测）
+  - [x] 后端 `git_resolve_conflict`：写回解决后内容并 `git add` 标记已解决
+
+待完成：
+
+- [ ] 冲突视图增强（可选）：接 MergeView 做并排三方 + 直接编辑；当前为逐块取舍
+- [ ] 新建分支的 `window.prompt` 换成项目内 dialog 组件（`git-branches-pane.tsx`、`git-branch-menu.tsx`）
+- [ ] 分支关系做成可从分支行直接进入的更完整视图（当前为内联卡片）
+- [ ] 清理：删除已无引用的 `.git-file-row` / `.git-file-list` CSS（`GitFileRow` 已移除）、`use-git.ts` 中已不再使用的 `loadDiff`
+- [ ] 可选优化：文件树 / 分支树单链目录合并显示（`a/b/c` 折成一行，VS Code 风格）
+- [ ] 在 Windows 上 `pnpm tauri dev` 重编验证：`git_file_versions` 并排 diff、提交图连线、三模式手感（WSL 侧无法编译 Tauri）
+
 ## 按顺序推进
 
 1. [ ] 整理仓库状态

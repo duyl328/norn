@@ -12,7 +12,6 @@ import { SaveConflictDialog, UnsavedChangesDialog } from "./components/dialogs";
 import { EditorSurface } from "./components/editor-surface";
 import { FileTreeNameDialogView, FileTreeTrashDialog } from "./components/file-tree";
 import { GitPanel } from "./components/git-panel";
-import { GitPreview } from "./components/git-preview";
 import { ProjectPanel } from "./components/project-panel";
 import { SettingsPage } from "./components/settings";
 import { StatusBar } from "./components/status-bar";
@@ -27,9 +26,9 @@ import {
   rightPanelMinWidth,
 } from "./constants";
 import { useDocumentSession } from "./hooks/use-document-session";
+import { gitActions } from "./hooks/use-git";
 import { usePanelLayout } from "./hooks/use-panel-layout";
 import { useWorkspaceTree } from "./hooks/use-workspace-tree";
-import { gitChangeSummary } from "./mock-data";
 import { isMac, isWindows } from "./platform";
 import { useWorkbenchStore } from "./store/workbench-store";
 import { isDocumentDirty, isTauriRuntime, loadKeymapOverrides, saveEditorLineWrapping } from "./workbench-utils";
@@ -71,10 +70,11 @@ export function WorkbenchPage() {
   const setDropTarget = useWorkbenchStore((state) => state.setDropTarget);
   const saveState = useWorkbenchStore((state) => state.saveState);
   const searchOpen = useWorkbenchStore((state) => state.searchOpen);
+  const gitStatus = useWorkbenchStore((state) => state.gitStatus);
   const showWindowsTitlebar = useMemo(() => isWindows(), []);
   const showMacTitlebar = useMemo(() => isMac(), []);
   const isDirty = isDocumentDirty(document);
-  const gitBadgeCount = gitChangeSummary.files;
+  const gitBadgeCount = gitStatus?.changes.length ?? 0;
 
   const {
     toggleFilesTool,
@@ -88,6 +88,8 @@ export function WorkbenchPage() {
 
   const {
     activateDocument,
+    openDiff,
+    openCommitDiff,
     closeDocument,
     requestCloseDocument,
     saveAndClosePendingDocument,
@@ -385,7 +387,19 @@ export function WorkbenchPage() {
                   data-focus-zone="git"
                   tabIndex={-1}
                 >
-                  <GitPanel folderView={folderView} gitWorkspace={gitWorkspace} />
+                  <GitPanel
+                    folderView={folderView}
+                    gitWorkspace={gitWorkspace}
+                    onOpenDiff={(file) =>
+                      void gitActions.loadFileVersions(file).then((versions) => openDiff(file, versions))
+                    }
+                    onOpenCommitDiff={(hash, file) =>
+                      void gitActions
+                        .loadCommitFileVersions(hash, file)
+                        .then((versions) => openCommitDiff(hash, file, versions))
+                    }
+                    onOpenFile={(path, size) => requestFileOpen({ kind: "path", path, size })}
+                  />
                 </div>
               </main>
               <StatusBar
@@ -396,7 +410,6 @@ export function WorkbenchPage() {
                 saveState={saveState}
                 gitWorkspace={gitWorkspace}
               />
-              <GitPreview />
               <UnsavedChangesDialog
                 open={Boolean(pendingCloseDocument)}
                 onCancel={() => setPendingCloseDocument(null)}
