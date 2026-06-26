@@ -550,7 +550,8 @@
   }
 
   .workbench-layout-left-open {
-    --workbench-main-corner-radius: 18px;
+    /* = Tab 自身的 rounded-t-[0.45rem]:让首个 Tab 左上角(跟随此值)与右上角(0.45rem)相等,左右对称。 */
+    --workbench-main-corner-radius: 0.45rem;
   }
 
   .workspace-view,
@@ -737,8 +738,8 @@
     margin-bottom: 8px;
     border-bottom: var(--workspace-panel-border);
     border-right: var(--workspace-panel-border);
-    /* 左上、左下跟随面板圆角(一体感),右下角恒 10px(搁在地面上的卡片),右上贴边直角。 */
-    border-radius: var(--workbench-main-corner-radius) 0 10px var(--workbench-main-corner-radius);
+    /* 左上跟随面板圆角(展开 0.45rem,与 Tab 同径对称 / 折叠 0);左下、右下恒 10px;右上贴边直角。 */
+    border-radius: var(--workbench-main-corner-radius) 0 10px 10px;
   }
 
   .platform-mac .workbench-layout-right-open .editor-surface-panel {
@@ -1917,7 +1918,7 @@
   }
 
   .git-panel-shell {
-    @apply flex h-full w-full min-h-0 min-w-0 overflow-hidden;    /* 与编辑区同色、同区域:背景�?.editor-surface-panel 一致�?*/
+    @apply flex h-full w-full min-h-0 min-w-0 overflow-hidden; /* 与编辑区同色、同区域:背景�?.editor-surface-panel 一致�?*/
     background: hsl(var(--editor-background));
   }
 
@@ -3034,7 +3035,6 @@
     color: rgb(252 211 77);
   }
 
-
   .settings-page {
     @apply relative h-full min-h-0 overflow-hidden text-foreground;
     --settings-drag-height: 42px;
@@ -3254,6 +3254,7 @@
 
   .settings-toggle {
     @apply relative h-[22px] w-[38px] shrink-0 rounded-full bg-muted;
+    transition: background-color 200ms cubic-bezier(0.2, 0.84, 0.22, 1);
   }
 
   .settings-toggle::after {
@@ -3266,6 +3267,8 @@
     border-radius: 999px;
     background: hsl(var(--background));
     box-shadow: 0 1px 2px hsl(var(--foreground) / 0.16);
+    /* 旋钮滑动缓动:开/关之间 left 3px ↔ 19px 平滑过渡,而非瞬跳。 */
+    transition: left 200ms cubic-bezier(0.2, 0.84, 0.22, 1);
   }
 
   .settings-toggle-on {
@@ -3274,6 +3277,17 @@
 
   .settings-toggle-on::after {
     left: 19px;
+  }
+
+  /* 深色:旋钮原本用 --background(深色下≈纯黑)→ 在深色轨道上几乎看不见。
+     改成浅色旋钮 + 柔和带色相的暗投影(非纯黑),关/开两态都清晰。 */
+  .dark .settings-toggle::after {
+    background: hsl(var(--foreground));
+    box-shadow: 0 1px 3px hsl(220 60% 12% / 0.55);
+  }
+
+  .dark .settings-toggle {
+    background: hsl(var(--secondary));
   }
 
   .settings-note {
@@ -3331,8 +3345,9 @@
   }
 
   .codemirror-shell .cm-scroller {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Cascadia Mono", "Liberation Mono",
-      "Courier New", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "DengXian", monospace;
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Cascadia Mono", "Liberation Mono", "Courier New",
+      "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "DengXian", monospace;
     line-height: 20px;
     scrollbar-color: transparent transparent;
     scrollbar-gutter: auto;
