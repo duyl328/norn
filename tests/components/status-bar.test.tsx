@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { StatusBar } from "@/features/workbench/components/status-bar";
 import type { GitWorkspaceState, WorkbenchDocument } from "@/features/workbench/types";
@@ -19,12 +19,20 @@ const document: WorkbenchDocument = {
 const idleGit: GitWorkspaceState = { kind: "idle" };
 
 describe("StatusBar", () => {
+  beforeEach(() => {
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+  });
+
   it("显示文件路径、行数、大小和保存状态", () => {
     render(
       <StatusBar document={document} gitWorkspace={idleGit} isDirty={false} onOpenSettings={() => {}} saveState="saved" />,
     );
 
-    expect(screen.getByText("/mock/project/README.md")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "/mock/project/README.md" })).toBeInTheDocument();
     expect(screen.getByText("2 lines")).toBeInTheDocument();
     expect(screen.getByText("2.0 KB")).toBeInTheDocument();
     expect(screen.getByText("Saved")).toBeInTheDocument();
@@ -59,5 +67,23 @@ describe("StatusBar", () => {
 
     fireEvent.click(screen.getAllByRole("button").at(-1)!);
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("copies the document path from the status bar", async () => {
+    render(
+      <StatusBar
+        document={document}
+        gitWorkspace={idleGit}
+        isDirty={false}
+        onOpenSettings={() => {}}
+        saveState="saved"
+      />,
+    );
+
+    const pathButton = screen.getByRole("button", { name: document.path });
+    fireEvent.click(pathButton);
+
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(document.path);
+    await waitFor(() => expect(pathButton).toHaveClass("status-path-token-copied"));
   });
 });

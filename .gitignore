@@ -15,6 +15,7 @@ dev-server.log
 .claude/
 _tmp_*
 tmp/
+temp/
 
 # Playwright
 test-results/

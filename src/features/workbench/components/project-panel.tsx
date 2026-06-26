@@ -1,4 +1,4 @@
-import { ChevronDown, FolderOpen, Settings } from "lucide-react";
+import { ChevronDown, FolderOpen } from "lucide-react";
 import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -59,7 +59,6 @@ export function ProjectPanel({
   onDropTargetChange,
   onOpenFolder,
   onOpenRecentFolder,
-  onOpenSettings,
   onOpenTreeFile,
   onSelectTreeNode,
   onTreeKeyDown,
@@ -102,7 +101,6 @@ export function ProjectPanel({
   onDropTargetChange: (target: TreeDropTarget | null) => void;
   onOpenFolder: () => void;
   onOpenRecentFolder: (path: string) => void;
-  onOpenSettings: () => void;
   onOpenTreeFile: (node: FileTreeNode) => void;
   onSelectTreeNode: (node: FileTreeNode, modifiers: TreeSelectionModifiers, scope: "main" | "scratch") => void;
   onTreeKeyDown: (scope: "main" | "scratch", event: ReactKeyboardEvent) => void;
@@ -279,11 +277,9 @@ export function ProjectPanel({
           onToggleRootDirectory={onToggleScratchRootDirectory}
         />
       </div>
-      <ProjectPanelFooter onOpenSettings={onOpenSettings} />
     </aside>
   );
 }
-
 export function ProjectPanelStart({
   folderView,
   leftPanelWidth,
@@ -512,17 +508,6 @@ export function ProjectPanelScratchFolder({
         onToggleDirectory={onToggleDirectory}
         onToggleRootDirectory={onToggleRootDirectory}
       />
-    </div>
-  );
-}
-
-export function ProjectPanelFooter({ onOpenSettings }: { onOpenSettings: () => void }) {
-  return (
-    <div className="project-panel-footer">
-      <button className="project-panel-action-button" type="button" onClick={onOpenSettings}>
-        <Settings className="h-[18px] w-[18px] shrink-0" />
-        <span className="truncate">Settings</span>
-      </button>
     </div>
   );
 }

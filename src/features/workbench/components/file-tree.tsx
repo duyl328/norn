@@ -55,7 +55,12 @@ import type {
   TreeSelection,
   TreeSelectionModifiers,
 } from "../types";
-import { flattenVisibleTreeRows, formatFileSize, getFileTreeIcon, isPathInsideOrEqual } from "../workbench-utils";
+import {
+  flattenVisibleTreeRows,
+  formatFileSize,
+  getFileTreeDisplayIcon,
+  isPathInsideOrEqual,
+} from "../workbench-utils";
 
 export function FileTreePanel({
   activePath,
@@ -317,6 +322,7 @@ export function FileTreePanel({
           onRevealNode={onRevealNode}
           onOpenTerminal={onOpenTerminal}
           onCopyPath={onCopyPath}
+          rootPath={treeView.rootPath}
           x={scopedContextMenu.x}
           y={scopedContextMenu.y}
         />
@@ -350,6 +356,15 @@ export function FileTreeRootRow({
 }) {
   const isDropTarget = dropTarget?.scope === scope && dropTarget.path === treeView.rootPath;
   const hasActions = Boolean(onExpandAll || onCollapseAll || onRevealActiveFile);
+  const rootNode: FileTreeNode = {
+    children: treeView.nodes,
+    childrenLoaded: true,
+    expanded: treeView.rootExpanded,
+    kind: "directory",
+    name: treeView.rootName,
+    path: treeView.rootPath,
+    relativePath: ".",
+  };
 
   return (
     <div className="file-tree-root">
@@ -362,7 +377,10 @@ export function FileTreeRootRow({
         type="button"
         title={treeView.rootPath}
         onClick={onToggle}
-        onContextMenu={(event) => onContextMenu(null, event, scope)}
+        onContextMenu={(event) => {
+          event.stopPropagation();
+          onContextMenu(rootNode, event, scope);
+        }}
         onDragLeave={() => (isDropTarget ? onDropTargetChange(null) : undefined)}
         onDragOver={(event) => {
           event.preventDefault();
@@ -485,7 +503,7 @@ export function FileTreeRow({
   const isDropTarget = isDirectory && dropTarget?.scope === scope && dropTarget.path === node.path;
   const canonicalPath = node.canonicalPath ?? node.path;
   const wouldCycle = isDirectory && node.isSymlink && ancestorCanonicalPaths.includes(canonicalPath);
-  const { className: iconClassName, Icon } = getFileTreeIcon(node);
+  const { className: iconClassName, Icon } = getFileTreeDisplayIcon(node);
 
   // 单击:更新多选(高亮),不打开文件、不展开目录。Ctrl/Cmd 切换单项,Shift 选区间。
   const handleSelect = (event: MouseEvent) => {
@@ -626,6 +644,7 @@ export function FileTreeContextMenu({
   onRevealNode,
   onOpenTerminal,
   onCopyPath,
+  rootPath,
   x,
   y,
 }: {
@@ -642,9 +661,11 @@ export function FileTreeContextMenu({
   onRevealNode: (node: FileTreeNode) => void;
   onOpenTerminal: (node: FileTreeNode) => void;
   onCopyPath: (node: FileTreeNode, mode: "absolute" | "relative") => void;
+  rootPath: string;
   x: number;
   y: number;
 }) {
+  const isRootNode = Boolean(node && node.kind === "directory" && node.path === rootPath);
   const menuStyle = {
     left: Math.min(x, window.innerWidth - 216),
     top: Math.min(y, window.innerHeight - 260),
@@ -652,21 +673,22 @@ export function FileTreeContextMenu({
 
   const menu = (
     <div className="file-tree-context-menu" role="menu" style={menuStyle} onClick={(event) => event.stopPropagation()}>
-      <button className="file-tree-context-item" type="button" onClick={onRequestCreateFile}>
+      <button className="file-tree-context-item" role="menuitem" type="button" onClick={onRequestCreateFile}>
         <FilePlus className="file-tree-context-icon" />
         New File
       </button>
-      <button className="file-tree-context-item" type="button" onClick={onRequestCreateDirectory}>
+      <button className="file-tree-context-item" role="menuitem" type="button" onClick={onRequestCreateDirectory}>
         <FolderPlus className="file-tree-context-icon" />
         New Folder
       </button>
-      <button className="file-tree-context-item" type="button" onClick={onRefresh}>
+      <button className="file-tree-context-item" role="menuitem" type="button" onClick={onRefresh}>
         <RefreshCw className="file-tree-context-icon" />
         Refresh
       </button>
       <button
         className="file-tree-context-item"
         disabled={!node}
+        role="menuitem"
         type="button"
         onClick={() => node && onRevealNode(node)}
       >
@@ -676,6 +698,7 @@ export function FileTreeContextMenu({
       <button
         className="file-tree-context-item"
         disabled={!node}
+        role="menuitem"
         type="button"
         onClick={() => node && onOpenTerminal(node)}
       >
@@ -685,7 +708,8 @@ export function FileTreeContextMenu({
       <div className="file-tree-context-separator" />
       <button
         className="file-tree-context-item"
-        disabled={!node}
+        disabled={!node || isRootNode}
+        role="menuitem"
         type="button"
         onClick={() => node && onRequestRenameNode(node)}
       >
@@ -695,17 +719,24 @@ export function FileTreeContextMenu({
       <button
         className="file-tree-context-item"
         disabled={!node}
+        role="menuitem"
         type="button"
         onClick={() => node && onCopyNode(node)}
       >
         <Copy className="file-tree-context-icon" />
         Copy
       </button>
-      <button className="file-tree-context-item" disabled={!node} type="button" onClick={() => node && onCutNode(node)}>
+      <button
+        className="file-tree-context-item"
+        disabled={!node}
+        role="menuitem"
+        type="button"
+        onClick={() => node && onCutNode(node)}
+      >
         <Scissors className="file-tree-context-icon" />
         Cut
       </button>
-      <button className="file-tree-context-item" disabled={!clipboard} type="button" onClick={onPasteNode}>
+      <button className="file-tree-context-item" disabled={!clipboard} role="menuitem" type="button" onClick={onPasteNode}>
         <ClipboardPaste className="file-tree-context-icon" />
         Paste
       </button>
@@ -713,6 +744,7 @@ export function FileTreeContextMenu({
       <button
         className="file-tree-context-item"
         disabled={!node}
+        role="menuitem"
         type="button"
         onClick={() => node && onCopyPath(node, "absolute")}
       >
@@ -722,6 +754,7 @@ export function FileTreeContextMenu({
       <button
         className="file-tree-context-item"
         disabled={!node}
+        role="menuitem"
         type="button"
         onClick={() => node && onCopyPath(node, "relative")}
       >
@@ -731,7 +764,8 @@ export function FileTreeContextMenu({
       <div className="file-tree-context-separator" />
       <button
         className="file-tree-context-item file-tree-context-item-danger"
-        disabled={!node}
+        disabled={!node || isRootNode}
+        role="menuitem"
         type="button"
         onClick={() => node && onRequestTrashNode(node)}
       >

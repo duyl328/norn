@@ -1,5 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
+  Clock3,
+  FileText,
   Menu,
   Minus,
   PanelLeftClose,
@@ -8,6 +10,7 @@ import {
   PanelRightOpen,
   Search,
   Square,
+  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -16,6 +19,7 @@ import {
   type MouseEvent,
   type PointerEvent as ReactPointerEvent,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -25,7 +29,9 @@ import { cn } from "@/lib/utils";
 import { formatKey } from "../actions/registry";
 import { useActions } from "../actions/use-actions";
 import { type WindowsMenuItem, type WindowsTitlebarMenuId, windowsTitlebarMenus } from "../constants";
-import type { EditorTabPreview } from "../types";
+import { useWorkbenchStore } from "../store/workbench-store";
+import type { EditorTabPreview, FileTreeNode } from "../types";
+import { saveQuickSearchHistory, upsertQuickSearchHistory } from "../workbench-utils";
 
 export function WindowsTitleBar({
   gitBadgeCount,
@@ -138,7 +144,7 @@ export function WindowsTitleBar({
   return (
     <header className="windows-titlebar" onDoubleClick={handleTitlebarDoubleClick}>
       <div className="windows-titlebar-left" ref={menuRef}>
-        {!menuExpanded ? (
+        {variant === "settings" ? null : !menuExpanded ? (
           <>
             <button
               className="windows-titlebar-menu-button"
@@ -469,34 +475,193 @@ export function TopSearchButton({ className, onClick }: { className: string; onC
   );
 }
 
+type QuickSearchResult = {
+  detail: string;
+  id: string;
+  label: string;
+};
+
+const collectTreeSearchResults = (nodes: FileTreeNode[], out: QuickSearchResult[] = []) => {
+  for (const node of nodes) {
+    out.push({
+      detail: node.relativePath || node.path,
+      id: node.path,
+      label: node.name,
+    });
+
+    if (node.children) {
+      collectTreeSearchResults(node.children, out);
+    }
+  }
+
+  return out;
+};
+
 export function QuickSearch({ onClose, open }: { onClose: () => void; open: boolean }) {
   if (!open) {
     return null;
   }
 
+  return <QuickSearchDialog onClose={onClose} />;
+}
+
+function QuickSearchDialog({ onClose }: { onClose: () => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const openDocuments = useWorkbenchStore((state) => state.openDocuments);
+  const folderView = useWorkbenchStore((state) => state.folderView);
+  const scratchFolderView = useWorkbenchStore((state) => state.scratchFolderView);
+  const quickSearchHistory = useWorkbenchStore((state) => state.quickSearchHistory);
+  const setQuickSearchHistory = useWorkbenchStore((state) => state.setQuickSearchHistory);
+
+  const candidates = useMemo(() => {
+    const seen = new Set<string>();
+    const results: QuickSearchResult[] = [];
+    const add = (result: QuickSearchResult) => {
+      if (seen.has(result.id)) {
+        return;
+      }
+
+      seen.add(result.id);
+      results.push(result);
+    };
+
+    for (const document of openDocuments) {
+      add({
+        detail: document.path,
+        id: document.path,
+        label: document.name,
+      });
+    }
+
+    collectTreeSearchResults(folderView?.nodes ?? []).forEach(add);
+    collectTreeSearchResults(scratchFolderView.nodes).forEach(add);
+
+    return results;
+  }, [folderView?.nodes, openDocuments, scratchFolderView.nodes]);
+
+  const trimmedQuery = query.trim();
+  const normalizedQuery = trimmedQuery.toLocaleLowerCase();
+  const results = useMemo(() => {
+    if (!normalizedQuery) {
+      return [];
+    }
+
+    return candidates
+      .filter((candidate) =>
+        `${candidate.label}\n${candidate.detail}`.toLocaleLowerCase().includes(normalizedQuery),
+      )
+      .slice(0, 8);
+  }, [candidates, normalizedQuery]);
+
+  const commitHistory = (value: string) => {
+    const next = upsertQuickSearchHistory(quickSearchHistory, value);
+    setQuickSearchHistory(next);
+    saveQuickSearchHistory(next);
+  };
+
+  const applyHistoryItem = (value: string) => {
+    setQuery(value);
+    commitHistory(value);
+    inputRef.current?.focus();
+  };
+
+  const clearHistory = () => {
+    setQuickSearchHistory([]);
+    saveQuickSearchHistory([]);
+    inputRef.current?.focus();
+  };
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
   return (
     <div className="windows-quick-search" role="dialog" aria-label="Quick search" onClick={onClose}>
       <div className="windows-quick-search-panel" onClick={(event) => event.stopPropagation()}>
-        <input
-          className="windows-quick-search-input"
-          autoFocus
-          placeholder="Search files, commands, symbols"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              onClose();
-            }
-          }}
-        />
-        <div className="windows-quick-search-results">
-          <button className="windows-quick-search-result" type="button">
-            src/features/workbench/workbench-page.tsx
-          </button>
-          <button className="windows-quick-search-result" type="button">
-            src-tauri/src/lib.rs
-          </button>
-          <button className="windows-quick-search-result" type="button">
-            src/styles.css
-          </button>
+        <div className="windows-quick-search-input-wrap">
+          <Search className="windows-quick-search-input-icon" aria-hidden="true" />
+          <input
+            className="windows-quick-search-input"
+            autoFocus
+            ref={inputRef}
+            value={query}
+            placeholder="Search files, commands, symbols"
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                onClose();
+                return;
+              }
+
+              if (event.key === "Enter" && trimmedQuery) {
+                event.preventDefault();
+                commitHistory(trimmedQuery);
+              }
+            }}
+          />
+        </div>
+        {quickSearchHistory.length > 0 ? (
+          <section className="windows-quick-search-section" aria-label="Search history">
+            <div className="windows-quick-search-section-heading">
+              <span>Search history</span>
+              <button
+                className="windows-quick-search-icon-button"
+                type="button"
+                aria-label="Clear search history"
+                title="Clear search history"
+                onClick={clearHistory}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="windows-quick-search-history-list">
+              {quickSearchHistory.map((item) => {
+                const selected = item.toLocaleLowerCase() === normalizedQuery;
+
+                return (
+                  <button
+                    className={cn("windows-quick-search-history-item", selected && "windows-quick-search-item-selected")}
+                    type="button"
+                    key={item}
+                    aria-label={`Use ${item} from search history`}
+                    aria-current={selected ? "true" : undefined}
+                    onClick={() => applyHistoryItem(item)}
+                  >
+                    <Clock3 className="h-3.5 w-3.5 shrink-0" />
+                    <span>{item}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+        <div className="windows-quick-search-results" aria-label="Search results">
+          {trimmedQuery ? (
+            results.length > 0 ? (
+              results.map((result) => (
+                <button
+                  className="windows-quick-search-result"
+                  type="button"
+                  key={result.id}
+                  onClick={() => {
+                    commitHistory(trimmedQuery);
+                    onClose();
+                  }}
+                >
+                  <FileText className="h-3.5 w-3.5 shrink-0" />
+                  <span className="windows-quick-search-result-text">
+                    <span className="windows-quick-search-result-label">{result.label}</span>
+                    <span className="windows-quick-search-result-detail">{result.detail}</span>
+                  </span>
+                </button>
+              ))
+            ) : (
+              <div className="windows-quick-search-empty">No results</div>
+            )
+          ) : quickSearchHistory.length === 0 ? (
+            <div className="windows-quick-search-empty">No search history yet</div>
+          ) : null}
         </div>
         <button className="windows-quick-search-close" type="button" onClick={onClose}>
           Close

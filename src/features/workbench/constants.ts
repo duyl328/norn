@@ -1,6 +1,7 @@
 import type { EditorScrollMetrics } from "./types";
 
 export const nativeMenuEvent = "norn-menu";
+export const nativeOpenFilesEvent = "norn-open-files";
 
 // Rust 文件系统监听器上报「受影响目录」时发出的事件(见 src-tauri watch_directory)。
 export const workspaceFsChangeEvent = "workspace-fs-change";
@@ -118,10 +119,14 @@ export const recentProjects = [
 ] as const;
 
 export const recentFoldersStorageKey = "norn.recentFolders";
+export const quickSearchHistoryStorageKey = "norn.quickSearchHistory";
+export const editorSearchHistoryStorageKey = "norn.editorSearchHistory";
 export const resizeHandleHintsStorageKey = "norn.resizeHandleHints";
 export const keymapOverridesStorageKey = "norn.keymapOverrides";
 export const editorLineWrappingStorageKey = "norn.editorLineWrapping";
 export const maxRecentFolders = 8;
+export const maxQuickSearchHistory = 10;
+export const maxEditorSearchHistory = 10;
 
 export const projectColorPairs = [
   { background: "#2563eb", foreground: "#eff6ff" },

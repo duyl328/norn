@@ -3,15 +3,16 @@ use notify_debouncer_mini::{
     notify::{RecommendedWatcher, RecursiveMode},
     DebounceEventResult, Debouncer,
 };
-use tauri::{
-    menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu},
-    Emitter, Manager, Theme,
-};
+#[cfg(target_os = "macos")]
+use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::{Emitter, Manager, Theme};
 use tauri_plugin_dialog::DialogExt;
 
 use serde::Serialize;
+#[cfg(target_os = "macos")]
+use std::collections::HashMap;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fs::{self, File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
@@ -21,11 +22,13 @@ use std::{
 };
 
 const MENU_EVENT: &str = "norn-menu";
+const OPEN_FILES_EVENT: &str = "norn-open-files";
 const FS_CHANGE_EVENT: &str = "workspace-fs-change";
 
 // 当前打开文件夹的文件系统监听器。切换文件夹时整体替换;drop 旧 debouncer 即停止其监听。
 #[derive(Default)]
 struct FsWatchState(Mutex<Option<Debouncer<RecommendedWatcher>>>);
+struct PendingOpenFilesState(Mutex<Vec<String>>);
 const MENU_NEW_FILE: &str = "menu-new-file";
 const MENU_OPEN_FILE: &str = "menu-open-file";
 const MENU_OPEN_FOLDER: &str = "menu-open-folder";
@@ -172,6 +175,11 @@ struct GitWorkspaceInspection {
 #[tauri::command]
 fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
+}
+
+#[tauri::command]
+fn take_initial_open_files(state: tauri::State<'_, PendingOpenFilesState>) -> Vec<String> {
+    std::mem::take(&mut *state.0.lock().unwrap())
 }
 
 #[tauri::command]
@@ -1422,6 +1430,7 @@ fn write_keybindings(app: tauri::AppHandle, contents: String) -> Result<(), Stri
 }
 
 /// 读 keybindings.json 为 actionId → 键位串数组。任何错误都退化为空表(用默认加速键)。
+#[cfg(target_os = "macos")]
 fn read_keybindings_map<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> HashMap<String, Vec<String>> {
     let Ok(path) = keybindings_path(app) else {
         return HashMap::new();
@@ -1433,6 +1442,7 @@ fn read_keybindings_map<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> HashMap
 }
 
 /// 前端键位串("Mod+Shift+S")→ Tauri 加速键串("CmdOrCtrl+Shift+S")。
+#[cfg(target_os = "macos")]
 fn spec_to_accelerator(spec: &str) -> String {
     spec.split('+')
         .map(|part| match part {
@@ -1449,6 +1459,7 @@ fn spec_to_accelerator(spec: &str) -> String {
 }
 
 /// 某菜单动作的加速键:用户自定义的第一个键位,否则回退默认。
+#[cfg(target_os = "macos")]
 fn menu_accelerator(map: &HashMap<String, Vec<String>>, action_id: &str, default: &str) -> String {
     match map.get(action_id).and_then(|keys| keys.first()) {
         Some(spec) => spec_to_accelerator(spec),
@@ -1648,12 +1659,55 @@ fn is_forwarded_menu_event(id: &str) -> bool {
     )
 }
 
+fn collect_open_file_args<I, S>(args: I) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    args.into_iter()
+        .filter_map(|arg| {
+            let value = arg.as_ref();
+
+            if value.starts_with('-') || value.starts_with("tauri://") {
+                return None;
+            }
+
+            let path = PathBuf::from(value);
+
+            if path.is_file() {
+                Some(path.to_string_lossy().into_owned())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn emit_open_files<R: tauri::Runtime>(app: &tauri::AppHandle<R>, paths: Vec<String>) {
+    if paths.is_empty() {
+        return;
+    }
+
+    let _ = app.emit(OPEN_FILES_EVENT, paths);
+
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let initial_open_files = collect_open_file_args(std::env::args().skip(1));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            emit_open_files(app, collect_open_file_args(args));
+        }))
         .plugin(tauri_plugin_shell::init())
         .manage(FsWatchState::default())
+        .manage(PendingOpenFilesState(Mutex::new(initial_open_files)))
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
 
@@ -1699,6 +1753,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_version,
+            take_initial_open_files,
             inspect_git_workspace,
             open_file_dialog,
             open_folder_dialog,
@@ -1725,8 +1780,22 @@ pub fn run() {
             read_keybindings,
             write_keybindings,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running norn");
+        .build(tauri::generate_context!())
+        .expect("error while building norn")
+        .run(|app, event| {
+            let _ = (&app, &event);
+
+            #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+            if let tauri::RunEvent::Opened { urls } = event {
+                let paths = urls
+                    .into_iter()
+                    .filter_map(|url| url.to_file_path().ok())
+                    .filter(|path| path.is_file())
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>();
+                emit_open_files(app, paths);
+            }
+        });
 }
 
 #[cfg(test)]

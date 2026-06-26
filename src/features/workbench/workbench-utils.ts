@@ -19,13 +19,16 @@ import {
   EDITOR_MIN_THUMB_SIZE,
   EDITOR_SCROLLBAR_SIZE,
   editorLineWrappingStorageKey,
+  editorSearchHistoryStorageKey,
   keymapOverridesStorageKey,
+  maxEditorSearchHistory,
+  maxQuickSearchHistory,
   maxRecentFolders,
   projectColorPairs,
+  quickSearchHistoryStorageKey,
   recentFoldersStorageKey,
   resizeHandleHintsStorageKey,
 } from "./constants";
-import { editorLines } from "./mock-data";
 import type {
   EditorScrollbarGeometry,
   EditorScrollbarOrientation,
@@ -92,7 +95,293 @@ export const getFileExtension = (name: string) => {
   return normalizedName.slice(extensionIndex + 1);
 };
 
+const catppuccinIconBasePath = "/file-icons/catppuccin";
+
+const fileNameIconMap: Record<string, string> = {
+  ".dockerignore": "docker-ignore",
+  ".editorconfig": "editorconfig",
+  ".env": "env",
+  ".env.development": "env",
+  ".env.local": "env",
+  ".env.production": "env",
+  ".env.test": "env",
+  ".eslintignore": "eslint",
+  ".eslintrc": "eslint",
+  ".eslintrc.cjs": "eslint",
+  ".eslintrc.js": "eslint",
+  ".eslintrc.json": "eslint",
+  ".eslintrc.mjs": "eslint",
+  ".gitattributes": "git",
+  ".gitignore": "git",
+  ".gitkeep": "git",
+  ".gitmodules": "git",
+  ".prettierignore": "prettier",
+  ".prettierrc": "prettier",
+  ".prettierrc.json": "prettier",
+  ".vscodeignore": "vscode",
+  "angular.json": "angular",
+  "babel.config.cjs": "babel",
+  "babel.config.js": "babel",
+  "babel.config.json": "babel",
+  "babel.config.mjs": "babel",
+  "cargo.lock": "cargo",
+  "cargo.toml": "cargo",
+  "changelog": "changelog",
+  "changelog.md": "changelog",
+  "cmakelists.txt": "cmake",
+  "compose.yaml": "docker-compose",
+  "compose.yml": "docker-compose",
+  "contributing": "text",
+  "contributing.md": "text",
+  "docker-compose.yaml": "docker-compose",
+  "docker-compose.yml": "docker-compose",
+  "dockerfile": "docker",
+  "eslint.config.cjs": "eslint",
+  "eslint.config.js": "eslint",
+  "eslint.config.mjs": "eslint",
+  "eslint.config.ts": "eslint",
+  "go.mod": "go-mod",
+  "go.sum": "go-mod",
+  "go.work": "go-mod",
+  "gnumakefile": "makefile",
+  "license": "license",
+  "license.md": "license",
+  "license.txt": "license",
+  "makefile": "makefile",
+  "nginx.conf": "nginx",
+  "package-lock.json": "npm-lock",
+  "package.json": "package-json",
+  "pnpm-lock.yaml": "pnpm-lock",
+  "pom.xml": "apache",
+  "postcss.config.cjs": "postcss",
+  "postcss.config.js": "postcss",
+  "postcss.config.mjs": "postcss",
+  "pyproject.toml": "python",
+  "readme": "readme",
+  "readme.md": "readme",
+  "robots.txt": "text",
+  "schema.json": "json-schema",
+  "tailwind.config.cjs": "tailwind",
+  "tailwind.config.js": "tailwind",
+  "tailwind.config.mjs": "tailwind",
+  "tailwind.config.ts": "tailwind",
+  "tauri.conf.json": "tauri",
+  "todo": "todo",
+  "todo.md": "todo",
+  "tsconfig.json": "typescript",
+  "vite.config.js": "vite",
+  "vite.config.mjs": "vite",
+  "vite.config.ts": "vite",
+  "vitest.config.js": "vitest",
+  "vitest.config.ts": "vitest",
+  "yarn.lock": "yarn-lock",
+};
+
+const extensionIconMap: Record<string, string> = {
+  "7z": "zip",
+  adoc: "asciidoc",
+  asc: "asciidoc",
+  asciidoc: "asciidoc",
+  astro: "astro",
+  awk: "bash",
+  bash: "bash",
+  bat: "batch",
+  bib: "latex",
+  c: "c",
+  cer: "certificate",
+  cfg: "config",
+  cjs: "javascript",
+  clj: "clojure",
+  cljs: "clojure",
+  cmake: "cmake",
+  cmd: "batch",
+  cnf: "config",
+  conf: "config",
+  config: "config",
+  cpp: "cpp",
+  crt: "certificate",
+  cs: "csharp",
+  csh: "bash",
+  css: "css",
+  csv: "csv",
+  cts: "typescript",
+  cxx: "cpp",
+  dart: "dart",
+  diff: "diff",
+  env: "env",
+  erl: "erlang",
+  ex: "elixir",
+  exs: "elixir",
+  fish: "bash",
+  fs: "fsharp",
+  fsi: "fsharp",
+  fsx: "fsharp",
+  gif: "image",
+  go: "go",
+  graphql: "graphql",
+  gql: "graphql",
+  gz: "zip",
+  h: "c-header",
+  handlebars: "javascript",
+  hbs: "javascript",
+  hh: "cpp-header",
+  hs: "haskell",
+  htm: "html",
+  html: "html",
+  hxx: "cpp-header",
+  ico: "image",
+  ini: "config",
+  java: "java",
+  jav: "java",
+  jinja: "jinja",
+  jinja2: "jinja",
+  jl: "julia",
+  jpeg: "image",
+  jpg: "image",
+  js: "javascript",
+  json: "json",
+  json5: "json",
+  jsonc: "json",
+  jsx: "javascript-react",
+  key: "key",
+  kt: "kotlin",
+  kts: "kotlin",
+  latex: "latex",
+  less: "less",
+  liquid: "liquid",
+  lock: "lock",
+  log: "log",
+  lua: "lua",
+  m: "text",
+  markdown: "markdown",
+  md: "markdown",
+  mdown: "markdown",
+  mdx: "markdown-mdx",
+  mermaid: "mermaid",
+  mjs: "javascript",
+  mkd: "markdown",
+  mmd: "mermaid",
+  mts: "typescript",
+  mustache: "javascript",
+  nim: "nim",
+  nims: "nim",
+  nix: "nix",
+  out: "log",
+  patch: "diff",
+  pdf: "pdf",
+  pem: "key",
+  php: "php",
+  phtml: "php",
+  pl: "perl",
+  plist: "xml",
+  pm: "perl",
+  png: "image",
+  proto: "proto",
+  ps1: "powershell",
+  psd1: "powershell",
+  psm1: "powershell",
+  pub: "key",
+  pug: "pug",
+  py: "python",
+  pyi: "python",
+  pyw: "python",
+  r: "r",
+  rake: "ruby",
+  rar: "zip",
+  rb: "ruby",
+  rs: "rust",
+  sass: "sass",
+  sc: "scala",
+  scala: "scala",
+  scss: "sass",
+  sh: "bash",
+  sql: "database",
+  svg: "svg",
+  swift: "swift",
+  tar: "zip",
+  tex: "latex",
+  text: "text",
+  tf: "terraform",
+  tfvars: "terraform",
+  toml: "toml",
+  ts: "typescript",
+  tsv: "csv",
+  tsx: "typescript-react",
+  twig: "twig",
+  txt: "text",
+  typ: "typst",
+  uri: "url",
+  url: "url",
+  vue: "vue",
+  webmanifest: "json",
+  webp: "image",
+  xhtml: "html",
+  xml: "xml",
+  xsd: "xml",
+  xsl: "xml",
+  xslt: "xml",
+  yaml: "yaml",
+  yml: "yaml",
+  zig: "zig",
+  zip: "zip",
+  zsh: "bash",
+};
+
+const suffixIconMap: Array<[suffix: string, icon: string]> = [
+  [".d.ts", "typescript-def"],
+  [".test.tsx", "typescript-test"],
+  [".spec.tsx", "typescript-test"],
+  [".test.ts", "typescript-test"],
+  [".spec.ts", "typescript-test"],
+  [".test.jsx", "javascript-test"],
+  [".spec.jsx", "javascript-test"],
+  [".test.js", "javascript-test"],
+  [".spec.js", "javascript-test"],
+  [".config.ts", "typescript"],
+  [".config.mts", "typescript"],
+  [".config.cts", "typescript"],
+  [".config.js", "javascript-config"],
+  [".config.mjs", "javascript-config"],
+  [".config.cjs", "javascript-config"],
+  [".schema.json", "json-schema"],
+  [".tar.gz", "zip"],
+  [".tar.bz2", "zip"],
+];
+
+export const getCatppuccinFileIconName = (name: string, kind: FileTreeNode["kind"], expanded = false) => {
+  if (kind === "directory") {
+    return expanded ? "_folder_open" : "_folder";
+  }
+
+  const normalizedName = name.toLowerCase();
+  const fileNameIcon = fileNameIconMap[normalizedName];
+
+  if (fileNameIcon) {
+    return fileNameIcon;
+  }
+
+  const suffixIcon = suffixIconMap.find(([suffix]) => normalizedName.endsWith(suffix))?.[1];
+
+  if (suffixIcon) {
+    return suffixIcon;
+  }
+
+  const extension = getFileExtension(name);
+
+  return extensionIconMap[extension] ?? "_file";
+};
+
 export const getFileTreeIcon = (node: FileTreeNode) => {
+  const iconName = getCatppuccinFileIconName(node.name, node.kind, Boolean(node.expanded));
+
+  return {
+    alt: node.kind === "directory" ? "Folder" : "File",
+    iconName,
+    src: `${catppuccinIconBasePath}/${iconName}.svg`,
+  };
+};
+
+export const getFileTreeDisplayIcon = (node: FileTreeNode) => {
   if (node.kind === "directory") {
     return {
       className: "tree-row-icon-directory",
@@ -592,6 +881,89 @@ export const saveRecentFolders = (folders: RecentFolder[]) => {
   window.localStorage.setItem(recentFoldersStorageKey, JSON.stringify(folders.slice(0, maxRecentFolders)));
 };
 
+const normalizeSearchHistory = (history: string[], maxItems: number) => {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const item of history) {
+    const value = item.trim();
+    const key = value.toLocaleLowerCase();
+
+    if (!value || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    normalized.push(value);
+
+    if (normalized.length >= maxItems) {
+      break;
+    }
+  }
+
+  return normalized;
+};
+
+export const normalizeQuickSearchHistory = (history: string[]) =>
+  normalizeSearchHistory(history, maxQuickSearchHistory);
+
+export const upsertQuickSearchHistory = (history: string[], query: string) =>
+  normalizeQuickSearchHistory([query, ...history]);
+
+export const loadQuickSearchHistory = (): string[] => {
+  try {
+    const value = window.localStorage.getItem(quickSearchHistoryStorageKey);
+
+    if (!value) {
+      return [];
+    }
+
+    const history = JSON.parse(value);
+
+    if (!Array.isArray(history)) {
+      return [];
+    }
+
+    return normalizeQuickSearchHistory(history.filter((item): item is string => typeof item === "string"));
+  } catch {
+    return [];
+  }
+};
+
+export const saveQuickSearchHistory = (history: string[]) => {
+  window.localStorage.setItem(quickSearchHistoryStorageKey, JSON.stringify(normalizeQuickSearchHistory(history)));
+};
+
+export const normalizeEditorSearchHistory = (history: string[]) =>
+  normalizeSearchHistory(history, maxEditorSearchHistory);
+
+export const upsertEditorSearchHistory = (history: string[], query: string) =>
+  normalizeEditorSearchHistory([query, ...history]);
+
+export const loadEditorSearchHistory = (): string[] => {
+  try {
+    const value = window.localStorage.getItem(editorSearchHistoryStorageKey);
+
+    if (!value) {
+      return [];
+    }
+
+    const history = JSON.parse(value);
+
+    if (!Array.isArray(history)) {
+      return [];
+    }
+
+    return normalizeEditorSearchHistory(history.filter((item): item is string => typeof item === "string"));
+  } catch {
+    return [];
+  }
+};
+
+export const saveEditorSearchHistory = (history: string[]) => {
+  window.localStorage.setItem(editorSearchHistoryStorageKey, JSON.stringify(normalizeEditorSearchHistory(history)));
+};
+
 export const loadResizeHandleHints = () => {
   try {
     return window.localStorage.getItem(resizeHandleHintsStorageKey) === "true";
@@ -660,15 +1032,6 @@ export const saveEditorLineWrapping = (enabled: boolean) => {
   window.localStorage.setItem(editorLineWrappingStorageKey, String(enabled));
 };
 
-export const initialDocument: WorkbenchDocument = {
-  id: "mock-workbench-page",
-  name: "workbench-page.tsx",
-  path: "src/features/workbench/workbench-page.tsx",
-  content: editorLines.join("\n"),
-  savedContent: editorLines.join("\n"),
-  mode: "editable",
-};
-
 export const createUntitledDocument = (): WorkbenchDocument => ({
   id: createDocumentId("untitled"),
   name: "Untitled.txt",
@@ -678,3 +1041,5 @@ export const createUntitledDocument = (): WorkbenchDocument => ({
   isUntitled: true,
   mode: "editable",
 });
+
+export const initialDocument: WorkbenchDocument = createUntitledDocument();

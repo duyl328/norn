@@ -58,7 +58,7 @@ const smartOverlayTheme = EditorView.baseTheme({
   ".cm-smart-attribute": { color: "#0f766e" },
   ".cm-smart-boolean": { color: "#7c3aed" },
   ".cm-smart-bracket": { color: "#64748b" },
-  ".cm-smart-comment": { color: "#64748b", fontStyle: "italic" },
+  ".cm-smart-comment": { color: "#64748b" },
   ".cm-smart-function": { color: "#2563eb" },
   ".cm-smart-key": { color: "#1d4ed8" },
   ".cm-smart-keyword": { color: "#9333ea", fontWeight: "600" },

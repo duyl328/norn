@@ -19,7 +19,13 @@ import type {
   TreeSelection,
   WorkbenchDocument,
 } from "../types";
-import { initialDocument, loadEditorLineWrapping, loadRecentFolders, loadResizeHandleHints } from "../workbench-utils";
+import {
+  initialDocument,
+  loadEditorLineWrapping,
+  loadQuickSearchHistory,
+  loadRecentFolders,
+  loadResizeHandleHints,
+} from "../workbench-utils";
 
 type StateSetter<T> = T | ((current: T) => T);
 
@@ -54,6 +60,7 @@ export interface WorkbenchState {
   scratchPanelHeight: number;
   settingsOpen: boolean;
   searchOpen: boolean;
+  quickSearchHistory: string[];
   commandPaletteOpen: boolean;
   keymapOverrides: Record<string, string[]>;
   setLeftPanelOpen: (setter: StateSetter<boolean>) => void;
@@ -66,6 +73,7 @@ export interface WorkbenchState {
   setScratchPanelHeight: (setter: StateSetter<number>) => void;
   setSettingsOpen: (setter: StateSetter<boolean>) => void;
   setSearchOpen: (setter: StateSetter<boolean>) => void;
+  setQuickSearchHistory: (setter: StateSetter<string[]>) => void;
   setCommandPaletteOpen: (setter: StateSetter<boolean>) => void;
   setKeymapOverrides: (setter: StateSetter<Record<string, string[]>>) => void;
 
@@ -139,6 +147,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   scratchPanelHeight: scratchPanelDefaultHeight,
   settingsOpen: false,
   searchOpen: false,
+  quickSearchHistory: loadQuickSearchHistory(),
   commandPaletteOpen: false,
   // 启动时由 workbench-page 异步从 keybindings.json 载入(见 WorkbenchActionsRuntime)。
   keymapOverrides: {},
@@ -155,6 +164,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({ scratchPanelHeight: resolveSetter(setter, state.scratchPanelHeight) })),
   setSettingsOpen: (setter) => set((state) => ({ settingsOpen: resolveSetter(setter, state.settingsOpen) })),
   setSearchOpen: (setter) => set((state) => ({ searchOpen: resolveSetter(setter, state.searchOpen) })),
+  setQuickSearchHistory: (setter) =>
+    set((state) => ({ quickSearchHistory: resolveSetter(setter, state.quickSearchHistory) })),
   setCommandPaletteOpen: (setter) =>
     set((state) => ({ commandPaletteOpen: resolveSetter(setter, state.commandPaletteOpen) })),
   setKeymapOverrides: (setter) =>

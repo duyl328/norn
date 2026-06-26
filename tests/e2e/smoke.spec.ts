@@ -19,9 +19,9 @@ test("浏览器模式：工作台与编辑器正常渲染且无运行时报错",
 
   await expect(page.locator("#root")).not.toBeEmpty();
   await expect(page.getByText("UTF-8")).toBeVisible();
-  await expect(page.getByText("workbench-page.tsx").first()).toBeVisible();
+  await expect(page.getByText("Untitled.txt").first()).toBeVisible();
 
-  // 编辑器（CodeMirror）已挂载并渲染了内置 mock 文档内容
+  // 编辑器（CodeMirror）已挂载并准备好默认空白未命名文档
   await expect(page.locator(".cm-content")).toBeVisible();
   await expect(page.locator(".cm-line").first()).toBeVisible();
 

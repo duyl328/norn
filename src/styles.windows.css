@@ -44,6 +44,43 @@
   background: hsl(var(--editor-background));
 }
 
+.platform-windows .file-tree-scroll {
+  scrollbar-color: auto;
+  scrollbar-width: auto;
+}
+
+.platform-windows .file-tree-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.platform-windows .file-tree-scroll::-webkit-scrollbar-button,
+.platform-windows .file-tree-scroll::-webkit-scrollbar-button:single-button,
+.platform-windows .file-tree-scroll::-webkit-scrollbar-button:vertical:start:decrement,
+.platform-windows .file-tree-scroll::-webkit-scrollbar-button:vertical:end:increment {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.platform-windows .file-tree-scroll::-webkit-scrollbar-track,
+.platform-windows .file-tree-scroll::-webkit-scrollbar-track-piece {
+  background: transparent;
+}
+
+.platform-windows .file-tree-scroll::-webkit-scrollbar-thumb {
+  min-height: 28px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: hsl(var(--muted-foreground) / 0.34);
+  background-clip: padding-box;
+}
+
+.platform-windows .file-tree-scroll::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.48);
+  background-clip: padding-box;
+}
+
 /* ───────────────────────── 右侧 Git 面板:同款白卡(小框) ─────────────────────────
    核心功能(编辑 + Git)用白卡突出;文件树(左)保持灰色一体化(临时操作、低侵入)。
    和中间编辑区一样:白底 + 圆角 + 边框;因为 Git 外面套了一层 wrapper,这里用 wrapper 的
@@ -76,7 +113,7 @@
   height: 17px;
 }
 
-.platform-windows .status-bar button {
+.platform-windows .status-settings-button {
   height: 16px;
   width: 16px;
 }

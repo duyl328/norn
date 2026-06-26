@@ -53,6 +53,21 @@ export function useDocumentSession() {
     setSaveState("saved");
   };
 
+  const activateOpenedDocument = (nextDocument: WorkbenchDocument) => {
+    setDocument(nextDocument);
+    setOpenDocuments((currentDocuments) => {
+      const hasOnlyCleanUntitled =
+        currentDocuments.length === 1 &&
+        currentDocuments[0].isUntitled &&
+        currentDocuments[0].content === "" &&
+        currentDocuments[0].savedContent === "";
+
+      return hasOnlyCleanUntitled ? [nextDocument] : upsertOpenDocument(currentDocuments, nextDocument);
+    });
+    setSaveConflict(null);
+    setSaveState("saved");
+  };
+
   const closeDocument = (targetDocument: WorkbenchDocument) => {
     const nextDocuments = openDocuments.filter((openDocument) => openDocument.id !== targetDocument.id);
 
@@ -350,7 +365,7 @@ export function useDocumentSession() {
         const contentSuffix = range.hasMoreAfter ? "\n\n[More content omitted in large file browsing mode]" : "";
         const rangeContent = `${contentPrefix}${range.content}${contentSuffix}`;
 
-        activateDocument({
+        activateOpenedDocument({
           id: getFileOpenId(inspection.path, inspection.lastModified),
           name: inspection.name,
           path: inspection.path,
@@ -386,7 +401,7 @@ export function useDocumentSession() {
 
       const file = await invoke<NativeTextFile>("read_text_file", { path });
 
-      activateDocument({
+      activateOpenedDocument({
         id: getFileOpenId(file.path, file.lastModified),
         name: file.name,
         path: file.path,

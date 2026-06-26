@@ -9,6 +9,7 @@ const reset = () =>
     openDocuments: [initialDocument],
     leftPanelOpen: false,
     leftPanelWidth: 260,
+    quickSearchHistory: [],
     saveState: "idle",
   });
 
@@ -19,6 +20,9 @@ describe("useWorkbenchStore", () => {
     const state = useWorkbenchStore.getState();
     expect(state.document).toBe(initialDocument);
     expect(state.openDocuments).toEqual([initialDocument]);
+    expect(state.document.name).toBe("Untitled.txt");
+    expect(state.document.content).toBe("");
+    expect(state.document.isUntitled).toBe(true);
     expect(state.leftPanelOpen).toBe(false);
     expect(state.gitWorkspace).toEqual({ kind: "idle" });
     expect(state.saveState).toBe("idle");
@@ -60,6 +64,7 @@ describe("useWorkbenchStore", () => {
     store.setScratchPanelHeight(180);
     store.setSettingsOpen(true);
     store.setSearchOpen(true);
+    store.setQuickSearchHistory(["README"]);
     store.setFileError("oops");
     store.setFolderView({ kind: "folder" } as never);
     store.setGitWorkspace({ kind: "loading" } as never);
@@ -84,6 +89,7 @@ describe("useWorkbenchStore", () => {
     expect(next.scratchPanelHeight).toBe(180);
     expect(next.settingsOpen).toBe(true);
     expect(next.searchOpen).toBe(true);
+    expect(next.quickSearchHistory).toEqual(["README"]);
     expect(next.fileError).toBe("oops");
     expect(next.recentFolders).toHaveLength(1);
     expect(next.scratchFolderView.loading).toBe(true);

@@ -24,6 +24,7 @@ let view: EditorView | null = null;
 afterEach(() => {
   view?.destroy();
   view = null;
+  window.localStorage.clear();
 });
 
 const mount = (document: WorkbenchDocument) => {
@@ -78,6 +79,74 @@ describe("编辑器查找/替换接线", () => {
     input!.dispatchEvent(new Event("input", { bubbles: true }));
 
     expect(getSearchQuery(editor.state).search).toBe("const");
+  });
+
+  it("records Ctrl+F search history when submitting a search", () => {
+    const editor = mount(doc());
+    openSearchPanel(editor);
+
+    const input = editor.dom.querySelector<HTMLInputElement>(".cm-norn-search-input");
+    input!.value = "const";
+    input!.dispatchEvent(new Event("input", { bubbles: true }));
+    input!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    expect(JSON.parse(window.localStorage.getItem("norn.editorSearchHistory") ?? "[]")).toEqual(["const"]);
+  });
+
+  it("records Ctrl+F search history after typing without showing it by default", async () => {
+    const editor = mount(doc());
+    openSearchPanel(editor);
+
+    const input = editor.dom.querySelector<HTMLInputElement>(".cm-norn-search-input");
+    input!.value = "const";
+    input!.dispatchEvent(new Event("input", { bubbles: true }));
+
+    await vi.waitFor(() => {
+      expect(JSON.parse(window.localStorage.getItem("norn.editorSearchHistory") ?? "[]")).toEqual(["const"]);
+    });
+    expect(editor.dom.querySelector<HTMLElement>(".cm-norn-search-history")?.hidden).toBe(true);
+
+    const historyButton = editor.dom.querySelector<HTMLButtonElement>('[aria-label="搜索历史"]')!;
+    historyButton.click();
+    expect(editor.dom.querySelector<HTMLElement>(".cm-norn-search-history")?.hidden).toBe(false);
+    expect(historyButton.classList.contains("cm-norn-search-btn-active")).toBe(true);
+    expect(historyButton.getAttribute("aria-pressed")).toBe("true");
+    expect(editor.dom.querySelector(".cm-norn-search-history-item")?.textContent).toBe("const");
+  });
+
+  it("uses a selected Ctrl+F search history entry immediately", () => {
+    window.localStorage.setItem("norn.editorSearchHistory", JSON.stringify(["const", "y"]));
+    const editor = mount(doc());
+    openSearchPanel(editor);
+
+    const historyButton = editor.dom.querySelector<HTMLButtonElement>('[aria-label="搜索历史"]')!;
+    historyButton.click();
+    const historyItem = Array.from(editor.dom.querySelectorAll<HTMLButtonElement>(".cm-norn-search-history-item")).find(
+      (button) => button.textContent === "y",
+    );
+    historyItem!.click();
+
+    const input = editor.dom.querySelector<HTMLInputElement>(".cm-norn-search-input");
+    expect(input!.value).toBe("y");
+    expect(getSearchQuery(editor.state).search).toBe("y");
+    expect(editor.state.selection.main.from).toBe(18);
+    expect(editor.state.selection.main.to).toBe(19);
+    expect(historyButton.classList.contains("cm-norn-search-btn-active")).toBe(false);
+    expect(historyButton.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("removes a single Ctrl+F search history entry from the panel", () => {
+    window.localStorage.setItem("norn.editorSearchHistory", JSON.stringify(["const", "y"]));
+    const editor = mount(doc());
+    openSearchPanel(editor);
+
+    editor.dom.querySelector<HTMLButtonElement>('[aria-label="搜索历史"]')!.click();
+    editor.dom.querySelector<HTMLButtonElement>('[aria-label="删除搜索历史 const"]')!.click();
+
+    expect(JSON.parse(window.localStorage.getItem("norn.editorSearchHistory") ?? "[]")).toEqual(["y"]);
+    expect(Array.from(editor.dom.querySelectorAll(".cm-norn-search-history-item")).map((item) => item.textContent)).toEqual([
+      "y",
+    ]);
   });
 
   it("点击正则开关会切换查询的 regexp 标志", () => {

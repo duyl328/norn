@@ -351,7 +351,7 @@ export function EditorSurface({
             const rightStacked = layout?.side === "right" && coverAmount > stackFrameMinCover;
             const isStacked = leftStacked || rightStacked;
             const hideCloseButton = !active || isStacked || hiddenCloseTabIds.has(tab.id);
-            const { className: tabIconClassName, Icon: TabIcon } = getFileTreeIcon({
+            const tabIcon = getFileTreeIcon({
               kind: "file",
               name: tab.name,
               path: tab.name,
@@ -416,7 +416,7 @@ export function EditorSurface({
                       }
                     }}
                   >
-                    <TabIcon className={cn("editor-file-tab-icon", tabIconClassName)} aria-hidden="true" />
+                    <img alt="" aria-hidden="true" className="editor-file-tab-icon" draggable={false} src={tabIcon.src} />
                     <span className="truncate">{tab.name}</span>
                     <span
                       className={cn("editor-file-tab-trailing", hideCloseButton && "editor-file-tab-trailing-hidden")}

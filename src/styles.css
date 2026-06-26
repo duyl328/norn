@@ -422,12 +422,55 @@
     backdrop-filter: saturate(1.12) blur(16px);
   }
 
+  .windows-quick-search-input-wrap {
+    @apply relative flex items-center;
+  }
+
+  .windows-quick-search-input-icon {
+    @apply pointer-events-none absolute left-3 h-4 w-4 text-muted-foreground;
+  }
+
   .windows-quick-search-input {
-    @apply h-10 w-full rounded-sm border border-input bg-background px-3 text-ui-lg outline-none;
+    @apply h-10 w-full rounded-sm border border-input bg-background px-9 text-ui-lg outline-none;
   }
 
   .windows-quick-search-input:focus {
     @apply border-ring;
+  }
+
+  .windows-quick-search-section {
+    @apply mt-2 rounded-sm border border-border/60 bg-background/70 p-2;
+  }
+
+  .windows-quick-search-section-heading {
+    @apply mb-2 flex items-center justify-between gap-3 px-1 text-ui-sm font-semibold uppercase text-muted-foreground;
+  }
+
+  .windows-quick-search-icon-button {
+    @apply grid h-6 w-6 place-items-center rounded-sm border-0 bg-transparent text-muted-foreground transition-colors;
+  }
+
+  .windows-quick-search-icon-button:hover,
+  .windows-quick-search-icon-button:focus-visible {
+    @apply bg-accent text-accent-foreground outline-none;
+  }
+
+  .windows-quick-search-history-list {
+    @apply flex flex-wrap gap-1;
+  }
+
+  .windows-quick-search-history-item {
+    @apply flex h-7 max-w-full items-center gap-1.5 rounded-sm border border-border/60 bg-background px-2 text-ui text-muted-foreground transition-colors;
+  }
+
+  .windows-quick-search-history-item span {
+    @apply truncate;
+  }
+
+  .windows-quick-search-history-item:hover,
+  .windows-quick-search-history-item:focus-visible,
+  .windows-quick-search-item-selected {
+    @apply border-input bg-accent text-accent-foreground outline-none;
   }
 
   .windows-quick-search-results {
@@ -435,11 +478,28 @@
   }
 
   .windows-quick-search-result {
-    @apply h-8 rounded-sm border-0 bg-transparent px-2 text-left font-mono text-ui text-muted-foreground;
+    @apply grid min-h-9 grid-cols-[18px_minmax(0,1fr)] items-center gap-2 rounded-sm border-0 bg-transparent px-2 text-left text-ui text-muted-foreground;
   }
 
-  .windows-quick-search-result:hover {
-    @apply bg-accent text-accent-foreground;
+  .windows-quick-search-result:hover,
+  .windows-quick-search-result:focus-visible {
+    @apply bg-accent text-accent-foreground outline-none;
+  }
+
+  .windows-quick-search-result-text {
+    @apply grid min-w-0 gap-0.5;
+  }
+
+  .windows-quick-search-result-label {
+    @apply truncate text-ui font-medium text-foreground;
+  }
+
+  .windows-quick-search-result-detail {
+    @apply truncate font-mono text-ui-sm text-muted-foreground;
+  }
+
+  .windows-quick-search-empty {
+    @apply rounded-sm px-2 py-3 text-ui text-muted-foreground;
   }
 
   .windows-quick-search-close {
@@ -793,7 +853,7 @@
   }
 
   .project-panel-recent-name {
-    @apply truncate text-ui font-medium text-foreground/[0.82];
+    @apply truncate text-ui-md font-semibold text-foreground/[0.9];
   }
 
   .project-panel-recent-path {
@@ -833,7 +893,7 @@
   }
 
   .project-panel-recent-select-name {
-    @apply truncate text-ui font-medium text-foreground/[0.9];
+    @apply truncate text-ui-xl font-bold leading-tight text-foreground;
   }
 
   .project-panel-recent-select-path {
@@ -916,11 +976,6 @@
     box-shadow: none;
   }
 
-  .project-panel-footer {
-    @apply shrink-0 p-1.5;
-    background: transparent;
-  }
-
   .project-panel-action-button {
     @apply flex h-8 w-full items-center gap-2 rounded-[4px] border-0 bg-transparent px-2 text-left text-ui font-medium text-muted-foreground transition-colors;
     background-clip: padding-box;
@@ -964,10 +1019,6 @@
 
   .dark .project-panel-recent-menu-item-selected {
     background: rgb(255 255 255 / 0.1);
-  }
-
-  .dark .project-panel-footer {
-    background: transparent;
   }
 
   .dark .project-panel-action-button:hover,
@@ -1179,6 +1230,7 @@
 
   .editor-file-tab-icon {
     @apply h-3.5 w-3.5 shrink-0;
+    object-fit: contain;
     transition:
       opacity 240ms ease,
       transform 240ms cubic-bezier(0.2, 0.84, 0.22, 1);
@@ -1381,6 +1433,16 @@
     scrollbar-width: thin;
   }
 
+  .file-tree-scroll::-webkit-scrollbar-button,
+  .file-tree-scroll::-webkit-scrollbar-button:vertical:start:decrement,
+  .file-tree-scroll::-webkit-scrollbar-button:vertical:end:increment,
+  .file-tree-scroll::-webkit-scrollbar-button:vertical:single-button {
+    -webkit-appearance: none;
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
   /* mac 走 vibrancy 半透明;macOS 不使用子像素抗锯齿,透明不影响锐利度。 */
   .platform-mac .file-tree-scroll {
     background: transparent;
@@ -1489,6 +1551,7 @@
 
   .tree-row-icon {
     @apply h-3.5 w-3.5 shrink-0;
+    object-fit: contain;
   }
 
   .tree-row-icon-directory {
@@ -1613,7 +1676,7 @@
   }
 
   .status-bar {
-    @apply flex h-[22px] shrink-0 items-center justify-between border-t border-border bg-card px-2;
+    @apply grid h-[22px] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 overflow-hidden border-t border-border bg-card px-2;
   }
 
   /* 仅 macOS:底部状态栏作为「窗口底座」——透出与透明 titlebar 同源的原生 vibrancy,
@@ -1737,6 +1800,14 @@
 
   .status-token {
     @apply inline-flex h-5 items-center gap-1 whitespace-nowrap font-mono text-ui-sm text-muted-foreground;
+  }
+
+  .status-left-tokens {
+    @apply flex min-w-0 items-center gap-3 overflow-hidden;
+  }
+
+  .status-right-tokens {
+    @apply flex min-w-0 shrink-0 items-center gap-3 overflow-hidden;
   }
 
   .right-task-panel {
@@ -2008,11 +2079,42 @@
 
   /* ── 状态栏底部:分支显示 + 改动量 ── */
   .status-token-button {
-    @apply rounded-[4px] border border-transparent px-1 transition-colors;
+    @apply rounded-[4px] border border-transparent px-1 py-0.5 transition-colors;
   }
 
   .status-token-button:hover {
     @apply border-border/70 bg-muted/80 text-foreground;
+  }
+
+  .status-path-token {
+    @apply min-w-0 max-w-[min(34ch,38vw)] shrink cursor-copy justify-start overflow-hidden;
+  }
+
+  .status-path-token-text {
+    @apply block truncate text-left;
+  }
+
+  .status-path-token-copied {
+    animation: status-path-copy-flash 650ms ease-out;
+  }
+
+  @keyframes status-path-copy-flash {
+    0%,
+    100% {
+      background: transparent;
+      color: hsl(var(--muted-foreground));
+    }
+
+    28% {
+      background: hsl(var(--primary) / 0.18);
+      color: hsl(var(--foreground));
+      box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.24);
+    }
+
+    56% {
+      background: hsl(var(--primary) / 0.1);
+      color: hsl(var(--foreground));
+    }
   }
 
   .status-ahead,
@@ -2849,7 +2951,8 @@
   }
 
   .codemirror-shell .cm-scroller {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Cascadia Mono", "Liberation Mono",
+      "Courier New", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "DengXian", monospace;
     line-height: 20px;
     scrollbar-color: transparent transparent;
     scrollbar-gutter: auto;
@@ -3104,6 +3207,75 @@
     @apply flex shrink-0 items-center gap-1;
   }
 
+  .cm-norn-search-history {
+    @apply absolute left-0 top-full z-20 w-full min-w-[16rem] overflow-hidden rounded-lg border border-input bg-background/95 p-1.5 text-foreground shadow-xl backdrop-blur-md;
+    box-shadow:
+      0 12px 28px hsl(var(--foreground) / 0.12),
+      0 0 0 1px hsl(var(--background) / 0.6) inset;
+    max-height: 0;
+    margin-top: 0;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      max-height 200ms cubic-bezier(0.4, 0, 0.2, 1),
+      margin-top 200ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 160ms ease,
+      visibility 0s linear 200ms;
+  }
+
+  .cm-norn-search-history[hidden] {
+    display: none;
+  }
+
+  .cm-norn-search-history[data-open="true"] {
+    max-height: 14rem;
+    margin-top: 0.25rem;
+    opacity: 1;
+    visibility: visible;
+    transition:
+      max-height 200ms cubic-bezier(0.4, 0, 0.2, 1),
+      margin-top 200ms cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 160ms ease;
+  }
+
+  .cm-norn-search-history-list {
+    @apply grid max-h-52 gap-1 overflow-y-auto;
+  }
+
+  .cm-norn-search-history-row {
+    @apply flex h-7 min-w-0 items-center rounded-md text-muted-foreground transition-colors;
+  }
+
+  .cm-norn-search-history-row:hover,
+  .cm-norn-search-history-row:focus-within {
+    @apply bg-accent text-accent-foreground;
+  }
+
+  .cm-norn-search-history-item {
+    @apply h-full min-w-0 flex-1 truncate rounded-md border-0 bg-transparent px-2 text-left text-ui transition-colors;
+  }
+
+  .cm-norn-search-history-item:focus-visible {
+    @apply outline-none;
+  }
+
+  .cm-norn-search-history-empty {
+    @apply px-2 py-2 text-ui text-muted-foreground;
+  }
+
+  .cm-norn-search-history-remove {
+    @apply mr-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-muted-foreground/45 transition-colors;
+  }
+
+  .cm-norn-search-history-remove:hover,
+  .cm-norn-search-history-remove:focus-visible {
+    @apply bg-background/80 text-foreground opacity-100 outline-none;
+  }
+
+  .cm-norn-search-history-remove .cm-norn-search-icon {
+    @apply h-3.5 w-3.5;
+  }
+
   .cm-norn-search-btn,
   .cm-norn-search-expand {
     @apply flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors;
@@ -3112,6 +3284,14 @@
   .cm-norn-search-btn:hover,
   .cm-norn-search-expand:hover {
     @apply bg-accent text-foreground;
+  }
+
+  .cm-norn-search-btn-active {
+    @apply bg-primary/15 text-primary;
+  }
+
+  .cm-norn-search-btn-active:hover {
+    @apply bg-primary/20 text-primary;
   }
 
   .cm-norn-search-expand .cm-norn-search-icon {
@@ -3163,6 +3343,7 @@
     animation: none;
   }
 
+  .cm-norn-search-history,
   .cm-norn-search-row-replace,
   .cm-norn-search-row-replace-open {
     transition:

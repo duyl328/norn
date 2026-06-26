@@ -12,6 +12,12 @@ import {
 import { StateEffect } from "@codemirror/state";
 import { type Command, EditorView, type Panel } from "@codemirror/view";
 
+import {
+  loadEditorSearchHistory,
+  saveEditorSearchHistory,
+  upsertEditorSearchHistory,
+} from "./workbench-utils";
+
 /**
  * 自绘的查找/替换面板。
  *
@@ -165,6 +171,11 @@ const ICONS = {
     ["path", { d: "M18 6 6 18" }],
     ["path", { d: "m6 6 12 12" }],
   ],
+  history: [
+    ["path", { d: "M3 12a9 9 0 1 0 3-6.7" }],
+    ["path", { d: "M3 3v6h6" }],
+    ["path", { d: "M12 7v5l3 2" }],
+  ],
   chevronRight: [["path", { d: "m9 18 6-6-6-6" }]],
 } satisfies Record<string, IconNode[]>;
 
@@ -254,6 +265,8 @@ export const createEditorSearchPanel = (view: EditorView): Panel => {
 
   const replaceInput = createInput("替换为");
   replaceInput.value = initial.replace;
+  let searchHistory = loadEditorSearchHistory();
+  let historyOpen = false;
 
   // 按查找内容自适应宽度:留白由常量给出,clamp 到 [min, max];替换框跟随查找框等宽以对齐。
   const autoSize = () => {
@@ -352,6 +365,23 @@ export const createEditorSearchPanel = (view: EditorView): Panel => {
       view.dispatch({ effects: setSearchQuery.of(query) });
       selfDispatch = false;
     }
+
+    return query;
+  };
+
+  const rememberSearch = () => {
+    const value = searchInput.value.trim();
+    const query = getSearchQuery(view.state);
+
+    if (!value || !query.valid) {
+      return false;
+    }
+
+    searchHistory = upsertEditorSearchHistory(searchHistory, value);
+    saveEditorSearchHistory(searchHistory);
+    renderHistory();
+
+    return true;
   };
 
   // —— 清空(×)按钮:随输入内容显隐 ——
@@ -399,10 +429,117 @@ export const createEditorSearchPanel = (view: EditorView): Panel => {
     return button;
   };
 
+  const historyPanel = document.createElement("div");
+  historyPanel.className = "cm-norn-search-history";
+  historyPanel.hidden = true;
+  historyPanel.setAttribute("role", "menu");
+  historyPanel.setAttribute("aria-label", "搜索历史列表");
+
+  const historyList = document.createElement("div");
+  historyList.className = "cm-norn-search-history-list";
+  historyPanel.append(historyList);
+
+  let historyButton: HTMLButtonElement | null = null;
+  const setHistoryOpen = (open: boolean) => {
+    historyOpen = open;
+    historyButton?.classList.toggle("cm-norn-search-btn-active", open);
+    historyButton?.setAttribute("aria-pressed", String(open));
+
+    if (open) {
+      historyPanel.hidden = false;
+      window.requestAnimationFrame(() => {
+        if (historyOpen) {
+          historyPanel.dataset.open = "true";
+        }
+      });
+      return;
+    }
+
+    delete historyPanel.dataset.open;
+    window.setTimeout(() => {
+      if (!historyOpen) {
+        historyPanel.hidden = true;
+      }
+    }, 200);
+  };
+
+  const applyHistory = (value: string) => {
+    searchInput.value = value;
+    autoSize();
+    commit();
+    revealMatch();
+    rememberSearch();
+    setHistoryOpen(false);
+    searchInput.focus();
+  };
+
+  const removeHistoryItem = (value: string) => {
+    searchHistory = searchHistory.filter((item) => item !== value);
+    saveEditorSearchHistory(searchHistory);
+    renderHistory();
+    if (searchHistory.length === 0) {
+      setHistoryOpen(false);
+    }
+    searchInput.focus();
+  };
+
+  function renderHistory() {
+    historyList.replaceChildren();
+
+    if (searchHistory.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "cm-norn-search-history-empty";
+      empty.textContent = "暂无搜索历史";
+      historyList.append(empty);
+      return;
+    }
+
+    for (const item of searchHistory) {
+      const row = document.createElement("div");
+      row.className = "cm-norn-search-history-row";
+      row.setAttribute("role", "none");
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "cm-norn-search-history-item";
+      button.setAttribute("role", "menuitem");
+      button.textContent = item;
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        applyHistory(item);
+      });
+
+      const remove = createButton("cm-norn-search-history-remove", ICONS.close, `删除搜索历史 ${item}`, () => {
+        removeHistoryItem(item);
+      });
+      remove.setAttribute("role", "menuitem");
+      row.append(button, remove);
+      historyList.append(row);
+    }
+  }
+
+  renderHistory();
+
+  let rememberTimer = 0;
+  const rememberCurrentSearch = () => {
+    window.clearTimeout(rememberTimer);
+    rememberSearch();
+  };
+  const scheduleRememberSearch = () => {
+    window.clearTimeout(rememberTimer);
+    rememberTimer = window.setTimeout(() => {
+      rememberCurrentSearch();
+    }, 450);
+  };
+
+  searchInput.addEventListener("focus", () => {
+    renderHistory();
+  });
   searchInput.addEventListener("input", () => {
     autoSize();
     commit();
     revealMatch();
+    scheduleRememberSearch();
   });
   searchInput.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") {
@@ -410,6 +547,7 @@ export const createEditorSearchPanel = (view: EditorView): Panel => {
     }
     event.preventDefault();
     commit();
+    rememberCurrentSearch();
     if (event.shiftKey) {
       findPrevious(view);
     } else {
@@ -417,6 +555,7 @@ export const createEditorSearchPanel = (view: EditorView): Panel => {
     }
   });
 
+  replaceInput.addEventListener("focus", () => setHistoryOpen(false));
   replaceInput.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") {
       return;
@@ -475,17 +614,25 @@ export const createEditorSearchPanel = (view: EditorView): Panel => {
     createToggle("wholeWord", ICONS.wholeWord, "全词匹配"),
     modeGroup,
   );
-  findField.append(searchInput, searchAdorn);
+  findField.append(searchInput, searchAdorn, historyPanel);
 
   const findActions = document.createElement("div");
   findActions.className = "cm-norn-search-actions";
+  historyButton = createButton("cm-norn-search-btn", ICONS.history, "搜索历史", () => {
+    renderHistory();
+    setHistoryOpen(!historyOpen);
+  });
+  historyButton.setAttribute("aria-pressed", "false");
   findActions.append(
+    historyButton,
     createButton("cm-norn-search-btn", ICONS.arrowUp, "上一个 (Shift+Enter)", () => {
       commit();
+      rememberCurrentSearch();
       findPrevious(view);
     }),
     createButton("cm-norn-search-btn", ICONS.arrowDown, "下一个 (Enter)", () => {
       commit();
+      rememberCurrentSearch();
       findNext(view);
     }),
     createButton("cm-norn-search-btn cm-norn-search-close", ICONS.close, "关闭 (Esc)", () => {
@@ -606,6 +753,7 @@ export const createEditorSearchPanel = (view: EditorView): Panel => {
     },
     destroy() {
       window.clearTimeout(countTimer);
+      window.clearTimeout(rememberTimer);
     },
   };
 };

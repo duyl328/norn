@@ -1,5 +1,6 @@
+import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { type CSSProperties, useEffect, useMemo } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef } from "react";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,7 @@ import {
   leftPanelMinWidth,
   nativeMenuCommands,
   nativeMenuEvent,
+  nativeOpenFilesEvent,
   rightPanelMaxWidth,
   rightPanelMinWidth,
 } from "./constants";
@@ -98,6 +100,50 @@ export function WorkbenchPage() {
     requestFileOpen,
     updateDocumentContent,
   } = useDocumentSession();
+
+  const requestFileOpenRef = useRef(requestFileOpen);
+
+  useEffect(() => {
+    requestFileOpenRef.current = requestFileOpen;
+  }, [requestFileOpen]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    invoke<string[]>("take_initial_open_files")
+      .then((paths) => {
+        paths.forEach((path) => {
+          requestFileOpenRef.current({ kind: "path", path, clearFolderView: true });
+        });
+      })
+      .catch(() => undefined);
+
+    let disposed = false;
+    let unlisten: UnlistenFn | undefined;
+
+    listen<string[]>(nativeOpenFilesEvent, (event) => {
+      event.payload.forEach((path) => {
+        requestFileOpenRef.current({ kind: "path", path, clearFolderView: true });
+      });
+    })
+      .then((cleanup) => {
+        if (disposed) {
+          cleanup();
+          return;
+        }
+        unlisten = cleanup;
+      })
+      .catch(() => {
+        unlisten = undefined;
+      });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   const {
     dropTargetRef,
@@ -270,7 +316,6 @@ export function WorkbenchPage() {
                     dropTargetRef.current = target;
                   }}
                   onOpenFolder={openFolderPicker}
-                  onOpenSettings={openSettingsTool}
                   onOpenRecentFolder={(path) => void openFolderView(path, "open-folder")}
                   onOpenTreeFile={openTreeFile}
                   onSelectTreeNode={selectTreeNode}
