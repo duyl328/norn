@@ -3272,7 +3272,7 @@
   }
 
   .settings-toggle-on {
-    @apply bg-primary;
+    background: hsl(214 78% 34%);
   }
 
   .settings-toggle-on::after {
@@ -3288,6 +3288,10 @@
 
   .dark .settings-toggle {
     background: hsl(var(--secondary));
+  }
+
+  .dark .settings-toggle-on {
+    background: hsl(214 88% 44%);
   }
 
   .settings-note {
