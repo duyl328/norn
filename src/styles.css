@@ -681,7 +681,7 @@
   }
 
   .mac-titlebar-overlay-layout .editor-surface-panel,
-  .mac-titlebar-overlay-layout .right-task-panel {
+  .mac-titlebar-overlay-layout .git-panel-shell {
     padding-top: var(--mac-titlebar-content-offset);
   }
 
@@ -1700,19 +1700,59 @@
     @apply inline-flex h-5 items-center gap-1 whitespace-nowrap font-mono text-ui-sm text-muted-foreground;
   }
 
-  .right-task-panel {
-    @apply flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden text-card-foreground;
+  /* 卡片外壳:承载背景/边框/圆角,内部并列「滑动内容区 + 竖向 tab 栏」。
+     .right-task-panel 退化为透明的内层(每个模式各一份),由外壳裁剪。 */
+  .git-panel-shell {
+    @apply flex h-full w-full min-h-0 min-w-0 overflow-hidden;
     /* 与编辑区同色、同区域:背景跟 .editor-surface-panel 一致。 */
     background: hsl(var(--editor-background));
   }
 
+  .git-panel-stack {
+    @apply relative min-h-0 min-w-0 flex-1 overflow-hidden;
+  }
+
+  /* N 个模式上下堆叠(track 高 N×100%,每个 pane 占一屏);切换时整条 track 上下滑动。
+     track 高度 / 位移、pane 高度由 JS 按模式数算好走 inline style。 */
+  .git-panel-track {
+    @apply absolute inset-x-0 top-0 flex flex-col;
+    transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .git-panel-pane {
+    @apply flex min-h-0 shrink-0 flex-col overflow-hidden;
+  }
+
+  .git-panel-rail {
+    @apply flex w-[44px] shrink-0 flex-col gap-1 border-l border-border p-1.5;
+    background: hsl(var(--muted) / 0.4);
+  }
+
+  .git-rail-tab {
+    @apply flex flex-col items-center gap-1 rounded-[6px] border border-transparent py-2.5 text-muted-foreground transition-colors;
+  }
+
+  .git-rail-tab:hover {
+    @apply bg-muted text-foreground;
+  }
+
+  .git-rail-tab-active {
+    @apply border-border/60 bg-background text-foreground;
+  }
+
+  .git-rail-tab-label {
+    @apply text-ui-sm font-medium leading-none;
+  }
+
+  .right-task-panel {
+    @apply flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden text-card-foreground;
+  }
+
   /* 仅 macOS:Git 是「编辑+Git」合成卡的右半。
-     - border-left:与编辑区之间的中缝分隔(归属 Git);
-     - 上/下/右边框 + 右下角圆角:与编辑卡拼成同一张卡的右边,右侧贴窗口边;
-     - 离地缝由外层 .workbench-right-panel 的 margin-bottom 提供
-       (w-full 子元素直接加 margin 会溢出,所以放在 grid 项上)。
+     - border:与编辑卡拼成同一张卡的右边,右侧贴窗口边;
+     - 离地缝由外层 .workbench-right-panel 的 margin-bottom 提供。
      Windows 不用这套,走 styles.windows.css 的浮动卡片配置。 */
-  .platform-mac .right-task-panel {
+  .platform-mac .git-panel-shell {
     border-top: var(--workspace-panel-border);
     border-bottom: var(--workspace-panel-border);
     border-left: var(--workspace-panel-border);
@@ -1751,6 +1791,11 @@
 
   .git-panel-body {
     @apply grid min-w-0 content-start gap-1.5 p-2;
+  }
+
+  /* 历史模式:列表自己控制内边距,容器不再加 padding。 */
+  .git-panel-body-flush {
+    @apply block p-0;
   }
 
   .git-repository-card {
@@ -1930,6 +1975,81 @@
     @apply text-ui-md leading-5 text-muted-foreground;
   }
 
+  .git-error-notice {
+    @apply mb-2 grid gap-1 rounded-[4px] border border-destructive/40 bg-destructive/10 p-2;
+  }
+
+  .git-error-notice-title {
+    @apply text-ui font-semibold text-destructive;
+  }
+
+  .git-error-notice-message {
+    @apply text-ui-md leading-5 text-muted-foreground;
+  }
+
+  /* ── IDEA 式并排 diff(@codemirror/merge) ── */
+  .merge-diff {
+    @apply h-full min-h-0 text-ui;
+  }
+
+  .merge-diff .cm-mergeView,
+  .merge-diff .cm-mergeViewEditors {
+    height: 100%;
+  }
+
+  .merge-diff .cm-editor {
+    height: 100%;
+  }
+
+  .merge-diff .cm-editor.cm-focused {
+    outline: none;
+  }
+
+  /* ── 并排对照视图(左旧右新) ── */
+  .diff-view-frame {
+    @apply bg-background;
+  }
+
+  .diff-view {
+    @apply min-w-0 font-mono text-ui-sm leading-5;
+  }
+
+  .diff-view-empty {
+    @apply p-3 text-ui-md text-muted-foreground;
+  }
+
+  .diff-hunk {
+    @apply truncate border-y border-border/60 bg-muted/40 px-2 py-0.5 text-ui-sm text-muted-foreground;
+  }
+
+  .diff-row {
+    @apply grid grid-cols-2;
+  }
+
+  .diff-cell {
+    @apply flex min-w-0 items-baseline gap-2 border-r border-border/40 px-1;
+  }
+
+  .diff-cell-del {
+    @apply bg-destructive/10;
+  }
+
+  .diff-cell-add {
+    @apply bg-emerald-500/10;
+  }
+
+  .diff-cell-empty {
+    @apply bg-muted/20;
+  }
+
+  .diff-no {
+    @apply w-10 shrink-0 select-none text-right text-ui-sm text-muted-foreground/70;
+  }
+
+  .diff-code {
+    @apply min-w-0 whitespace-pre-wrap break-all;
+  }
+
   /* ── 精简变更列表:只列文件,点击查看,不分段不勾选 ── */
   .git-file-list {
     @apply grid min-w-0 gap-0.5;
@@ -2047,6 +2167,22 @@
     @apply gap-1.5 text-primary;
   }
 
+  .git-branch-actions-row {
+    @apply grid grid-cols-2 gap-1 px-1 py-1;
+  }
+
+  .git-branch-actions-row .git-branch-action {
+    @apply justify-center;
+  }
+
+  .git-branch-actions-row-single {
+    @apply grid-cols-1;
+  }
+
+  .git-branch-empty {
+    @apply px-2 py-1.5 text-ui-md text-muted-foreground;
+  }
+
   /* ── 轻量血缘:最近提交 + ref 徽章表达分支关系 ── */
   .git-lineage {
     @apply grid min-w-0;
@@ -2099,420 +2235,213 @@
     color: hsl(var(--primary));
   }
 
+  /* ── 历史模式:面板内拓扑图(上) + 选中提交改动(下) ── */
+  .git-graph-pane {
+    @apply flex h-full min-h-0 flex-col;
+  }
+
+  .git-graph-pane .git-branch-search {
+    @apply mx-2 mt-2;
+  }
+
+  .git-graph-scroll {
+    @apply min-h-0 flex-1 overflow-auto px-1 py-1;
+  }
+
+  .git-graph-inner {
+    @apply relative min-w-0;
+  }
+
+  .git-graph-svg {
+    @apply pointer-events-none absolute left-0 top-0;
+  }
+
+  .git-graph-rows {
+    @apply relative grid min-w-0;
+  }
+
+  .git-graph-row {
+    @apply flex min-w-0 items-center gap-1.5 rounded-[4px] border border-transparent pr-2 text-left transition-colors;
+  }
+
+  .git-graph-row:hover {
+    @apply bg-muted/70;
+  }
+
+  .git-graph-row-selected {
+    @apply border-primary/35 bg-primary/10;
+  }
+
+  .git-graph-subject {
+    @apply min-w-0 flex-1 truncate text-ui-md leading-4;
+  }
+
+  .git-graph-time {
+    @apply shrink-0 font-mono text-ui-sm text-muted-foreground;
+  }
+
+  .git-graph-detail {
+    @apply max-h-[44%] shrink-0 overflow-auto border-t border-border bg-muted/15 p-2;
+  }
+
+  .git-graph-detail-empty {
+    @apply text-ui-md text-muted-foreground;
+  }
+
+  .git-graph-detail-subject {
+    @apply text-ui font-semibold leading-4;
+  }
+
+  .git-graph-detail-meta {
+    @apply mt-1 truncate font-mono text-ui-sm text-muted-foreground;
+  }
+
+  .git-graph-detail-body {
+    @apply mt-1 whitespace-pre-wrap text-ui-sm leading-5 text-muted-foreground;
+  }
+
+  .git-graph-detail-label {
+    @apply mb-1 mt-2 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground;
+  }
+
+  .git-graph-detail-files {
+    @apply grid min-w-0 gap-0.5;
+  }
+
+  .git-history-file {
+    @apply grid min-h-6 min-w-0 grid-cols-[18px_minmax(0,1fr)] items-center gap-2 px-1;
+  }
+
+  /* ── 提交模式:变更文件树 ── */
+  .git-changes-tree {
+    @apply grid min-w-0;
+  }
+
+  .git-tree-file {
+    @apply flex min-h-7 min-w-0 items-center gap-2 rounded-[4px] border border-transparent pr-1.5 text-left transition-colors;
+  }
+
+  .git-tree-file:hover {
+    @apply bg-muted/80;
+  }
+
+  .git-tree-file-selected {
+    @apply border-primary/35 bg-primary/10;
+  }
+
+  .git-tree-file-stat {
+    @apply ml-auto flex shrink-0 items-center gap-1 font-mono text-ui-sm leading-none;
+  }
+
+  /* ── 分支模式:分支树 + 关系 ── */
+  .git-branches {
+    @apply grid min-w-0 content-start p-2;
+  }
+
+  .git-branches-toolbar {
+    @apply mb-1 flex items-center justify-end;
+  }
+
+  .git-branches-group-label {
+    @apply mt-1 px-1.5 py-1 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground;
+  }
+
+  .git-branch-folder {
+    @apply flex min-h-7 min-w-0 items-center gap-1 rounded-[4px] py-0.5 pr-1.5 text-left text-ui-md text-muted-foreground transition-colors;
+  }
+
+  .git-branch-folder:hover {
+    @apply bg-muted/60 text-foreground;
+  }
+
+  .git-branch-leaf {
+    @apply flex min-h-7 min-w-0 items-center gap-1 rounded-[4px] border border-transparent pr-1.5 transition-colors;
+  }
+
+  .git-branch-leaf:hover {
+    @apply bg-muted/80;
+  }
+
+  .git-branch-leaf-selected {
+    @apply border-primary/35 bg-primary/10;
+  }
+
+  .git-branch-leaf-current .git-branch-leaf-check {
+    @apply text-primary;
+  }
+
+  .git-branch-leaf-main {
+    @apply flex min-w-0 flex-1 items-center gap-1.5 py-0.5 text-left text-ui;
+  }
+
+  .git-branch-leaf-check {
+    @apply grid h-4 w-4 shrink-0 place-items-center;
+  }
+
+  .git-branch-leaf-checkout {
+    @apply hidden shrink-0 rounded-[3px] border border-border/70 bg-card px-1.5 py-0.5 text-ui-sm text-muted-foreground;
+  }
+
+  .git-branch-leaf:hover .git-branch-leaf-checkout {
+    @apply block;
+  }
+
+  .git-branch-leaf-checkout:hover {
+    @apply border-border text-foreground;
+  }
+
+  .git-branch-relationship {
+    @apply mb-1 ml-4 grid gap-1.5 rounded-[4px] border border-border/60 bg-muted/15 p-2;
+  }
+
+  .git-branch-relationship-row {
+    @apply flex flex-wrap items-center gap-1.5;
+  }
+
+  .git-branch-relationship-chip {
+    @apply inline-flex items-center gap-1 rounded-[3px] border border-border/70 bg-background/60 px-1.5 py-0.5 font-mono text-ui-sm text-muted-foreground;
+  }
+
+  .git-branch-relationship-commits {
+    @apply grid gap-0.5;
+  }
+
+  .git-branch-relationship-label {
+    @apply text-ui-sm text-muted-foreground;
+  }
+
+  .git-branch-relationship-commit {
+    @apply flex min-w-0 items-center justify-between gap-2 text-ui-md;
+  }
+
+  .git-branch-relationship-meta {
+    @apply shrink-0 font-mono text-ui-sm text-muted-foreground;
+  }
+
   .git-ref-badge-remote {
     border-color: hsl(var(--border));
     background: hsl(var(--muted));
     color: hsl(var(--muted-foreground));
   }
 
-  /* ── 临时 Git 预览(走查用,可整体删除) ── */
-  .git-preview-trigger {
-    @apply fixed bottom-7 right-4 z-40 inline-flex h-7 items-center gap-1.5 rounded-full border border-border bg-card px-3 text-ui-md font-medium text-foreground shadow-tool transition-colors hover:bg-accent;
+  /* 当前分支(HEAD ->):实心主色,最醒目。 */
+  .git-ref-badge-head {
+    border-color: hsl(var(--primary));
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
   }
 
-  .git-preview-overlay {
-    @apply fixed inset-0 z-50 flex items-center justify-center p-6;
-    background: hsl(var(--background) / 0.45);
-    backdrop-filter: blur(8px) saturate(1.1);
+  /* 标签:琥珀色,和分支区分开。 */
+  .git-ref-badge-tag {
+    border-color: rgb(245 158 11 / 0.5);
+    background: rgb(245 158 11 / 0.15);
+    color: rgb(180 83 9);
   }
 
-  .git-preview-window {
-    @apply flex h-[min(680px,88vh)] w-[min(980px,94vw)] flex-col overflow-hidden rounded-[14px] border;
-    border-color: hsl(var(--border) / 0.5);
-    background: hsl(var(--background) / 0.98);
-    box-shadow:
-      0 24px 60px rgb(15 23 42 / 0.24),
-      0 4px 12px rgb(15 23 42 / 0.12);
+  :is(.dark) .git-ref-badge-tag {
+    color: rgb(252 211 77);
   }
 
-  .git-preview-header {
-    @apply flex h-11 shrink-0 items-center gap-3 border-b border-border px-3;
-  }
-
-  .git-preview-eyebrow {
-    @apply shrink-0 text-ui-sm uppercase tracking-wide text-muted-foreground;
-  }
-
-  .git-preview-tabs {
-    @apply flex flex-1 items-center gap-1;
-  }
-
-  .git-preview-tab {
-    @apply inline-flex h-7 items-center gap-1.5 rounded-[7px] border border-transparent px-2.5 text-ui font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground;
-  }
-
-  .git-preview-tab-active {
-    @apply border-primary/35 bg-primary/10 text-foreground;
-  }
-
-  .git-preview-close {
-    @apply grid h-7 w-7 shrink-0 place-items-center rounded-[7px] text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground;
-  }
-
-  .git-preview-body {
-    @apply min-h-0 flex-1;
-  }
-
-  .git-preview-pane {
-    @apply flex min-h-0 flex-col overflow-hidden rounded-[8px] border border-border/70 bg-background/60;
-  }
-
-  .git-preview-pane-title {
-    @apply flex h-8 shrink-0 items-center gap-2 border-b border-border/70 px-2.5 text-ui font-semibold;
-  }
-
-  .git-preview-count {
-    @apply inline-flex h-4 items-center rounded-sm bg-muted px-1.5 font-mono text-ui-sm text-muted-foreground;
-  }
-
-  /* 提交页面:左变更 / 右 diff / 底部提交条 */
-  .git-preview-commit {
-    @apply grid h-full gap-2 p-2;
-    grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) auto;
-  }
-
-  .git-preview-commit-bar {
-    @apply col-span-2 flex items-end justify-between gap-3 rounded-[8px] border border-border/70 bg-background/60 p-2;
-  }
-
-  .git-preview-change-list {
-    @apply min-h-0 flex-1 overflow-auto p-1;
-  }
-
-  .git-preview-change-row {
-    @apply grid w-full grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-2 rounded-[4px] border border-transparent px-1.5 py-1 text-left transition-colors;
-  }
-
-  .git-preview-change-row:hover {
-    @apply bg-muted/70;
-  }
-
-  .git-preview-change-row-selected {
-    @apply border-primary/35 bg-primary/10;
-  }
-
-  .git-preview-change-name {
-    @apply flex min-w-0 items-baseline gap-1.5 truncate text-ui-md;
-  }
-
-  .git-preview-change-stat {
-    @apply flex shrink-0 items-center gap-1 font-mono text-ui-sm;
-  }
-
-  .git-preview-diff-head {
-    @apply justify-between;
-  }
-
-  .git-preview-diff-toggle {
-    @apply shrink-0 font-mono text-ui-sm font-normal text-muted-foreground;
-  }
-
-  .git-preview-diff {
-    @apply min-h-0 flex-1 overflow-auto py-1 font-mono text-ui-md leading-5;
-  }
-
-  .git-preview-diff-line {
-    @apply flex gap-2 px-2;
-  }
-
-  .git-preview-diff-sign {
-    @apply w-2 shrink-0 select-none text-center;
-  }
-
-  .git-preview-diff-text {
-    @apply whitespace-pre;
-  }
-
-  .git-preview-diff-add {
-    @apply bg-emerald-500/10 text-emerald-700 dark:text-emerald-300;
-  }
-
-  .git-preview-diff-del {
-    @apply bg-red-500/10 text-red-700 dark:text-red-300;
-  }
-
-  .git-preview-diff-meta {
-    @apply bg-muted/40 text-muted-foreground;
-  }
-
-  .git-preview-diff-context {
-    @apply text-foreground/75;
-  }
-
-  .git-preview-commit-inputs {
-    @apply grid min-w-0 flex-1 gap-1.5;
-  }
-
-  .git-preview-commit-actions {
-    @apply flex shrink-0 flex-col items-end gap-1.5;
-  }
-
-  /* 分支页面:左分支列表 / 右最近提交关系 */
-  .git-preview-branch {
-    @apply grid h-full gap-2 p-2;
-    grid-template-columns: minmax(260px, 360px) minmax(0, 1fr);
-  }
-
-  .git-preview-branch-list {
-    @apply gap-1 p-2;
-  }
-
-  .git-preview-branch-list .git-branch-current {
-    @apply mb-1;
-  }
-
-  .git-preview-branch-group-label {
-    @apply px-1 pt-1.5 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground;
-  }
-
-  .git-preview-branch-row {
-    @apply flex w-full min-w-0 items-center gap-2 rounded-[4px] border border-transparent px-2 py-1 text-left transition-colors hover:bg-muted/70;
-  }
-
-  .git-preview-branch-row-current {
-    @apply border-border/60;
-  }
-
-  .git-preview-branch-row-selected {
-    @apply border-primary/40 bg-primary/10;
-  }
-
-  .git-preview-branch-name {
-    @apply flex shrink-0 items-center gap-1.5 text-ui;
-  }
-
-  .git-preview-branch-current-tag {
-    @apply inline-flex h-4 items-center rounded-sm bg-primary/15 px-1 text-ui-sm text-primary;
-  }
-
-  .git-preview-branch-commit {
-    @apply ml-auto truncate text-ui-sm text-muted-foreground;
-  }
-
-  .git-preview-lineage {
-    @apply min-h-0 flex-1 overflow-auto p-1;
-  }
-
-  /* 多分支提交图 */
-  .git-graph-legend {
-    @apply ml-auto flex shrink-0 items-center gap-2.5 font-normal;
-  }
-
-  .git-graph-legend-item {
-    @apply flex items-center gap-1 font-mono text-ui-sm text-muted-foreground;
-  }
-
-  .git-graph-legend-dot {
-    @apply h-2 w-2 shrink-0 rounded-full;
-  }
-
-  .git-graph {
-    @apply min-h-0 flex-1 overflow-auto;
-  }
-
-  .git-graph-inner {
-    @apply flex min-w-0;
-  }
-
-  .git-graph-svg {
-    @apply shrink-0;
-  }
-
-  .git-graph-rows {
-    @apply min-w-0 flex-1;
-  }
-
-  .git-graph-row {
-    @apply flex min-w-0 items-center gap-2 border-b border-border/30 pl-1 pr-3 transition-colors;
-  }
-
-  .git-graph-row:hover {
-    @apply bg-muted/50;
-  }
-
-  .git-graph-subject {
-    @apply min-w-0 flex-1 truncate text-ui-md;
-  }
-
-  .git-graph-refs {
-    @apply flex shrink-0 items-center gap-1;
-  }
-
-  .git-graph-meta {
-    @apply shrink-0 font-mono text-ui-sm text-muted-foreground;
-  }
-
-  .git-graph-back {
-    @apply mr-1 inline-flex h-6 items-center rounded-[6px] border border-border/70 px-2 text-ui-md font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground;
-  }
-
-  /* 当前分支偏离视图(范式 B) */
-  .git-diverge {
-    @apply flex min-h-0 flex-1 flex-col;
-  }
-
-  .git-diverge-head {
-    @apply flex flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2;
-  }
-
-  .git-diverge-branch {
-    @apply flex items-center gap-1.5 text-ui-lg font-semibold;
-  }
-
-  .git-diverge-chip {
-    @apply inline-flex h-5 items-center gap-1.5 rounded-[5px] border border-border/70 bg-background/60 px-1.5 font-mono text-ui-sm text-muted-foreground;
-  }
-
-  .git-diverge-body {
-    @apply min-h-0 flex-1 overflow-auto p-2;
-  }
-
-  .git-diverge-section-label {
-    @apply px-1 pb-1 pt-1.5 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground;
-  }
-
-  .git-diverge-row {
-    @apply flex min-w-0 items-stretch gap-2 px-1 py-1;
-  }
-
-  .git-diverge-rail {
-    @apply relative flex w-3 shrink-0 justify-center;
-  }
-
-  .git-diverge-dot {
-    @apply z-10 mt-1 h-2.5 w-2.5 rounded-full;
-  }
-
-  .git-diverge-line {
-    @apply absolute left-1/2 top-1 h-full w-px -translate-x-1/2 opacity-40;
-  }
-
-  .git-diverge-main {
-    @apply grid min-w-0 flex-1;
-  }
-
-  .git-diverge-subject {
-    @apply truncate text-ui-md leading-4;
-  }
-
-  .git-diverge-meta {
-    @apply truncate font-mono text-ui-sm leading-3 text-muted-foreground;
-  }
-
-  .git-diverge-fork {
-    @apply my-1.5 border-y border-dashed border-border/70 px-1 py-1 text-ui-sm italic text-muted-foreground;
-  }
-
-  .git-diverge-graph-link {
-    @apply flex h-9 shrink-0 items-center justify-end gap-1 border-t border-border/60 px-3 text-ui font-medium text-primary transition-colors hover:bg-primary/5;
-  }
-
-  /* IDEA 式提交历史(多分支图 + 详情) */
-  .git-log {
-    @apply flex h-full min-h-0 flex-col;
-  }
-
-  .git-log-toolbar {
-    @apply flex h-9 shrink-0 items-center gap-1.5 border-b border-border px-2;
-  }
-
-  .git-log-filter {
-    @apply inline-flex h-7 cursor-default items-center gap-1 rounded-[6px] border border-border/70 bg-background/60 px-2 text-ui-md text-muted-foreground;
-  }
-
-  .git-log-search {
-    @apply flex h-7 flex-1 items-center gap-1.5 rounded-[6px] border border-border/70 bg-background/60 px-2;
-  }
-
-  .git-log-search-input {
-    @apply h-full w-full bg-transparent text-ui outline-none placeholder:text-muted-foreground;
-  }
-
-  .git-log-main {
-    @apply flex min-h-0 flex-1;
-  }
-
-  .git-log-table {
-    @apply flex min-w-0 flex-1 flex-col overflow-auto;
-  }
-
-  .git-log-head {
-    @apply sticky top-0 z-10 flex h-7 shrink-0 items-center gap-2 border-b border-border/60 pr-3 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground;
-    background: hsl(var(--editor-background));
-  }
-
-  .git-log-graph-inner {
-    @apply flex min-w-0;
-  }
-
-  .git-log-svg {
-    @apply shrink-0;
-  }
-
-  .git-log-rows {
-    @apply flex min-w-0 flex-1 flex-col;
-  }
-
-  .git-log-row {
-    @apply flex w-full min-w-0 items-center gap-2 border-b border-border/25 pr-3 text-left transition-colors;
-  }
-
-  .git-log-row:hover {
-    @apply bg-muted/50;
-  }
-
-  .git-log-row-selected {
-    @apply bg-primary/10;
-  }
-
-  .git-log-subject {
-    @apply flex min-w-0 flex-1 items-center gap-1.5;
-  }
-
-  .git-log-subject-text {
-    @apply truncate text-ui-md;
-  }
-
-  .git-log-col-author {
-    @apply w-14 shrink-0 truncate text-ui-sm text-muted-foreground;
-  }
-
-  .git-log-col-date {
-    @apply w-[88px] shrink-0 truncate font-mono text-ui-sm text-muted-foreground;
-  }
-
-  .git-log-details {
-    @apply flex w-[284px] shrink-0 flex-col gap-1.5 overflow-auto border-l border-border/60 p-3;
-  }
-
-  .git-log-details-hash {
-    @apply font-mono text-ui-sm text-muted-foreground;
-  }
-
-  .git-log-details-subject {
-    @apply text-ui-lg font-semibold leading-5;
-  }
-
-  .git-log-details-body {
-    @apply text-ui-md leading-5 text-foreground/80;
-  }
-
-  .git-log-details-meta {
-    @apply text-ui-md text-muted-foreground;
-  }
-
-  .git-log-details-refs {
-    @apply flex flex-wrap items-center gap-1;
-  }
-
-  .git-log-details-label {
-    @apply pt-1.5 text-ui-sm font-semibold uppercase tracking-wide text-muted-foreground;
-  }
-
-  .git-log-details-file {
-    @apply grid grid-cols-[18px_minmax(0,1fr)] items-center gap-2 py-0.5;
-  }
 
   .settings-page {
     @apply relative h-full min-h-0 overflow-hidden text-foreground;

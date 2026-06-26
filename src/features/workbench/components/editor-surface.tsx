@@ -22,6 +22,8 @@ import {
   getFileTreeIcon,
   getTabBorderAccent,
 } from "../workbench-utils";
+import { DiffView } from "./diff-view";
+import { MergeDiffView } from "./merge-diff-view";
 import { TabFoldStack } from "./titlebar";
 
 // 标签被相邻更高层标签遮挡超过该比例(%)才算「真正进入折叠」,显示堆叠边框;
@@ -432,27 +434,44 @@ export function EditorSurface({
           {highlightWarning}
         </div>
       ) : null}
-      {document.mode === "large-readonly" ? (
-        <div className="border-b border-border bg-muted/40 px-3 py-1.5 text-ui text-muted-foreground">
-          Large file browsing mode{document.size ? ` (${formatFileSize(document.size)})` : ""}. This view is read-only
-          and shows a loaded text range.
+      {document.mode === "diff" ? (
+        <div className="diff-view-frame min-h-0 flex-1 overflow-auto">
+          {document.diff ? (
+            <MergeDiffView
+              filePath={document.path.replace(/^diff:\/\//, "")}
+              name={document.name}
+              original={document.diff.original}
+              modified={document.diff.modified}
+            />
+          ) : (
+            <DiffView text={document.content} />
+          )}
         </div>
-      ) : null}
-      <div className="codemirror-shell-frame min-h-0 flex-1" ref={editorFrameRef}>
-        <div className="codemirror-shell min-h-0 flex-1" ref={editorElementRef} />
-        <EditorScrollbar
-          metrics={scrollMetrics}
-          orientation="vertical"
-          onThumbPointerDown={handleScrollbarThumbPointerDown}
-          onTrackPointerDown={handleScrollbarTrackPointerDown}
-        />
-        <EditorScrollbar
-          metrics={scrollMetrics}
-          orientation="horizontal"
-          onThumbPointerDown={handleScrollbarThumbPointerDown}
-          onTrackPointerDown={handleScrollbarTrackPointerDown}
-        />
-      </div>
+      ) : (
+        <>
+          {document.mode === "large-readonly" ? (
+            <div className="border-b border-border bg-muted/40 px-3 py-1.5 text-ui text-muted-foreground">
+              Large file browsing mode{document.size ? ` (${formatFileSize(document.size)})` : ""}. This view is
+              read-only and shows a loaded text range.
+            </div>
+          ) : null}
+          <div className="codemirror-shell-frame min-h-0 flex-1" ref={editorFrameRef}>
+            <div className="codemirror-shell min-h-0 flex-1" ref={editorElementRef} />
+            <EditorScrollbar
+              metrics={scrollMetrics}
+              orientation="vertical"
+              onThumbPointerDown={handleScrollbarThumbPointerDown}
+              onTrackPointerDown={handleScrollbarTrackPointerDown}
+            />
+            <EditorScrollbar
+              metrics={scrollMetrics}
+              orientation="horizontal"
+              onThumbPointerDown={handleScrollbarThumbPointerDown}
+              onTrackPointerDown={handleScrollbarTrackPointerDown}
+            />
+          </div>
+        </>
+      )}
     </section>
   );
 }

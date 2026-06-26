@@ -52,8 +52,7 @@
   padding: 8px 8px 8px 0; /* 左边贴着拖拽手柄,不额外内缩 */
 }
 
-.platform-windows .right-task-panel {
-  background: hsl(var(--editor-background));
+.platform-windows .git-panel-shell {
   border: var(--workspace-panel-border);
   border-radius: 10px;
 }

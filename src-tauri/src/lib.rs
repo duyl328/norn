@@ -1,3 +1,5 @@
+mod git;
+
 use tauri::{
     menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu},
     Emitter, Manager, Theme,
@@ -1451,6 +1453,20 @@ pub fn run() {
             copy_path,
             copy_external_paths,
             trash_path,
+            git::git_status,
+            git::git_file_diff,
+            git::git_file_versions,
+            git::git_commit,
+            git::git_push,
+            git::git_pull,
+            git::git_checkout,
+            git::git_create_branch,
+            git::git_init,
+            git::git_branches,
+            git::git_recent_commits,
+            git::git_log,
+            git::git_commit_files,
+            git::git_branch_divergence,
         ])
         .run(tauri::generate_context!())
         .expect("error while running norn");

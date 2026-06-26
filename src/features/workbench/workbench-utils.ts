@@ -28,6 +28,7 @@ import type {
   EditorScrollbarOrientation,
   EditorScrollMetrics,
   FileTreeNode,
+  GitError,
   NativeDirectoryEntry,
   NativeFileOperationError,
   NativeSaveError,
@@ -338,6 +339,14 @@ export const getTreeAncestorDirectoryPaths = (filePath: string, rootPath: string
 export const getNativeFileOperationError = (error: unknown): NativeFileOperationError => {
   if (error && typeof error === "object") {
     return error as NativeFileOperationError;
+  }
+
+  return { message: error instanceof Error ? error.message : String(error) };
+};
+
+export const getGitError = (error: unknown): GitError => {
+  if (error && typeof error === "object") {
+    return error as GitError;
   }
 
   return { message: error instanceof Error ? error.message : String(error) };

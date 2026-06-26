@@ -8,7 +8,6 @@ import { SaveConflictDialog, UnsavedChangesDialog } from "./components/dialogs";
 import { EditorSurface } from "./components/editor-surface";
 import { FileTreeNameDialogView, FileTreeTrashDialog } from "./components/file-tree";
 import { GitPanel } from "./components/git-panel";
-import { GitPreview } from "./components/git-preview";
 import { ProjectPanel } from "./components/project-panel";
 import { SettingsPage } from "./components/settings";
 import { StatusBar } from "./components/status-bar";
@@ -22,6 +21,7 @@ import {
   rightPanelMinWidth,
 } from "./constants";
 import { useDocumentSession } from "./hooks/use-document-session";
+import { gitActions } from "./hooks/use-git";
 import { usePanelLayout } from "./hooks/use-panel-layout";
 import { useWorkspaceTree } from "./hooks/use-workspace-tree";
 import { isMac, isWindows } from "./platform";
@@ -79,6 +79,7 @@ export function WorkbenchPage() {
 
   const {
     activateDocument,
+    openDiff,
     closeDocument,
     requestCloseDocument,
     saveAndClosePendingDocument,
@@ -380,7 +381,11 @@ export function WorkbenchPage() {
                 )}
                 aria-hidden={!rightPanelOpen}
               >
-                <GitPanel folderView={folderView} gitWorkspace={gitWorkspace} />
+                <GitPanel
+                  folderView={folderView}
+                  gitWorkspace={gitWorkspace}
+                  onOpenDiff={(file) => void gitActions.loadFileVersions(file).then((versions) => openDiff(file, versions))}
+                />
               </div>
             </main>
             <StatusBar
@@ -390,7 +395,6 @@ export function WorkbenchPage() {
               saveState={saveState}
               gitWorkspace={gitWorkspace}
             />
-            <GitPreview />
             <UnsavedChangesDialog
               open={Boolean(pendingCloseDocument)}
               onCancel={() => setPendingCloseDocument(null)}

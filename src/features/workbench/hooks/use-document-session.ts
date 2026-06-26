@@ -21,6 +21,7 @@ import {
   formatFileSize,
   getFileOpenId,
   getNativeSaveError,
+  getPathName,
   isAbsolutePath,
   isDocumentDirty,
   isTauriRuntime,
@@ -51,6 +52,19 @@ export function useDocumentSession() {
     setOpenDocuments((currentDocuments) => upsertOpenDocument(currentDocuments, nextDocument));
     setSaveConflict(null);
     setSaveState("saved");
+  };
+
+  // 在中间编辑区以只读标签打开某文件的并排 diff(原始 HEAD ↔ 修改后)。同一文件复用同一标签。
+  const openDiff = (file: string, versions: { original: string; modified: string }) => {
+    activateDocument({
+      id: `diff:${file}`,
+      name: `${getPathName(file)} · diff`,
+      path: `diff://${file}`,
+      content: versions.modified,
+      savedContent: versions.modified,
+      mode: "diff",
+      diff: versions,
+    });
   };
 
   const closeDocument = (targetDocument: WorkbenchDocument) => {
@@ -519,6 +533,7 @@ export function useDocumentSession() {
 
   return {
     activateDocument,
+    openDiff,
     closeDocument,
     requestCloseDocument,
     saveAndClosePendingDocument,

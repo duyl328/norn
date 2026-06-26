@@ -100,6 +100,103 @@ export type GitWorkspaceState =
   | { kind: "ready"; inspection: GitWorkspaceInspection }
   | { kind: "error"; message: string; workspacePath: string };
 
+export type GitChangeStatus = "added" | "conflict" | "deleted" | "modified" | "renamed" | "untracked";
+
+export type GitChange = {
+  path: string;
+  status: GitChangeStatus;
+  additions: number;
+  deletions: number;
+  previousPath?: string;
+};
+
+export type GitStatus = {
+  branch?: string | null;
+  upstream?: string | null;
+  ahead: number;
+  behind: number;
+  changes: GitChange[];
+};
+
+export type GitBranch = {
+  name: string;
+  upstream?: string | null;
+  ahead: number;
+  behind: number;
+  lastCommit?: string | null;
+  current: boolean;
+  kind: "local" | "remote";
+};
+
+export type GitBranches = {
+  current?: string | null;
+  local: GitBranch[];
+  remote: GitBranch[];
+};
+
+export type GitCommit = {
+  hash: string;
+  subject: string;
+  author: string;
+  relativeTime: string;
+  refs: string[];
+  isMerge: boolean;
+};
+
+export type GitLogCommit = {
+  hash: string;
+  parents: string[];
+  subject: string;
+  body: string;
+  author: string;
+  date: string;
+  relativeTime: string;
+  refs: string[];
+  isMerge: boolean;
+};
+
+/** git_log 提交 + 前端计算出的泳道列号，用于画图谱。 */
+export type GitGraphCommit = GitLogCommit & { column: number };
+
+export type GitCommitFile = {
+  path: string;
+  status: GitChangeStatus;
+};
+
+export type GitCommitRef = {
+  hash: string;
+  subject: string;
+  relativeTime: string;
+};
+
+export type GitDivergence = {
+  base?: string | null;
+  forkPoint?: GitCommitRef | null;
+  ownCommits: GitCommitRef[];
+  baseNewCommits: GitCommitRef[];
+  aheadOfBase: number;
+  behindBase: number;
+};
+
+/** 右侧 Git 面板的三个模式:提交（变更+提交）/ 分支（分支树+关系）/ 历史（提交列表）。竖向 tab 纵向滑动切换。 */
+export type GitPanelMode = "commit" | "branch" | "history";
+
+export type GitErrorKind =
+  | "git-not-found"
+  | "not-repository"
+  | "identity-missing"
+  | "hook-failed"
+  | "nothing-to-commit"
+  | "no-upstream"
+  | "auth-failed"
+  | "conflict"
+  | "io";
+
+export type GitError = {
+  kind?: GitErrorKind;
+  message?: string;
+};
+
 export type FolderView = {
   rootPath: string;
   rootName: string;
@@ -225,13 +322,20 @@ export type WorkbenchDocument = {
   size?: number;
   lastModified?: number;
   isUntitled?: boolean;
-  mode?: "editable" | "large-readonly";
+  mode?: "editable" | "large-readonly" | "diff";
+  // diff 模式:并排对照的两个完整版本(原始 HEAD / 修改后工作区)。
+  diff?: { original: string; modified: string };
   range?: {
     endOffset: number;
     hasMoreAfter: boolean;
     hasMoreBefore: boolean;
     startOffset: number;
   };
+};
+
+export type GitFileVersions = {
+  original: string;
+  modified: string;
 };
 
 export type EditorTabPreview = {
