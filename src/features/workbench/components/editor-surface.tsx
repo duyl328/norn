@@ -27,7 +27,6 @@ import {
 } from "../workbench-utils";
 import { ConflictResolverView } from "./conflict-resolver-view";
 import { DiffView } from "./diff-view";
-import { MergeDiffView } from "./merge-diff-view";
 import { TabFoldStack } from "./titlebar";
 
 // 标签被相邻更高层标签遮挡超过该比例(%)才算「真正进入折叠」,显示堆叠边框;
@@ -444,7 +443,13 @@ export function EditorSurface({
                       }
                     }}
                   >
-                    <img alt="" aria-hidden="true" className="editor-file-tab-icon" draggable={false} src={tabIcon.src} />
+                    <img
+                      alt=""
+                      aria-hidden="true"
+                      className="editor-file-tab-icon"
+                      draggable={false}
+                      src={tabIcon.src}
+                    />
                     <span className="truncate">{tab.name}</span>
                     <span
                       className={cn("editor-file-tab-trailing", hideCloseButton && "editor-file-tab-trailing-hidden")}
@@ -507,22 +512,12 @@ export function EditorSurface({
         </div>
       ) : null}
       {document.mode === "diff" ? (
-        <div className="diff-view-frame min-h-0 flex-1 overflow-auto">
+        <div className="diff-view-frame min-h-0 flex-1">
           {document.conflict && document.diff ? (
-            <ConflictResolverView
-              filePath={document.path.replace(/^diff:\/\//, "")}
-              text={document.diff.modified}
-            />
+            <ConflictResolverView filePath={document.path.replace(/^diff:\/\//, "")} text={document.diff.modified} />
           ) : document.diff ? (
-            <MergeDiffView
-              filePath={document.path.replace(/^diff:\/\//, "")}
-              name={document.name}
-              original={document.diff.original}
-              modified={document.diff.modified}
-            />
-          ) : (
-            <DiffView text={document.content} />
-          )}
+            <DiffView name={document.name} original={document.diff.original} modified={document.diff.modified} />
+          ) : null}
         </div>
       ) : (
         <>
