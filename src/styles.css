@@ -2013,7 +2013,7 @@
   }
 
   .merge-diff {
-    @apply min-w-0 text-ui;
+    @apply relative min-w-0 text-ui;
   }
 
   .merge-diff .cm-mergeView,
@@ -2021,6 +2021,16 @@
   .merge-diff .cm-mergeViewEditor,
   .merge-diff .cm-editor {
     height: auto;
+  }
+
+  /* 两栏之间留出空当,给连接色带画布。 */
+  .merge-diff .cm-mergeViewEditors {
+    gap: 44px;
+  }
+
+  /* IDEA/Kaleidoscope 连接色带:覆盖在两栏空当上,只在 gap 区画,不挡文字。 */
+  .merge-ribbons {
+    @apply pointer-events-none absolute left-0 top-0 z-[3];
   }
 
   .merge-diff .cm-scroller {
@@ -2063,15 +2073,12 @@
     text-decoration-color: rgb(239 68 68 / 0.85);
   }
 
-  /* 对侧空缺填充块:斜纹灰,看清「这一侧没有对应行 / 多出来的内容在另一侧」 */
+  /* 对侧空缺填充块(Kaleidoscope 风格):不再铺满空白,只用一条居中竖向引导线 +
+     极淡底色提示「这一侧没有对应内容,多出来的在另一侧」。 */
   .merge-diff .cm-mergeSpacer {
-    background: repeating-linear-gradient(
-      45deg,
-      hsl(var(--muted) / 0.6),
-      hsl(var(--muted) / 0.6) 6px,
-      transparent 6px,
-      transparent 12px
-    );
+    background:
+      linear-gradient(hsl(var(--border)), hsl(var(--border))) center / 1px 100% no-repeat,
+      hsl(var(--muted) / 0.12);
   }
 
   /* 改动行的行号 gutter 染色,中间一栏行号也能指示改动位置 */
@@ -2238,6 +2245,61 @@
 
   .git-file-dir {
     @apply truncate font-mono text-ui-sm text-muted-foreground;
+  }
+
+  /* 右键菜单 */
+  .git-ctx-menu {
+    @apply fixed z-50 min-w-[160px] overflow-hidden rounded-[6px] border border-border bg-popover p-1 shadow-tool;
+  }
+
+  .git-ctx-item {
+    @apply flex w-full items-center gap-2 rounded-[4px] px-2 py-1.5 text-left text-ui text-foreground transition-colors;
+  }
+
+  .git-ctx-item:hover {
+    @apply bg-muted;
+  }
+
+  .git-ctx-item-danger {
+    @apply text-destructive;
+  }
+
+  /* 底部「已忽略」区 */
+  .git-ignored-section {
+    @apply mt-1 border-t border-border/60 pt-1;
+  }
+
+  .git-ignored-head {
+    @apply flex w-full items-center gap-1.5 rounded-[4px] px-1.5 py-1 text-left text-ui-md text-muted-foreground transition-colors;
+  }
+
+  .git-ignored-head:hover {
+    @apply bg-muted/60 text-foreground;
+  }
+
+  .git-ignored-count {
+    @apply ml-auto rounded-full bg-muted px-1.5 text-ui-sm text-muted-foreground;
+  }
+
+  /* 已忽略树:整体灰显;目录可展开,文件可点击打开。 */
+  .git-ignored-tree {
+    @apply grid min-w-0 py-1 text-muted-foreground;
+  }
+
+  .git-ignored-tree .tree-row-icon {
+    opacity: 0.6;
+  }
+
+  .git-ignored-row {
+    @apply flex min-h-6 min-w-0 items-center gap-1.5 rounded-[4px] pr-1.5 text-left text-ui-md transition-colors;
+  }
+
+  .git-ignored-row:hover {
+    @apply bg-muted/60 text-foreground;
+  }
+
+  .git-ignored-row-hint {
+    @apply py-0.5 text-ui-sm italic text-muted-foreground;
   }
 
   .git-panel-clean {

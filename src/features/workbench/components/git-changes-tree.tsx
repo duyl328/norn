@@ -104,7 +104,11 @@ function ChangeFolder({
 
   return (
     <>
-      <div className="git-branch-folder git-tree-folder" style={{ paddingLeft: `${depth * 12 + 6}px` }}>
+      <div
+        className="git-branch-folder git-tree-folder"
+        style={{ paddingLeft: `${depth * 12 + 6}px` }}
+        onContextMenu={(event) => shared.onContextMenu(event, `${node.path}/`)}
+      >
         <GitCheckbox state={state} onToggle={() => shared.onTogglePaths(files, state !== "on")} />
         <button type="button" className="git-tree-folder-label" onClick={() => setOpen((value) => !value)}>
           {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
@@ -130,6 +134,7 @@ function ChangeFile({
     <div
       className={cn("git-tree-file", change.path === shared.selectedPath && "git-tree-file-selected")}
       style={{ paddingLeft: `${depth * 12 + 8}px` }}
+      onContextMenu={(event) => shared.onContextMenu(event, change.path)}
     >
       <GitCheckbox state={checked ? "on" : "off"} onToggle={() => shared.onTogglePaths([change.path], !checked)} />
       <button

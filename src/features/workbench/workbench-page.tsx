@@ -389,6 +389,7 @@ export function WorkbenchPage() {
                   onOpenCommitDiff={(hash, file) =>
                     void gitActions.loadCommitFileVersions(hash, file).then((versions) => openCommitDiff(hash, file, versions))
                   }
+                  onOpenFile={(path, size) => requestFileOpen({ kind: "path", path, size })}
                 />
               </div>
             </main>

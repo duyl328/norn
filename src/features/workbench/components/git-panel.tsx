@@ -1,5 +1,14 @@
-import { ChevronDown, GitCommitVertical, GitFork, History, RefreshCw } from "lucide-react";
-import { type ComponentType, type CSSProperties, type ReactNode, useState } from "react";
+import {
+  ChevronDown,
+  ChevronRight,
+  EyeOff,
+  FilePlus2,
+  GitCommitVertical,
+  GitFork,
+  History,
+  RefreshCw,
+} from "lucide-react";
+import { type ComponentType, type CSSProperties, type ReactNode, useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,10 +25,11 @@ import { cn } from "@/lib/utils";
 
 import { gitActions } from "../hooks/use-git";
 import { useWorkbenchStore } from "../store/workbench-store";
-import type { FolderView, GitChangeStatus, GitError, GitPanelMode, GitWorkspaceState } from "../types";
+import type { FolderView, GitChange, GitChangeStatus, GitError, GitPanelMode, GitWorkspaceState } from "../types";
 import { GitBranchesPane } from "./git-branches-pane";
 import { GitChangesTree } from "./git-changes-tree";
 import { GitHistoryPane } from "./git-history";
+import { GitIgnoredTree } from "./git-ignored-tree";
 
 const PANEL_MODES: { key: GitPanelMode; icon: ComponentType<{ className?: string }>; label: string }[] = [
   { key: "commit", icon: GitCommitVertical, label: "提交" },
@@ -39,11 +49,13 @@ export function GitPanel({
   gitWorkspace,
   onOpenCommitDiff,
   onOpenDiff,
+  onOpenFile,
 }: {
   folderView: FolderView | null;
   gitWorkspace: GitWorkspaceState;
   onOpenCommitDiff: (hash: string, file: string) => void;
   onOpenDiff: (file: string) => void;
+  onOpenFile: (path: string, size?: number) => void;
 }) {
   const mode = useWorkbenchStore((state) => state.gitPanelMode);
   const setMode = useWorkbenchStore((state) => state.setGitPanelMode);
@@ -61,7 +73,12 @@ export function GitPanel({
           style={{ height: `${count * 100}%`, transform: `translateY(-${(index * 100) / count}%)` } as CSSProperties}
         >
           <div className="git-panel-pane" style={{ height: paneHeight }} aria-hidden={mode !== "commit"}>
-            <GitCommitMode folderView={folderView} gitWorkspace={gitWorkspace} onOpenDiff={onOpenDiff} />
+            <GitCommitMode
+              folderView={folderView}
+              gitWorkspace={gitWorkspace}
+              onOpenDiff={onOpenDiff}
+              onOpenFile={onOpenFile}
+            />
           </div>
           <div className="git-panel-pane" style={{ height: paneHeight }} aria-hidden={mode !== "branch"}>
             <GitBranchMode />
@@ -115,10 +132,12 @@ function GitCommitMode({
   folderView,
   gitWorkspace,
   onOpenDiff,
+  onOpenFile,
 }: {
   folderView: FolderView | null;
   gitWorkspace: GitWorkspaceState;
   onOpenDiff: (file: string) => void;
+  onOpenFile: (path: string, size?: number) => void;
 }) {
   const gitStatus = useWorkbenchStore((state) => state.gitStatus);
   const gitBusy = useWorkbenchStore((state) => state.gitBusy);
@@ -132,6 +151,9 @@ function GitCommitMode({
   const isNonRepository = gitWorkspace.kind === "ready" && !gitWorkspace.inspection.isRepository;
   const changeCount = changes.length;
   const hasChanges = changeCount > 0;
+  // 已跟踪改动进主区;未跟踪(新文件)挪到底部单独分组(类似 IDEA)。提交集合仍含勾选的未跟踪文件。
+  const tracked = changes.filter((change) => change.status !== "untracked");
+  const untracked = changes.filter((change) => change.status === "untracked");
   const selectedFiles = changes.filter((change) => !unchecked.has(change.path)).map((change) => change.path);
 
   const togglePaths = (paths: string[], value: boolean) =>
@@ -147,6 +169,15 @@ function GitCommitMode({
       return next;
     });
 
+  const treeProps = {
+    isChecked: (path: string) => !unchecked.has(path),
+    onAddIgnore: (entry: string) => void gitActions.addToGitignore(entry),
+    onOpen: onOpenDiff,
+    onSelect: setSelectedPath,
+    onTogglePaths: togglePaths,
+    selectedPath,
+  };
+
   return (
     <RightTaskPanel
       eyebrow="Git"
@@ -160,22 +191,101 @@ function GitCommitMode({
         {isNonRepository ? (
           <GitWorkspaceNotice gitWorkspace={gitWorkspace} hasWorkspace={hasWorkspace} busy={gitBusy} />
         ) : hasChanges ? (
-          <GitChangesTree
-            changes={changes}
-            selectedPath={selectedPath}
-            isChecked={(path) => !unchecked.has(path)}
-            onSelect={setSelectedPath}
-            onTogglePaths={togglePaths}
-            onOpen={onOpenDiff}
-          />
+          <>
+            {tracked.length > 0 ? <GitChangesTree changes={tracked} {...treeProps} /> : null}
+            {untracked.length > 0 ? <GitUntrackedSection changes={untracked} {...treeProps} /> : null}
+          </>
         ) : (
           <div className="git-panel-clean">
             <div className="git-panel-clean-title">工作区已干净</div>
             <div className="git-panel-clean-description">当前没有本地变更，可以放心切换分支。</div>
           </div>
         )}
+        {!isNonRepository ? <GitIgnoredSection onOpenFile={onOpenFile} /> : null}
       </div>
     </RightTaskPanel>
+  );
+}
+
+/** 底部「已忽略」区:被 .gitignore 忽略的条目;目录可展开看真实内容、文件可点击打开。默认收起。 */
+function GitIgnoredSection({ onOpenFile }: { onOpenFile: (path: string, size?: number) => void }) {
+  const rootPath = useWorkbenchStore((state) => state.folderView?.rootPath ?? null);
+  const gitStatus = useWorkbenchStore((state) => state.gitStatus);
+  const [items, setItems] = useState<string[]>([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!rootPath) {
+      setItems([]);
+      return;
+    }
+    let alive = true;
+    void gitActions.loadIgnored().then((result) => {
+      if (alive) {
+        setItems(result);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [rootPath, gitStatus]);
+
+  if (items.length === 0 || !rootPath) {
+    return null;
+  }
+
+  return (
+    <div className="git-ignored-section">
+      <button type="button" className="git-ignored-head" onClick={() => setOpen((value) => !value)}>
+        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+        <EyeOff className="h-3.5 w-3.5 shrink-0" />
+        <span>已忽略</span>
+        <span className="git-ignored-count">{items.length}</span>
+      </button>
+      {open ? <GitIgnoredTree entries={items} rootPath={rootPath} onOpenFile={onOpenFile} /> : null}
+    </div>
+  );
+}
+
+/** 未跟踪(新文件)分组:挪到底部,带勾选 / 双击 diff / 右键忽略;勾选的仍计入提交。 */
+function GitUntrackedSection({
+  changes,
+  isChecked,
+  onAddIgnore,
+  onOpen,
+  onSelect,
+  onTogglePaths,
+  selectedPath,
+}: {
+  changes: GitChange[];
+  isChecked: (path: string) => boolean;
+  onAddIgnore: (entry: string) => void;
+  onOpen: (path: string) => void;
+  onSelect: (path: string) => void;
+  onTogglePaths: (paths: string[], value: boolean) => void;
+  selectedPath: string | null;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="git-ignored-section">
+      <button type="button" className="git-ignored-head" onClick={() => setOpen((value) => !value)}>
+        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+        <FilePlus2 className="h-3.5 w-3.5 shrink-0" />
+        <span>未跟踪</span>
+        <span className="git-ignored-count">{changes.length}</span>
+      </button>
+      {open ? (
+        <GitChangesTree
+          changes={changes}
+          isChecked={isChecked}
+          onAddIgnore={onAddIgnore}
+          onOpen={onOpen}
+          onSelect={onSelect}
+          onTogglePaths={onTogglePaths}
+          selectedPath={selectedPath}
+        />
+      ) : null}
+    </div>
   );
 }
 
