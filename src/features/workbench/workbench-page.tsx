@@ -28,10 +28,12 @@ import {
 import { useDocumentSession } from "./hooks/use-document-session";
 import { gitActions } from "./hooks/use-git";
 import { usePanelLayout } from "./hooks/use-panel-layout";
+import { useSettingsRuntime } from "./hooks/use-settings-runtime";
 import { useWorkspaceTree } from "./hooks/use-workspace-tree";
 import { isMac, isWindows } from "./platform";
+import { loadSettings } from "./settings";
 import { useWorkbenchStore } from "./store/workbench-store";
-import { isDocumentDirty, isTauriRuntime, loadKeymapOverrides, saveEditorLineWrapping } from "./workbench-utils";
+import { isDocumentDirty, isTauriRuntime, loadKeymapOverrides } from "./workbench-utils";
 
 export function WorkbenchPage() {
   const document = useWorkbenchStore((state) => state.document);
@@ -43,8 +45,6 @@ export function WorkbenchPage() {
   const rightPanelWidth = useWorkbenchStore((state) => state.rightPanelWidth);
   const resizingPanel = useWorkbenchStore((state) => state.resizingPanel);
   const resizeHandleHintsVisible = useWorkbenchStore((state) => state.resizeHandleHintsVisible);
-  const editorLineWrapping = useWorkbenchStore((state) => state.editorLineWrapping);
-  const setEditorLineWrapping = useWorkbenchStore((state) => state.setEditorLineWrapping);
   const settingsOpen = useWorkbenchStore((state) => state.settingsOpen);
   const setSettingsOpen = useWorkbenchStore((state) => state.setSettingsOpen);
   const fileError = useWorkbenchStore((state) => state.fileError);
@@ -70,6 +70,7 @@ export function WorkbenchPage() {
   const setDropTarget = useWorkbenchStore((state) => state.setDropTarget);
   const saveState = useWorkbenchStore((state) => state.saveState);
   const searchOpen = useWorkbenchStore((state) => state.searchOpen);
+  const showStatusBar = useWorkbenchStore((state) => state.showStatusBar);
   const gitStatus = useWorkbenchStore((state) => state.gitStatus);
   const showWindowsTitlebar = useMemo(() => isWindows(), []);
   const showMacTitlebar = useMemo(() => isMac(), []);
@@ -81,7 +82,6 @@ export function WorkbenchPage() {
     openSearchTool,
     closeSearchTool,
     openSettingsTool,
-    updateResizeHandleHintsVisible,
     resizePanelWithKeyboard,
     startPanelResize,
   } = usePanelLayout();
@@ -181,6 +181,20 @@ export function WorkbenchPage() {
     openFileTreeContextMenu,
   } = useWorkspaceTree({ requestFileOpen });
 
+  // 启动恢复上次工作区:若开启且当前无打开的文件夹,打开最近文件夹。只跑一次。
+  const restoredWorkspaceRef = useRef(false);
+  useEffect(() => {
+    if (restoredWorkspaceRef.current) return;
+    restoredWorkspaceRef.current = true;
+    void loadSettings().then((stored) => {
+      if (!stored?.ui.restoreLastWorkspace) return;
+      const state = useWorkbenchStore.getState();
+      if (state.folderView) return;
+      const recent = state.recentFolders[0];
+      if (recent) void openFolderView(recent.path, "open-folder");
+    });
+  }, [openFolderView]);
+
   // action 系统的回调来源:全部复用上面的 hook 输出,不重写业务逻辑。
   const actionDeps: ActionDeps = {
     createFile,
@@ -193,21 +207,7 @@ export function WorkbenchPage() {
     openSettingsTool,
   };
 
-  const settingsPageNode = (
-    <SettingsPage
-      editorLineWrapping={editorLineWrapping}
-      gitWorkspace={gitWorkspace}
-      onBack={() => setSettingsOpen(false)}
-      onToggleEditorLineWrapping={() => {
-        const next = !editorLineWrapping;
-        setEditorLineWrapping(next);
-        saveEditorLineWrapping(next);
-      }}
-      onToggleResizeHandleHints={() => updateResizeHandleHintsVisible(!resizeHandleHintsVisible)}
-      resizeHandleHintsVisible={resizeHandleHintsVisible}
-      showMacTitlebar={showMacTitlebar}
-    />
-  );
+  const settingsPageNode = <SettingsPage onBack={() => setSettingsOpen(false)} showMacTitlebar={showMacTitlebar} />;
 
   return (
     <ActionsProvider deps={actionDeps}>
@@ -320,6 +320,7 @@ export function WorkbenchPage() {
                     }}
                     onOpenFolder={openFolderPicker}
                     onOpenRecentFolder={(path) => void openFolderView(path, "open-folder")}
+                    onOpenSettings={openSettingsTool}
                     onOpenTreeFile={openTreeFile}
                     onSelectTreeNode={selectTreeNode}
                     onTreeKeyDown={handleTreeKeyDown}
@@ -402,14 +403,16 @@ export function WorkbenchPage() {
                   />
                 </div>
               </main>
-              <StatusBar
-                document={document}
-                isDirty={isDirty}
-                onChangeEncoding={(option) => void changeDocumentEncoding(option)}
-                onOpenSettings={openSettingsTool}
-                saveState={saveState}
-                gitWorkspace={gitWorkspace}
-              />
+              {showStatusBar ? (
+                <StatusBar
+                  document={document}
+                  isDirty={isDirty}
+                  onChangeEncoding={(option) => void changeDocumentEncoding(option)}
+                  onOpenSettings={openSettingsTool}
+                  saveState={saveState}
+                  gitWorkspace={gitWorkspace}
+                />
+              ) : null}
               <UnsavedChangesDialog
                 open={Boolean(pendingCloseDocument)}
                 onCancel={() => setPendingCloseDocument(null)}
@@ -488,6 +491,7 @@ const NATIVE_MENU_TO_ACTION: Record<string, string> = {
  */
 function WorkbenchActionsRuntime() {
   useKeybindings();
+  useSettingsRuntime();
   const { dispatch } = useActions();
   const setKeymapOverrides = useWorkbenchStore((state) => state.setKeymapOverrides);
 

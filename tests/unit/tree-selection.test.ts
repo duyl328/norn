@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { applyTreeClick, moveTreeLead, orderedRange } from "@/features/workbench/workbench-utils";
 import type { TreeSelection } from "@/features/workbench/types";
+import { applyTreeClick, moveTreeLead, orderedRange } from "@/features/workbench/workbench-utils";
 
 const order = ["/a", "/a/b", "/a/c", "/d", "/e"];
 const plain = { toggle: false, range: false };

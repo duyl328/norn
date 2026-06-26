@@ -205,6 +205,14 @@ struct GitWorkspaceInspection {
     message: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GitCliDetection {
+    available: bool,
+    version: Option<String>,
+    message: String,
+}
+
 #[tauri::command]
 fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
@@ -213,6 +221,36 @@ fn app_version() -> &'static str {
 #[tauri::command]
 fn take_initial_open_files(state: tauri::State<'_, PendingOpenFilesState>) -> Vec<String> {
     std::mem::take(&mut *state.0.lock().unwrap())
+}
+
+/// 快捷检测:仅运行 `git --version`,不依赖任何打开的文件夹。供设置页「检测 Git」按钮用。
+#[tauri::command]
+fn detect_git_cli() -> GitCliDetection {
+    match Command::new("git").arg("--version").output() {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            GitCliDetection {
+                available: true,
+                version: (!version.is_empty()).then_some(version),
+                message: "Git 命令可用。".to_string(),
+            }
+        }
+        Ok(_) => GitCliDetection {
+            available: false,
+            version: None,
+            message: "Git 命令不可用，请检查安装状态。".to_string(),
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => GitCliDetection {
+            available: false,
+            version: None,
+            message: "未检测到 Git 命令，请先安装 Git。".to_string(),
+        },
+        Err(error) => GitCliDetection {
+            available: false,
+            version: None,
+            message: format!("检测 Git 失败：{error}"),
+        },
+    }
 }
 
 #[tauri::command]
@@ -1913,6 +1951,73 @@ fn write_keybindings(app: tauri::AppHandle, contents: String) -> Result<(), Stri
     Ok(())
 }
 
+// 通用应用配置文件读写(appConfigDir 下的命名 JSON,如 settings.json)。
+// name 必须是单纯文件名:禁止分隔符与 ..,防止路径穿越。
+fn app_config_file_path<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    name: &str,
+) -> Result<PathBuf, String> {
+    if name.is_empty()
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains("..")
+        || name.contains('\0')
+    {
+        return Err(format!("Invalid config file name: {name}"));
+    }
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| format!("Unable to resolve app config directory: {error}"))?;
+    Ok(dir.join(name))
+}
+
+#[tauri::command]
+fn read_config_file(app: tauri::AppHandle, name: String) -> Result<Option<String>, String> {
+    let path = app_config_file_path(&app, &name)?;
+    match fs::read_to_string(&path) {
+        Ok(contents) => Ok(Some(contents)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("Unable to read {name}: {error}")),
+    }
+}
+
+#[tauri::command]
+fn write_config_file(app: tauri::AppHandle, name: String, contents: String) -> Result<(), String> {
+    let path = app_config_file_path(&app, &name)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Unable to create config directory: {error}"))?;
+    }
+    fs::write(&path, contents).map_err(|error| format!("Unable to write {name}: {error}"))?;
+    Ok(())
+}
+
+/// 由前端主题设置驱动原生窗口外观:"light"/"dark" 固定,其它(system/null)跟随系统。
+/// 不固定窗口主题时,webview 的 prefers-color-scheme 才会反映真实系统明暗。
+#[tauri::command]
+fn set_window_theme(app: tauri::AppHandle, theme: Option<String>) -> Result<(), String> {
+    let resolved = match theme.as_deref() {
+        Some("light") => Some(Theme::Light),
+        Some("dark") => Some(Theme::Dark),
+        _ => None,
+    };
+    app.set_theme(resolved);
+    if let Some(window) = app.get_webview_window("main") {
+        window.set_theme(resolved).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+/// 返回 appConfigDir 绝对路径,给设置页「显示配置位置」用。
+#[tauri::command]
+fn app_config_dir(app: tauri::AppHandle) -> Result<String, String> {
+    app.path()
+        .app_config_dir()
+        .map(|dir| dir.to_string_lossy().into_owned())
+        .map_err(|error| format!("Unable to resolve app config directory: {error}"))
+}
+
 /// 读 keybindings.json 为 actionId → 键位串数组。任何错误都退化为空表(用默认加速键)。
 #[cfg(target_os = "macos")]
 fn read_keybindings_map<R: tauri::Runtime>(
@@ -2246,6 +2351,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_version,
             take_initial_open_files,
+            detect_git_cli,
             inspect_git_workspace,
             open_file_dialog,
             open_folder_dialog,
@@ -2271,6 +2377,10 @@ pub fn run() {
             trash_path,
             read_keybindings,
             write_keybindings,
+            read_config_file,
+            write_config_file,
+            set_window_theme,
+            app_config_dir,
             git::git_status,
             git::git_file_diff,
             git::git_file_versions,

@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 import { setActiveEditorView } from "../actions/active-editor";
 import { buildEditorKeymapExtension } from "../actions/editor-actions";
-import { createCodeMirrorExtensions } from "../codemirror-setup";
+import { createCodeMirrorExtensions, tabSizeExtension } from "../codemirror-setup";
 import { EDITOR_SCROLLBAR_SIZE, emptyEditorScrollMetrics } from "../constants";
 import {
   FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES,
@@ -60,9 +60,11 @@ export function EditorSurface({
   const languageCompartmentRef = useRef(new Compartment());
   const keymapCompartmentRef = useRef(new Compartment());
   const lineWrapCompartmentRef = useRef(new Compartment());
+  const tabSizeCompartmentRef = useRef(new Compartment());
   const keymapOverrides = useWorkbenchStore((state) => state.keymapOverrides);
   const keymapOverridesRef = useRef(keymapOverrides);
   const lineWrapping = useWorkbenchStore((state) => state.editorLineWrapping);
+  const tabSize = useWorkbenchStore((state) => state.editorTabSize);
   const dragRef = useRef<{
     maxScroll: number;
     orientation: EditorScrollbarOrientation;
@@ -118,6 +120,7 @@ export function EditorSurface({
         extensions: createCodeMirrorExtensions(
           languageCompartmentRef.current,
           lineWrapCompartmentRef.current,
+          tabSizeCompartmentRef.current,
           document,
           (content) => {
             if (!suppressChangeRef.current) {
@@ -126,6 +129,7 @@ export function EditorSurface({
           },
           keymapCompartmentRef.current.of(buildEditorKeymapExtension(keymapOverridesRef.current)),
           useWorkbenchStore.getState().editorLineWrapping,
+          useWorkbenchStore.getState().editorTabSize,
         ),
       }),
     });
@@ -264,6 +268,13 @@ export function EditorSurface({
       effects: lineWrapCompartmentRef.current.reconfigure(lineWrapping ? EditorView.lineWrapping : []),
     });
   }, [lineWrapping]);
+
+  // 设置里改 Tab 宽度时同理:只重配置 compartment。
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: tabSizeCompartmentRef.current.reconfigure(tabSizeExtension(tabSize)),
+    });
+  }, [tabSize]);
 
   const setScrollPosition = (orientation: EditorScrollbarOrientation, value: number) => {
     const scrollDOM = scrollDOMRef.current;

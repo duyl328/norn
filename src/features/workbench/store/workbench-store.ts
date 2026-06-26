@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import { leftPanelDefaultWidth, rightPanelDefaultWidth, scratchPanelDefaultHeight } from "../constants";
+import { type AppSettings, DEFAULT_SETTINGS } from "../settings";
 import type {
   FileTreeClipboard,
   FileTreeContextMenuState,
@@ -62,6 +63,12 @@ export interface WorkbenchState {
   resizingPanel: "left" | "right" | null;
   resizeHandleHintsVisible: boolean;
   editorLineWrapping: boolean;
+  theme: AppSettings["theme"];
+  editorFontSize: number;
+  editorTabSize: number;
+  editorFormatOnSave: boolean;
+  showStatusBar: boolean;
+  restoreLastWorkspace: boolean;
   scratchPanelHeight: number;
   settingsOpen: boolean;
   searchOpen: boolean;
@@ -75,6 +82,13 @@ export interface WorkbenchState {
   setResizingPanel: (setter: StateSetter<"left" | "right" | null>) => void;
   setResizeHandleHintsVisible: (setter: StateSetter<boolean>) => void;
   setEditorLineWrapping: (setter: StateSetter<boolean>) => void;
+  setTheme: (setter: StateSetter<AppSettings["theme"]>) => void;
+  setEditorFontSize: (setter: StateSetter<number>) => void;
+  setEditorTabSize: (setter: StateSetter<number>) => void;
+  setEditorFormatOnSave: (setter: StateSetter<boolean>) => void;
+  setShowStatusBar: (setter: StateSetter<boolean>) => void;
+  setRestoreLastWorkspace: (setter: StateSetter<boolean>) => void;
+  applySettings: (settings: AppSettings) => void;
   setScratchPanelHeight: (setter: StateSetter<number>) => void;
   setSettingsOpen: (setter: StateSetter<boolean>) => void;
   setSearchOpen: (setter: StateSetter<boolean>) => void;
@@ -161,6 +175,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   resizingPanel: null,
   resizeHandleHintsVisible: loadResizeHandleHints(),
   editorLineWrapping: loadEditorLineWrapping(),
+  theme: DEFAULT_SETTINGS.theme,
+  editorFontSize: DEFAULT_SETTINGS.editor.fontSize,
+  editorTabSize: DEFAULT_SETTINGS.editor.tabSize,
+  editorFormatOnSave: DEFAULT_SETTINGS.editor.formatOnSave,
+  showStatusBar: DEFAULT_SETTINGS.ui.showStatusBar,
+  restoreLastWorkspace: DEFAULT_SETTINGS.ui.restoreLastWorkspace,
   scratchPanelHeight: scratchPanelDefaultHeight,
   settingsOpen: false,
   searchOpen: false,
@@ -177,6 +197,25 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({ resizeHandleHintsVisible: resolveSetter(setter, state.resizeHandleHintsVisible) })),
   setEditorLineWrapping: (setter) =>
     set((state) => ({ editorLineWrapping: resolveSetter(setter, state.editorLineWrapping) })),
+  setTheme: (setter) => set((state) => ({ theme: resolveSetter(setter, state.theme) })),
+  setEditorFontSize: (setter) => set((state) => ({ editorFontSize: resolveSetter(setter, state.editorFontSize) })),
+  setEditorTabSize: (setter) => set((state) => ({ editorTabSize: resolveSetter(setter, state.editorTabSize) })),
+  setEditorFormatOnSave: (setter) =>
+    set((state) => ({ editorFormatOnSave: resolveSetter(setter, state.editorFormatOnSave) })),
+  setShowStatusBar: (setter) => set((state) => ({ showStatusBar: resolveSetter(setter, state.showStatusBar) })),
+  setRestoreLastWorkspace: (setter) =>
+    set((state) => ({ restoreLastWorkspace: resolveSetter(setter, state.restoreLastWorkspace) })),
+  applySettings: (settings) =>
+    set(() => ({
+      theme: settings.theme,
+      editorFontSize: settings.editor.fontSize,
+      editorTabSize: settings.editor.tabSize,
+      editorLineWrapping: settings.editor.lineWrapping,
+      editorFormatOnSave: settings.editor.formatOnSave,
+      showStatusBar: settings.ui.showStatusBar,
+      resizeHandleHintsVisible: settings.ui.resizeHandleHints,
+      restoreLastWorkspace: settings.ui.restoreLastWorkspace,
+    })),
   setScratchPanelHeight: (setter) =>
     set((state) => ({ scratchPanelHeight: resolveSetter(setter, state.scratchPanelHeight) })),
   setSettingsOpen: (setter) => set((state) => ({ settingsOpen: resolveSetter(setter, state.settingsOpen) })),
@@ -250,3 +289,19 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setTreeSelection: (setter) => set((state) => ({ treeSelection: resolveSetter(setter, state.treeSelection) })),
   setTreeSearch: (setter) => set((state) => ({ treeSearch: resolveSetter(setter, state.treeSearch) })),
 }));
+
+/** 从 store 扁平 prefs 收集成可序列化的 AppSettings(持久化 / 导出用)。 */
+export const collectSettings = (state: WorkbenchState): AppSettings => ({
+  theme: state.theme,
+  editor: {
+    fontSize: state.editorFontSize,
+    tabSize: state.editorTabSize,
+    lineWrapping: state.editorLineWrapping,
+    formatOnSave: state.editorFormatOnSave,
+  },
+  ui: {
+    showStatusBar: state.showStatusBar,
+    resizeHandleHints: state.resizeHandleHintsVisible,
+    restoreLastWorkspace: state.restoreLastWorkspace,
+  },
+});
