@@ -1,3 +1,6 @@
+use encoding_rs::{
+    Encoding, BIG5, EUC_JP, EUC_KR, GBK, SHIFT_JIS, UTF_16BE, UTF_16LE, UTF_8, WINDOWS_1252,
+};
 use notify_debouncer_mini::{
     new_debouncer,
     notify::{RecommendedWatcher, RecursiveMode},
@@ -56,6 +59,10 @@ struct TextFile {
     content: String,
     size: u64,
     last_modified: Option<u64>,
+    encoding: String,
+    encoding_label: String,
+    encoding_candidates: Vec<TextEncodingCandidate>,
+    has_bom: bool,
 }
 
 #[derive(Serialize)]
@@ -67,6 +74,12 @@ struct TextFileInspection {
     last_modified: Option<u64>,
     is_binary: bool,
     is_utf8: bool,
+    is_text: bool,
+    encoding: Option<String>,
+    encoding_label: Option<String>,
+    encoding_confidence: f32,
+    encoding_candidates: Vec<TextEncodingCandidate>,
+    has_bom: bool,
     sample: String,
 }
 
@@ -81,6 +94,20 @@ struct TextFileRange {
     end_offset: u64,
     has_more_before: bool,
     has_more_after: bool,
+    encoding: String,
+    encoding_label: String,
+    encoding_candidates: Vec<TextEncodingCandidate>,
+    has_bom: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TextEncodingCandidate {
+    encoding: String,
+    label: String,
+    confidence: f32,
+    valid: bool,
+    recommended: bool,
 }
 
 #[derive(Serialize)]
@@ -90,19 +117,23 @@ struct SavedTextFile {
     path: String,
     size: u64,
     last_modified: Option<u64>,
+    encoding: String,
+    encoding_label: String,
+    has_bom: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SaveTextFileError {
     kind: SaveTextFileErrorKind,
     message: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum SaveTextFileErrorKind {
     Deleted,
+    Encoding,
     InvalidPath,
     Io,
     Modified,
@@ -328,7 +359,7 @@ async fn open_save_dialog(app: tauri::AppHandle, default_name: Option<String>) -
 }
 
 #[tauri::command]
-fn read_text_file(path: String) -> Result<TextFile, String> {
+fn read_text_file(path: String, encoding: Option<String>) -> Result<TextFile, String> {
     let path = PathBuf::from(path);
     let metadata = fs::metadata(&path)
         .map_err(|error| format_file_error("Unable to read file metadata", &path, error))?;
@@ -340,12 +371,17 @@ fn read_text_file(path: String) -> Result<TextFile, String> {
     let bytes =
         fs::read(&path).map_err(|error| format_file_error("Unable to read file", &path, error))?;
 
-    if bytes.contains(&0) {
-        return Err(format!("{} appears to be a binary file", path.display()));
+    let decoded = match encoding.as_deref() {
+        Some(encoding) => decode_text_bytes_as_encoding(&bytes, encoding),
+        None => decode_text_bytes(&bytes),
     }
-
-    let content = String::from_utf8(bytes)
-        .map_err(|_| format!("{} is not valid UTF-8 text", path.display()))?;
+    .ok_or_else(|| {
+        if looks_binary(&bytes) {
+            format!("{} appears to be a binary file", path.display())
+        } else {
+            format!("{} is not a supported text encoding", path.display())
+        }
+    })?;
     let name = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -355,9 +391,13 @@ fn read_text_file(path: String) -> Result<TextFile, String> {
     Ok(TextFile {
         name,
         path: path.to_string_lossy().into_owned(),
-        content,
+        content: decoded.content,
         size: metadata.len(),
         last_modified: modified_time_millis(&metadata),
+        encoding: decoded.encoding.to_string(),
+        encoding_label: decoded.encoding_label.to_string(),
+        encoding_candidates: encoding_candidates_for_bytes(&bytes, Some(decoded.encoding)),
+        has_bom: decoded.has_bom,
     })
 }
 
@@ -367,6 +407,8 @@ fn save_text_file(
     content: String,
     expected_last_modified: Option<u64>,
     force: Option<bool>,
+    encoding: Option<String>,
+    has_bom: Option<bool>,
 ) -> Result<SavedTextFile, SaveTextFileError> {
     let path = PathBuf::from(path);
     let metadata = fs::metadata(&path).map_err(|error| {
@@ -413,12 +455,19 @@ fn save_text_file(
         ));
     }
 
-    atomic_write_text_file(&path, &content)?;
-    saved_text_file_from_path(&path)
+    let encoding_name = encoding.as_deref().unwrap_or("utf-8");
+    let encoded = encode_text_bytes(&content, encoding_name, has_bom.unwrap_or(false))?;
+    atomic_write_text_file(&path, &encoded)?;
+    saved_text_file_from_path(&path, encoding_name, has_bom.unwrap_or(false))
 }
 
 #[tauri::command]
-fn save_text_file_as(path: String, content: String) -> Result<SavedTextFile, SaveTextFileError> {
+fn save_text_file_as(
+    path: String,
+    content: String,
+    encoding: Option<String>,
+    has_bom: Option<bool>,
+) -> Result<SavedTextFile, SaveTextFileError> {
     let path = PathBuf::from(path);
 
     if path
@@ -446,8 +495,10 @@ fn save_text_file_as(path: String, content: String) -> Result<SavedTextFile, Sav
         ));
     }
 
-    atomic_write_text_file(&path, &content)?;
-    saved_text_file_from_path(&path)
+    let encoding_name = encoding.as_deref().unwrap_or("utf-8");
+    let encoded = encode_text_bytes(&content, encoding_name, has_bom.unwrap_or(false))?;
+    atomic_write_text_file(&path, &encoded)?;
+    saved_text_file_from_path(&path, encoding_name, has_bom.unwrap_or(false))
 }
 
 #[tauri::command]
@@ -470,10 +521,14 @@ fn inspect_text_file(path: String) -> Result<TextFileInspection, String> {
         .map_err(|error| format_file_error("Unable to inspect file", &path, error))?;
     buffer.truncate(bytes_read);
 
-    let is_binary = buffer.contains(&0);
-    let is_utf8 = !is_binary && std::str::from_utf8(&buffer).is_ok();
-    let sample = if is_utf8 {
-        String::from_utf8_lossy(&buffer).into_owned()
+    let decoded = decode_text_bytes(&buffer);
+    let is_binary = decoded.is_none() && looks_binary(&buffer);
+    let is_utf8 = decoded
+        .as_ref()
+        .map(|decoded| decoded.encoding == "utf-8" || decoded.encoding == "utf-8-bom")
+        .unwrap_or(false);
+    let sample = if let Some(decoded) = &decoded {
+        decoded.content.clone()
     } else {
         String::new()
     };
@@ -490,12 +545,34 @@ fn inspect_text_file(path: String) -> Result<TextFileInspection, String> {
         last_modified: modified_time_millis(&metadata),
         is_binary,
         is_utf8,
+        is_text: decoded.is_some(),
+        encoding: decoded.as_ref().map(|decoded| decoded.encoding.to_string()),
+        encoding_label: decoded
+            .as_ref()
+            .map(|decoded| decoded.encoding_label.to_string()),
+        encoding_confidence: decoded
+            .as_ref()
+            .map(|decoded| decoded.confidence)
+            .unwrap_or(0.0),
+        encoding_candidates: encoding_candidates_for_bytes(
+            &buffer,
+            decoded.as_ref().map(|decoded| decoded.encoding),
+        ),
+        has_bom: decoded
+            .as_ref()
+            .map(|decoded| decoded.has_bom)
+            .unwrap_or(false),
         sample,
     })
 }
 
 #[tauri::command]
-fn read_text_file_range(path: String, offset: u64, length: u64) -> Result<TextFileRange, String> {
+fn read_text_file_range(
+    path: String,
+    offset: u64,
+    length: u64,
+    encoding: Option<String>,
+) -> Result<TextFileRange, String> {
     const MAX_RANGE_BYTES: u64 = 1024 * 1024;
 
     let path = PathBuf::from(path);
@@ -525,22 +602,31 @@ fn read_text_file_range(path: String, offset: u64, length: u64) -> Result<TextFi
     file.read_exact(&mut buffer)
         .map_err(|error| format_file_error("Unable to read file range", &path, error))?;
 
-    if buffer.contains(&0) {
-        return Err(format!("{} appears to be a binary file", path.display()));
+    let decoded = match encoding.as_deref() {
+        Some(encoding) => decode_text_bytes_as_encoding(&buffer, encoding),
+        None => decode_text_bytes(&buffer),
     }
-
-    let content = String::from_utf8(buffer)
-        .map_err(|_| format!("{} range is not valid UTF-8 text", path.display()))?;
+    .ok_or_else(|| {
+        if looks_binary(&buffer) {
+            format!("{} appears to be a binary file", path.display())
+        } else {
+            format!("{} range is not a supported text encoding", path.display())
+        }
+    })?;
 
     Ok(TextFileRange {
         path: path.to_string_lossy().into_owned(),
-        content,
+        content: decoded.content,
         size: file_size,
         requested_offset,
         start_offset,
         end_offset,
         has_more_before: start_offset > 0,
         has_more_after: end_offset < file_size,
+        encoding: decoded.encoding.to_string(),
+        encoding_label: decoded.encoding_label.to_string(),
+        encoding_candidates: encoding_candidates_for_bytes(&buffer, Some(decoded.encoding)),
+        has_bom: decoded.has_bom,
     })
 }
 
@@ -572,7 +658,10 @@ fn watch_directory(
                 // .git / node_modules 内部 churn 不影响树展示,跳过以免无谓刷新风暴。
                 // ponytail: 仅过滤上报,递归监听仍会为这些目录占用 inotify 句柄(见 watch_directory 调用方注释)。
                 if event.path.components().any(|component| {
-                    matches!(component.as_os_str().to_str(), Some(".git") | Some("node_modules"))
+                    matches!(
+                        component.as_os_str().to_str(),
+                        Some(".git") | Some("node_modules")
+                    )
                 }) {
                     continue;
                 }
@@ -615,7 +704,10 @@ fn copy_files_to_clipboard(paths: Vec<String>, text: String) -> Result<bool, Str
 
         let context = ClipboardContext::new().map_err(|error| error.to_string())?;
         context
-            .set(vec![ClipboardContent::Files(paths), ClipboardContent::Text(text)])
+            .set(vec![
+                ClipboardContent::Files(paths),
+                ClipboardContent::Text(text),
+            ])
             .map_err(|error| error.to_string())?;
         Ok(true)
     }
@@ -634,7 +726,10 @@ fn open_terminal_at(path: String) -> Result<(), String> {
     let directory = if target.is_dir() {
         target.clone()
     } else {
-        target.parent().map(Path::to_path_buf).unwrap_or_else(|| target.clone())
+        target
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| target.clone())
     };
 
     if !directory.is_dir() {
@@ -644,7 +739,12 @@ fn open_terminal_at(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         // 优先 Windows Terminal;不可用时回退到 cmd。
-        if Command::new("wt.exe").arg("-d").arg(&directory).spawn().is_ok() {
+        if Command::new("wt.exe")
+            .arg("-d")
+            .arg(&directory)
+            .spawn()
+            .is_ok()
+        {
             return Ok(());
         }
         Command::new("cmd")
@@ -669,7 +769,11 @@ fn open_terminal_at(path: String) -> Result<(), String> {
     {
         // Linux:依次尝试常见终端,以目标目录为工作目录启动。
         for terminal in ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"] {
-            if Command::new(terminal).current_dir(&directory).spawn().is_ok() {
+            if Command::new(terminal)
+                .current_dir(&directory)
+                .spawn()
+                .is_ok()
+            {
                 return Ok(());
             }
         }
@@ -709,7 +813,10 @@ fn reveal_in_file_manager(path: String) -> Result<(), String> {
         let directory = if target.is_dir() {
             target.clone()
         } else {
-            target.parent().map(Path::to_path_buf).unwrap_or_else(|| target.clone())
+            target
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| target.clone())
         };
         Command::new("xdg-open")
             .arg(&directory)
@@ -1226,7 +1333,378 @@ fn modified_time_millis(metadata: &fs::Metadata) -> Option<u64> {
         .and_then(|duration| duration.as_millis().try_into().ok())
 }
 
-fn saved_text_file_from_path(path: &Path) -> Result<SavedTextFile, SaveTextFileError> {
+struct DecodedText {
+    content: String,
+    encoding: &'static str,
+    encoding_label: &'static str,
+    confidence: f32,
+    has_bom: bool,
+}
+
+fn decode_text_bytes(bytes: &[u8]) -> Option<DecodedText> {
+    if bytes.starts_with(b"\xEF\xBB\xBF") {
+        let content = std::str::from_utf8(&bytes[3..]).ok()?.to_string();
+        return Some(DecodedText {
+            content,
+            encoding: "utf-8-bom",
+            encoding_label: "UTF-8 with BOM",
+            confidence: 1.0,
+            has_bom: true,
+        });
+    }
+
+    if bytes.starts_with(b"\xFF\xFE") {
+        let content = decode_with_encoding(UTF_16LE, &bytes[2..])?;
+        return Some(DecodedText {
+            content,
+            encoding: "utf-16le",
+            encoding_label: "UTF-16 LE",
+            confidence: 1.0,
+            has_bom: true,
+        });
+    }
+
+    if bytes.starts_with(b"\xFE\xFF") {
+        let content = decode_with_encoding(UTF_16BE, &bytes[2..])?;
+        return Some(DecodedText {
+            content,
+            encoding: "utf-16be",
+            encoding_label: "UTF-16 BE",
+            confidence: 1.0,
+            has_bom: true,
+        });
+    }
+
+    if looks_binary(bytes) {
+        return None;
+    }
+
+    if let Ok(content) = std::str::from_utf8(bytes) {
+        return Some(DecodedText {
+            content: content.to_string(),
+            encoding: "utf-8",
+            encoding_label: "UTF-8",
+            confidence: 0.98,
+            has_bom: false,
+        });
+    }
+
+    let mut best: Option<(DecodedText, f32)> = None;
+
+    for (encoding, name, label, confidence) in [
+        (GBK, "gb18030", "GB18030 / GBK", 0.78),
+        (BIG5, "big5", "Big5", 0.72),
+        (SHIFT_JIS, "shift_jis", "Shift_JIS", 0.72),
+        (EUC_JP, "euc-jp", "EUC-JP", 0.7),
+        (EUC_KR, "euc-kr", "EUC-KR", 0.7),
+        (WINDOWS_1252, "windows-1252", "Windows-1252", 0.62),
+    ] {
+        if let Some(content) = decode_with_encoding(encoding, bytes) {
+            let score = decoding_candidate_score(&content, name, confidence);
+            let candidate = DecodedText {
+                content,
+                encoding: name,
+                encoding_label: label,
+                confidence: score.clamp(0.01, 1.0),
+                has_bom: false,
+            };
+
+            if best
+                .as_ref()
+                .map(|(_, best_score)| score > *best_score)
+                .unwrap_or(true)
+            {
+                best = Some((candidate, score));
+            }
+        }
+    }
+
+    best.and_then(|(candidate, score)| (score >= 0.55).then_some(candidate))
+}
+
+fn decode_text_bytes_as_encoding(bytes: &[u8], encoding_name: &str) -> Option<DecodedText> {
+    let normalized = normalize_encoding_name(encoding_name);
+    let normalized = encoding_static_name(normalized);
+    let (content, has_bom) = match normalized {
+        "utf-8-bom" => {
+            let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+            (std::str::from_utf8(bytes).ok()?.to_string(), true)
+        }
+        "utf-8" => {
+            let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+            (std::str::from_utf8(bytes).ok()?.to_string(), false)
+        }
+        "utf-16le" => {
+            let has_bom = bytes.starts_with(b"\xFF\xFE");
+            let bytes = bytes.strip_prefix(b"\xFF\xFE").unwrap_or(bytes);
+            (decode_with_encoding(UTF_16LE, bytes)?, has_bom)
+        }
+        "utf-16be" => {
+            let has_bom = bytes.starts_with(b"\xFE\xFF");
+            let bytes = bytes.strip_prefix(b"\xFE\xFF").unwrap_or(bytes);
+            (decode_with_encoding(UTF_16BE, bytes)?, has_bom)
+        }
+        _ => {
+            let encoding = encoding_for_name(normalized)?;
+            (decode_with_encoding(encoding, bytes)?, false)
+        }
+    };
+
+    Some(DecodedText {
+        content,
+        encoding: normalized,
+        encoding_label: encoding_label_for_name(normalized),
+        confidence: 1.0,
+        has_bom: has_bom || normalized == "utf-8-bom",
+    })
+}
+
+fn decode_with_encoding(encoding: &'static Encoding, bytes: &[u8]) -> Option<String> {
+    encoding
+        .decode_without_bom_handling_and_without_replacement(bytes)
+        .map(|content| content.into_owned())
+}
+
+fn encoding_candidates_for_bytes(
+    bytes: &[u8],
+    recommended_encoding: Option<&str>,
+) -> Vec<TextEncodingCandidate> {
+    let mut candidates = Vec::new();
+    let recommended = recommended_encoding.map(encoding_static_name);
+
+    for (encoding, name, label, base_confidence) in [
+        (UTF_8, "utf-8", "UTF-8", 0.98),
+        (UTF_16LE, "utf-16le", "UTF-16 LE", 0.82),
+        (UTF_16BE, "utf-16be", "UTF-16 BE", 0.82),
+        (GBK, "gb18030", "GB18030 / GBK", 0.78),
+        (BIG5, "big5", "Big5", 0.72),
+        (SHIFT_JIS, "shift_jis", "Shift_JIS", 0.72),
+        (EUC_JP, "euc-jp", "EUC-JP", 0.7),
+        (EUC_KR, "euc-kr", "EUC-KR", 0.7),
+        (WINDOWS_1252, "windows-1252", "Windows-1252", 0.62),
+    ] {
+        let valid = match name {
+            "utf-16le" => bytes.starts_with(b"\xFF\xFE"),
+            "utf-16be" => bytes.starts_with(b"\xFE\xFF"),
+            _ => decode_with_encoding(encoding, bytes).is_some(),
+        };
+        let confidence = if valid {
+            if let Some(content) = decode_with_encoding(encoding, bytes) {
+                decoding_candidate_score(&content, name, base_confidence).clamp(0.01, 1.0)
+            } else {
+                base_confidence
+            }
+        } else {
+            0.0
+        };
+
+        candidates.push(TextEncodingCandidate {
+            encoding: name.to_string(),
+            label: label.to_string(),
+            confidence,
+            valid,
+            recommended: recommended == Some(name),
+        });
+    }
+
+    candidates.sort_by(|left, right| {
+        right
+            .valid
+            .cmp(&left.valid)
+            .then_with(|| right.confidence.total_cmp(&left.confidence))
+            .then_with(|| left.label.cmp(&right.label))
+    });
+
+    candidates
+}
+
+fn encode_text_bytes(
+    content: &str,
+    encoding_name: &str,
+    has_bom: bool,
+) -> Result<Vec<u8>, SaveTextFileError> {
+    let normalized = normalize_encoding_name(encoding_name);
+
+    if normalized == "utf-16le" {
+        let mut bytes = Vec::with_capacity(content.len() * 2 + if has_bom { 2 } else { 0 });
+        if has_bom {
+            bytes.extend_from_slice(b"\xFF\xFE");
+        }
+        for unit in content.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        return Ok(bytes);
+    }
+
+    if normalized == "utf-16be" {
+        let mut bytes = Vec::with_capacity(content.len() * 2 + if has_bom { 2 } else { 0 });
+        if has_bom {
+            bytes.extend_from_slice(b"\xFE\xFF");
+        }
+        for unit in content.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_be_bytes());
+        }
+        return Ok(bytes);
+    }
+
+    let encoding = encoding_for_name(normalized).ok_or_else(|| {
+        save_error(
+            SaveTextFileErrorKind::Encoding,
+            format!("Unsupported text encoding: {encoding_name}"),
+        )
+    })?;
+    let (encoded, _, had_errors) = encoding.encode(content);
+
+    if had_errors {
+        return Err(save_error(
+            SaveTextFileErrorKind::Encoding,
+            format!(
+                "This file contains characters that cannot be saved as {}. Convert it to UTF-8 before saving.",
+                encoding_label_for_name(normalized)
+            ),
+        ));
+    }
+
+    let mut bytes = Vec::new();
+    if has_bom && (normalized == "utf-8" || normalized == "utf-8-bom") {
+        bytes.extend_from_slice(b"\xEF\xBB\xBF");
+    }
+    bytes.extend_from_slice(encoded.as_ref());
+    Ok(bytes)
+}
+
+fn normalize_encoding_name(name: &str) -> &str {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "utf-8-bom" | "utf8-bom" => "utf-8-bom",
+        "utf8" | "utf-8" => "utf-8",
+        "utf-16le" | "utf-16-le" => "utf-16le",
+        "utf-16be" | "utf-16-be" => "utf-16be",
+        "gbk" | "gb18030" | "gb2312" => "gb18030",
+        "big5" => "big5",
+        "shift_jis" | "shift-jis" | "sjis" => "shift_jis",
+        "euc-jp" | "euc_jp" => "euc-jp",
+        "euc-kr" | "euc_kr" => "euc-kr",
+        "windows-1252" | "cp1252" | "iso-8859-1" | "latin1" | "latin-1" => "windows-1252",
+        _ => "utf-8",
+    }
+}
+
+fn encoding_for_name(name: &str) -> Option<&'static Encoding> {
+    match name {
+        "utf-8" | "utf-8-bom" => Some(UTF_8),
+        "gb18030" => Some(GBK),
+        "big5" => Some(BIG5),
+        "shift_jis" => Some(SHIFT_JIS),
+        "euc-jp" => Some(EUC_JP),
+        "euc-kr" => Some(EUC_KR),
+        "windows-1252" => Some(WINDOWS_1252),
+        _ => Encoding::for_label(name.as_bytes()),
+    }
+}
+
+fn encoding_label_for_name(name: &str) -> &'static str {
+    match name {
+        "utf-8-bom" => "UTF-8 with BOM",
+        "utf-8" => "UTF-8",
+        "utf-16le" => "UTF-16 LE",
+        "utf-16be" => "UTF-16 BE",
+        "gb18030" => "GB18030 / GBK",
+        "big5" => "Big5",
+        "shift_jis" => "Shift_JIS",
+        "euc-jp" => "EUC-JP",
+        "euc-kr" => "EUC-KR",
+        "windows-1252" => "Windows-1252",
+        _ => "UTF-8",
+    }
+}
+
+fn encoding_static_name(name: &str) -> &'static str {
+    match name {
+        "utf-8-bom" => "utf-8-bom",
+        "utf-8" => "utf-8",
+        "utf-16le" => "utf-16le",
+        "utf-16be" => "utf-16be",
+        "gb18030" => "gb18030",
+        "big5" => "big5",
+        "shift_jis" => "shift_jis",
+        "euc-jp" => "euc-jp",
+        "euc-kr" => "euc-kr",
+        "windows-1252" => "windows-1252",
+        _ => "utf-8",
+    }
+}
+
+fn decoding_candidate_score(content: &str, encoding_name: &str, confidence: f32) -> f32 {
+    let mut total = 0usize;
+    let mut control = 0usize;
+    let mut cjk = 0usize;
+    let mut kana = 0usize;
+    let mut hangul = 0usize;
+    let mut latin = 0usize;
+
+    for character in content.chars() {
+        if character.is_whitespace() {
+            continue;
+        }
+
+        total += 1;
+
+        if character.is_control() {
+            control += 1;
+        }
+
+        let code = character as u32;
+        if (0x4E00..=0x9FFF).contains(&code)
+            || (0x3400..=0x4DBF).contains(&code)
+            || (0xF900..=0xFAFF).contains(&code)
+        {
+            cjk += 1;
+        } else if (0x3040..=0x30FF).contains(&code) {
+            kana += 1;
+        } else if (0xAC00..=0xD7AF).contains(&code) {
+            hangul += 1;
+        } else if character.is_ascii_alphanumeric() || (0x00C0..=0x024F).contains(&code) {
+            latin += 1;
+        }
+    }
+
+    if total == 0 {
+        return confidence;
+    }
+
+    let total = total as f32;
+    let control_ratio = control as f32 / total;
+    let script_ratio = match encoding_name {
+        "gb18030" | "big5" => cjk as f32 / total,
+        "shift_jis" | "euc-jp" => (kana + cjk) as f32 / total,
+        "euc-kr" => hangul as f32 / total,
+        "windows-1252" => latin as f32 / total,
+        _ => 0.0,
+    };
+
+    confidence - (control_ratio * 0.7) + script_ratio.min(0.55) * 0.35
+}
+
+fn looks_binary(bytes: &[u8]) -> bool {
+    if bytes.is_empty() {
+        return false;
+    }
+
+    let sample_len = bytes.len().min(4096);
+    let sample = &bytes[..sample_len];
+    let control_bytes = sample
+        .iter()
+        .filter(|byte| matches!(**byte, 0x00..=0x08 | 0x0B | 0x0C | 0x0E..=0x1F))
+        .count();
+
+    control_bytes > 0 && control_bytes * 100 / sample_len > 10
+}
+
+fn saved_text_file_from_path(
+    path: &Path,
+    encoding_name: &str,
+    has_bom: bool,
+) -> Result<SavedTextFile, SaveTextFileError> {
     let metadata = fs::metadata(path)
         .map_err(|error| save_error_from_io("Unable to read saved file metadata", path, error))?;
     let name = path
@@ -1234,16 +1712,20 @@ fn saved_text_file_from_path(path: &Path) -> Result<SavedTextFile, SaveTextFileE
         .and_then(|name| name.to_str())
         .unwrap_or("Untitled")
         .to_string();
+    let normalized = normalize_encoding_name(encoding_name);
 
     Ok(SavedTextFile {
         name,
         path: path.to_string_lossy().into_owned(),
         size: metadata.len(),
         last_modified: modified_time_millis(&metadata),
+        encoding: normalized.to_string(),
+        encoding_label: encoding_label_for_name(normalized).to_string(),
+        has_bom,
     })
 }
 
-fn atomic_write_text_file(path: &Path, content: &str) -> Result<(), SaveTextFileError> {
+fn atomic_write_text_file(path: &Path, bytes: &[u8]) -> Result<(), SaveTextFileError> {
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -1327,7 +1809,7 @@ fn atomic_write_text_file(path: &Path, content: &str) -> Result<(), SaveTextFile
             }
         };
 
-        if let Err(error) = file.write_all(content.as_bytes()) {
+        if let Err(error) = file.write_all(bytes) {
             let _ = fs::remove_file(&temp_path);
             return Err(save_error_from_io(
                 "Unable to write temporary save file",
@@ -1431,7 +1913,9 @@ fn write_keybindings(app: tauri::AppHandle, contents: String) -> Result<(), Stri
 
 /// 读 keybindings.json 为 actionId → 键位串数组。任何错误都退化为空表(用默认加速键)。
 #[cfg(target_os = "macos")]
-fn read_keybindings_map<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> HashMap<String, Vec<String>> {
+fn read_keybindings_map<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> HashMap<String, Vec<String>> {
     let Ok(path) = keybindings_path(app) else {
         return HashMap::new();
     };
@@ -1514,7 +1998,13 @@ fn build_macos_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Resu
         "File",
         true,
         &[
-            &MenuItem::with_id(app, MENU_NEW_FILE, "New File", true, Some(new_file_accel.as_str()))?,
+            &MenuItem::with_id(
+                app,
+                MENU_NEW_FILE,
+                "New File",
+                true,
+                Some(new_file_accel.as_str()),
+            )?,
             &MenuItem::with_id(
                 app,
                 MENU_OPEN_FILE,
@@ -1882,12 +2372,13 @@ mod tests {
         let file_path = workspace.root.join("notes.txt");
         fs::write(&file_path, "hello\nworld\n").expect("text file should be written");
 
-        let file =
-            read_text_file(workspace.path_string(&file_path)).expect("utf-8 file should be read");
+        let file = read_text_file(workspace.path_string(&file_path), None)
+            .expect("utf-8 file should be read");
 
         assert_eq!(file.name, "notes.txt");
         assert_eq!(file.content, "hello\nworld\n");
         assert_eq!(file.size, 12);
+        assert_eq!(file.encoding, "utf-8");
     }
 
     #[test]
@@ -1896,7 +2387,7 @@ mod tests {
         let file_path = workspace.root.join("binary.bin");
         fs::write(&file_path, [b'a', 0, b'b']).expect("binary file should be written");
 
-        let error = match read_text_file(workspace.path_string(&file_path)) {
+        let error = match read_text_file(workspace.path_string(&file_path), None) {
             Ok(_) => panic!("binary file should be rejected"),
             Err(error) => error,
         };
@@ -1905,17 +2396,68 @@ mod tests {
     }
 
     #[test]
-    fn inspect_text_file_flags_non_utf8_file() {
+    fn inspect_text_file_detects_gbk_file() {
         let workspace = TestWorkspace::new();
-        let file_path = workspace.root.join("latin1.txt");
-        fs::write(&file_path, [0xff, 0xfe, b'a']).expect("non utf-8 file should be written");
+        let file_path = workspace.root.join("gbk.txt");
+        fs::write(&file_path, [0xc4, 0xe3, 0xba, 0xc3]).expect("gbk file should be written");
 
         let inspection = inspect_text_file(workspace.path_string(&file_path))
-            .expect("inspection should not require full utf-8 content");
+            .expect("inspection should decode supported legacy encodings");
 
         assert!(!inspection.is_binary);
         assert!(!inspection.is_utf8);
-        assert!(inspection.sample.is_empty());
+        assert!(inspection.is_text);
+        assert_eq!(inspection.encoding.as_deref(), Some("gb18030"));
+        assert_eq!(inspection.sample, "你好");
+    }
+
+    #[test]
+    fn read_text_file_can_force_big5_encoding() {
+        let workspace = TestWorkspace::new();
+        let file_path = workspace.root.join("big5.txt");
+        fs::write(
+            &file_path,
+            [
+                0xc1, 0x63, 0xc5, 0xe9, 0xa4, 0xa4, 0xa4, 0xe5, 0xa1, 0x47, 0xa7, 0x41, 0xa6, 0x6e,
+            ],
+        )
+        .expect("big5 file should be written");
+
+        let file = read_text_file(workspace.path_string(&file_path), Some("big5".to_string()))
+            .expect("big5 file should be decoded with the requested encoding");
+
+        assert_eq!(file.encoding, "big5");
+        assert_eq!(file.content, "繁體中文：你好");
+        assert!(file
+            .encoding_candidates
+            .iter()
+            .any(|candidate| candidate.encoding == "big5" && candidate.valid));
+    }
+
+    #[test]
+    fn save_text_file_preserves_requested_legacy_encoding() {
+        let workspace = TestWorkspace::new();
+        let file_path = workspace.root.join("gbk.txt");
+        fs::write(&file_path, [0xc4, 0xe3]).expect("gbk seed file should be written");
+        let before = fs::metadata(&file_path)
+            .ok()
+            .and_then(|metadata| modified_time_millis(&metadata));
+
+        let saved = save_text_file(
+            workspace.path_string(&file_path),
+            "你好".to_string(),
+            before,
+            Some(false),
+            Some("gb18030".to_string()),
+            Some(false),
+        )
+        .expect("gbk-compatible content should save");
+
+        assert_eq!(saved.encoding, "gb18030");
+        assert_eq!(
+            fs::read(&file_path).expect("saved file should be readable"),
+            vec![0xc4, 0xe3, 0xba, 0xc3]
+        );
     }
 
     #[test]
@@ -1924,7 +2466,7 @@ mod tests {
         let file_path = workspace.root.join("range.txt");
         fs::write(&file_path, "first\nsecond\nthird\n").expect("range file should be written");
 
-        let range = read_text_file_range(workspace.path_string(&file_path), 2, 4)
+        let range = read_text_file_range(workspace.path_string(&file_path), 2, 4, None)
             .expect("range should be read");
 
         assert_eq!(range.content, "first\nsecond\n");
@@ -1941,7 +2483,7 @@ mod tests {
         let file_path = workspace.root.join("small.txt");
         fs::write(&file_path, "abc").expect("small file should be written");
 
-        let range = read_text_file_range(workspace.path_string(&file_path), 99, 10)
+        let range = read_text_file_range(workspace.path_string(&file_path), 99, 10, None)
             .expect("out-of-range offset should be clamped");
 
         assert_eq!(range.content, "abc");
@@ -1958,7 +2500,7 @@ mod tests {
         let file_path = workspace.root.join("utf8.txt");
         fs::write(&file_path, "a你b").expect("utf-8 file should be written");
 
-        let range = read_text_file_range(workspace.path_string(&file_path), 2, 1)
+        let range = read_text_file_range(workspace.path_string(&file_path), 2, 1, None)
             .expect("range should align to utf-8 character boundaries");
 
         assert_eq!(range.content, "a你b");
@@ -1972,7 +2514,7 @@ mod tests {
         let file_path = workspace.root.join("binary-range.bin");
         fs::write(&file_path, [b'a', 0, b'b']).expect("binary file should be written");
 
-        let error = match read_text_file_range(workspace.path_string(&file_path), 0, 3) {
+        let error = match read_text_file_range(workspace.path_string(&file_path), 0, 3, None) {
             Ok(_) => panic!("binary range should be rejected"),
             Err(error) => error,
         };

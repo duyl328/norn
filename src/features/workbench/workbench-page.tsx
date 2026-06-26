@@ -99,6 +99,7 @@ export function WorkbenchPage() {
     openFilePicker,
     requestFileOpen,
     updateDocumentContent,
+    changeDocumentEncoding,
   } = useDocumentSession();
 
   const requestFileOpenRef = useRef(requestFileOpen);
@@ -216,231 +217,241 @@ export function WorkbenchPage() {
             showMacTitlebar && "mac-titlebar-overlay-layout",
           )}
         >
-        {settingsOpen ? (
-          showWindowsTitlebar ? (
-            // Windows 无边框窗口:设置页也要有自绘标题栏(窗口控制 + 汉堡菜单),否则无法关闭窗口 / 访问菜单。
-            <div className="flex h-full min-w-0 flex-col">
-              <WindowsTitleBar
-                gitBadgeCount={gitBadgeCount}
-                variant="settings"
-                leftPanelOpen={leftPanelOpen}
-                onToggleLeftPanel={toggleFilesTool}
-                onOpenSearch={openSearchTool}
-                onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
-                rightPanelOpen={rightPanelOpen}
-                searchOpen={searchOpen}
-                onCloseSearch={closeSearchTool}
-              />
-              <div className="min-h-0 flex-1">{settingsPageNode}</div>
-            </div>
-          ) : (
-            settingsPageNode
-          )
-        ) : (
-          <div className="workspace-view flex h-full min-w-0 flex-col">
-            {showWindowsTitlebar ? (
-              <WindowsTitleBar
-                gitBadgeCount={gitBadgeCount}
-                leftPanelOpen={leftPanelOpen}
-                onToggleLeftPanel={toggleFilesTool}
-                onOpenSearch={openSearchTool}
-                onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
-                rightPanelOpen={rightPanelOpen}
-                searchOpen={searchOpen}
-                onCloseSearch={closeSearchTool}
-              />
-            ) : null}
-            {showMacTitlebar ? (
-              <MacTitlebar
-                gitBadgeCount={gitBadgeCount}
-                leftPanelOpen={leftPanelOpen}
-                leftPanelWidth={leftPanelWidth}
-                onCloseSearch={closeSearchTool}
-                onOpenSearch={openSearchTool}
-                onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
-                rightPanelOpen={rightPanelOpen}
-                rightPanelWidth={rightPanelWidth}
-                onToggleLeftPanel={toggleFilesTool}
-                searchOpen={searchOpen}
-              />
-            ) : null}
-            <main
-              className={cn(
-                "workbench-layout grid h-full min-h-0 flex-1 bg-transparent",
-                leftPanelOpen && "workbench-layout-left-open",
-                rightPanelOpen && "workbench-layout-right-open",
-                resizeHandleHintsVisible && "workbench-layout-resize-hints-visible",
-                resizingPanel && "workbench-layout-resizing",
-              )}
-              style={
-                {
-                  "--workbench-left-panel-width": leftPanelOpen ? `${leftPanelWidth}px` : "0px",
-                  "--workbench-right-panel-width": rightPanelOpen ? `${rightPanelWidth}px` : "0px",
-                  gridTemplateColumns: `${leftPanelOpen ? `${leftPanelWidth}px` : "0px"} 0px minmax(0,1fr) ${
-                    rightPanelOpen ? (showWindowsTitlebar ? "7px" : "0px") : "0px"
-                  } ${rightPanelOpen ? `${rightPanelWidth}px` : "0px"}`,
-                } as CSSProperties
-              }
-            >
-              <div
-                className={cn(
-                  "workbench-side-panel workbench-left-panel",
-                  !leftPanelOpen && "workbench-side-panel-closed",
-                )}
-                aria-hidden={!leftPanelOpen}
-                data-focus-zone="fileTree"
-                tabIndex={-1}
-              >
-                <ProjectPanel
-                  activePath={document.path}
-                  selection={treeSelection}
-                  search={treeSearch}
-                  clipboard={fileTreeClipboard}
-                  contextMenu={fileTreeContextMenu}
-                  draggedNode={draggedTreeNode}
-                  dropTarget={dropTarget}
-                  folderView={folderView}
-                  leftPanelWidth={leftPanelWidth}
-                  onContextMenu={openFileTreeContextMenu}
-                  onCopyNode={copyTreeNode}
-                  onCutNode={cutTreeNode}
-                  onDragEnd={() => {
-                    setDraggedTreeNode(null);
-                    setDropTarget(null);
-                    dropTargetRef.current = null;
-                  }}
-                  onDragNode={setDraggedTreeNode}
-                  onDropNode={moveTreeNodeToDirectory}
-                  onDropTargetChange={(target) => {
-                    setDropTarget(target);
-                    dropTargetRef.current = target;
-                  }}
-                  onOpenFolder={openFolderPicker}
-                  onOpenRecentFolder={(path) => void openFolderView(path, "open-folder")}
-                  onOpenTreeFile={openTreeFile}
-                  onSelectTreeNode={selectTreeNode}
-                  onTreeKeyDown={handleTreeKeyDown}
-                  onTreeBlur={clearTreeSearch}
-                  onCopyPath={copyTreeNodePaths}
-                  onPasteNode={pasteTreeNode}
-                  onRefreshFolder={(path, scope = "main") => void refreshTreePath(scope, path)}
-                  onRequestCreateDirectory={(parentPath, scope = "main") =>
-                    openFileTreeNameDialog({ kind: "create-directory", parentPath, scope })
-                  }
-                  onRequestCreateFile={(parentPath, scope = "main") =>
-                    openFileTreeNameDialog({ kind: "create-file", parentPath, scope })
-                  }
-                  onRequestRenameNode={(node, scope = "main") =>
-                    openFileTreeNameDialog({ kind: "rename", node, scope })
-                  }
-                  onRequestTrashNode={requestTrashTreeNode}
-                  onRevealNode={revealTreeNodeInFileManager}
-                  onOpenTerminal={openTerminalAtNode}
-                  recentFolders={recentFolders}
-                  scratchFolder={scratchFolder}
-                  scratchFolderView={scratchFolderView}
-                  onToggleScratchDirectory={(node) => void toggleScratchDirectory(node)}
-                  onToggleScratchRootDirectory={toggleScratchRootDirectory}
-                  onToggleDirectory={toggleDirectory}
-                  onToggleRootDirectory={toggleRootDirectory}
-                  onExpandAll={expandAllDirectories}
-                  onCollapseAll={collapseAllDirectories}
-                  onRevealActiveFile={() => void revealActiveFile()}
+          {settingsOpen ? (
+            showWindowsTitlebar ? (
+              // Windows 无边框窗口:设置页也要有自绘标题栏(窗口控制 + 汉堡菜单),否则无法关闭窗口 / 访问菜单。
+              <div className="flex h-full min-w-0 flex-col">
+                <WindowsTitleBar
+                  gitBadgeCount={gitBadgeCount}
+                  variant="settings"
+                  leftPanelOpen={leftPanelOpen}
+                  onToggleLeftPanel={toggleFilesTool}
+                  onOpenSearch={openSearchTool}
+                  onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
+                  rightPanelOpen={rightPanelOpen}
+                  searchOpen={searchOpen}
+                  onCloseSearch={closeSearchTool}
                 />
+                <div className="min-h-0 flex-1">{settingsPageNode}</div>
               </div>
-              <PanelResizeHandle
-                max={leftPanelMaxWidth}
-                min={leftPanelMinWidth}
-                onKeyDown={(event) => resizePanelWithKeyboard("left", event)}
-                onPointerDown={(event) => startPanelResize("left", event)}
-                open={leftPanelOpen}
-                side="left"
-                value={leftPanelWidth}
-              />
-              <EditorSurface
-                document={document}
-                error={fileError}
-                isDirty={isDirty}
-                openDocuments={openDocuments}
-                onChange={updateDocumentContent}
-                onCloseDocument={requestCloseDocument}
-                onCreateFile={createFile}
-                onSelectDocument={activateDocument}
-              />
-              <PanelResizeHandle
-                max={rightPanelMaxWidth}
-                min={rightPanelMinWidth}
-                onKeyDown={(event) => resizePanelWithKeyboard("right", event)}
-                onPointerDown={(event) => startPanelResize("right", event)}
-                open={rightPanelOpen}
-                side="right"
-                value={rightPanelWidth}
-              />
-              <div
+            ) : (
+              settingsPageNode
+            )
+          ) : (
+            <div className="workspace-view flex h-full min-w-0 flex-col">
+              {showWindowsTitlebar ? (
+                <WindowsTitleBar
+                  gitBadgeCount={gitBadgeCount}
+                  leftPanelOpen={leftPanelOpen}
+                  onToggleLeftPanel={toggleFilesTool}
+                  onOpenSearch={openSearchTool}
+                  onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
+                  rightPanelOpen={rightPanelOpen}
+                  searchOpen={searchOpen}
+                  onCloseSearch={closeSearchTool}
+                />
+              ) : null}
+              {showMacTitlebar ? (
+                <MacTitlebar
+                  gitBadgeCount={gitBadgeCount}
+                  leftPanelOpen={leftPanelOpen}
+                  leftPanelWidth={leftPanelWidth}
+                  onCloseSearch={closeSearchTool}
+                  onOpenSearch={openSearchTool}
+                  onToggleRightPanel={() => setRightPanelOpen((value) => !value)}
+                  rightPanelOpen={rightPanelOpen}
+                  rightPanelWidth={rightPanelWidth}
+                  onToggleLeftPanel={toggleFilesTool}
+                  searchOpen={searchOpen}
+                />
+              ) : null}
+              <main
                 className={cn(
-                  "workbench-side-panel workbench-right-panel",
-                  !rightPanelOpen && "workbench-side-panel-closed",
+                  "workbench-layout grid h-full min-h-0 flex-1 bg-transparent",
+                  leftPanelOpen && "workbench-layout-left-open",
+                  rightPanelOpen && "workbench-layout-right-open",
+                  resizeHandleHintsVisible && "workbench-layout-resize-hints-visible",
+                  resizingPanel && "workbench-layout-resizing",
                 )}
-                aria-hidden={!rightPanelOpen}
-                data-focus-zone="git"
-                tabIndex={-1}
-              >
-                <GitPanel folderView={folderView} gitWorkspace={gitWorkspace} />
-              </div>
-            </main>
-            <StatusBar
-              document={document}
-              isDirty={isDirty}
-              onOpenSettings={openSettingsTool}
-              saveState={saveState}
-              gitWorkspace={gitWorkspace}
-            />
-            <GitPreview />
-            <UnsavedChangesDialog
-              open={Boolean(pendingCloseDocument)}
-              onCancel={() => setPendingCloseDocument(null)}
-              onDiscard={() => {
-                const targetDocument = pendingCloseDocument;
-                setPendingCloseDocument(null);
-
-                if (targetDocument) {
-                  closeDocument(targetDocument);
+                style={
+                  {
+                    "--workbench-left-panel-width": leftPanelOpen ? `${leftPanelWidth}px` : "0px",
+                    "--workbench-right-panel-width": rightPanelOpen ? `${rightPanelWidth}px` : "0px",
+                    gridTemplateColumns: `${leftPanelOpen ? `${leftPanelWidth}px` : "0px"} 0px minmax(0,1fr) ${
+                      rightPanelOpen ? (showWindowsTitlebar ? "7px" : "0px") : "0px"
+                    } ${rightPanelOpen ? `${rightPanelWidth}px` : "0px"}`,
+                  } as CSSProperties
                 }
-              }}
-              onSave={() => void saveAndClosePendingDocument()}
-              onSaveAs={() => void saveAsAndClosePendingDocument()}
-            />
-            <SaveConflictDialog
-              open={Boolean(saveConflict)}
-              message={saveConflict?.message}
-              onCancel={() => setSaveConflict(null)}
-              onOverwrite={() => {
-                setSaveConflict(null);
-                void saveDocument({ force: true });
-              }}
-              onReload={() => {
-                void reloadConflictedDocument();
-              }}
-              onSaveAs={() => {
-                const content = saveConflict?.content;
-                setSaveConflict(null);
-                void saveDocumentAs(content);
-              }}
-            />
-            <FileTreeNameDialogView
-              dialog={fileTreeNameDialog}
-              name={fileTreeNameValue}
-              onCancel={closeFileTreeNameDialog}
-              onNameChange={setFileTreeNameValue}
-              onSubmit={() => void submitFileTreeNameDialog()}
-            />
-            <FileTreeTrashDialog
-              node={fileTreeTrashTarget?.node ?? null}
-              onCancel={() => setFileTreeTrashTarget(null)}
-              onConfirm={() => void confirmTrashTreeNode()}
-            />
-          </div>
-        )}
+              >
+                <div
+                  className={cn(
+                    "workbench-side-panel workbench-left-panel",
+                    !leftPanelOpen && "workbench-side-panel-closed",
+                  )}
+                  aria-hidden={!leftPanelOpen}
+                  data-focus-zone="fileTree"
+                  tabIndex={-1}
+                >
+                  <ProjectPanel
+                    activePath={document.path}
+                    selection={treeSelection}
+                    search={treeSearch}
+                    clipboard={fileTreeClipboard}
+                    contextMenu={fileTreeContextMenu}
+                    draggedNode={draggedTreeNode}
+                    dropTarget={dropTarget}
+                    folderView={folderView}
+                    leftPanelWidth={leftPanelWidth}
+                    onContextMenu={openFileTreeContextMenu}
+                    onCopyNode={copyTreeNode}
+                    onCutNode={cutTreeNode}
+                    onDragEnd={() => {
+                      setDraggedTreeNode(null);
+                      setDropTarget(null);
+                      dropTargetRef.current = null;
+                    }}
+                    onDragNode={setDraggedTreeNode}
+                    onDropNode={moveTreeNodeToDirectory}
+                    onDropTargetChange={(target) => {
+                      setDropTarget(target);
+                      dropTargetRef.current = target;
+                    }}
+                    onOpenFolder={openFolderPicker}
+                    onOpenRecentFolder={(path) => void openFolderView(path, "open-folder")}
+                    onOpenTreeFile={openTreeFile}
+                    onSelectTreeNode={selectTreeNode}
+                    onTreeKeyDown={handleTreeKeyDown}
+                    onTreeBlur={clearTreeSearch}
+                    onCopyPath={copyTreeNodePaths}
+                    onPasteNode={pasteTreeNode}
+                    onRefreshFolder={(path, scope = "main") => void refreshTreePath(scope, path)}
+                    onRequestCreateDirectory={(parentPath, scope = "main") =>
+                      openFileTreeNameDialog({ kind: "create-directory", parentPath, scope })
+                    }
+                    onRequestCreateFile={(parentPath, scope = "main") =>
+                      openFileTreeNameDialog({ kind: "create-file", parentPath, scope })
+                    }
+                    onRequestRenameNode={(node, scope = "main") =>
+                      openFileTreeNameDialog({ kind: "rename", node, scope })
+                    }
+                    onRequestTrashNode={requestTrashTreeNode}
+                    onRevealNode={revealTreeNodeInFileManager}
+                    onOpenTerminal={openTerminalAtNode}
+                    recentFolders={recentFolders}
+                    scratchFolder={scratchFolder}
+                    scratchFolderView={scratchFolderView}
+                    onToggleScratchDirectory={(node) => void toggleScratchDirectory(node)}
+                    onToggleScratchRootDirectory={toggleScratchRootDirectory}
+                    onToggleDirectory={toggleDirectory}
+                    onToggleRootDirectory={toggleRootDirectory}
+                    onExpandAll={expandAllDirectories}
+                    onCollapseAll={collapseAllDirectories}
+                    onRevealActiveFile={() => void revealActiveFile()}
+                  />
+                </div>
+                <PanelResizeHandle
+                  max={leftPanelMaxWidth}
+                  min={leftPanelMinWidth}
+                  onKeyDown={(event) => resizePanelWithKeyboard("left", event)}
+                  onPointerDown={(event) => startPanelResize("left", event)}
+                  open={leftPanelOpen}
+                  side="left"
+                  value={leftPanelWidth}
+                />
+                <EditorSurface
+                  document={document}
+                  error={fileError}
+                  openDocuments={openDocuments}
+                  onChange={updateDocumentContent}
+                  onCloseDocument={requestCloseDocument}
+                  onCreateFile={createFile}
+                  onSelectDocument={activateDocument}
+                />
+                <PanelResizeHandle
+                  max={rightPanelMaxWidth}
+                  min={rightPanelMinWidth}
+                  onKeyDown={(event) => resizePanelWithKeyboard("right", event)}
+                  onPointerDown={(event) => startPanelResize("right", event)}
+                  open={rightPanelOpen}
+                  side="right"
+                  value={rightPanelWidth}
+                />
+                <div
+                  className={cn(
+                    "workbench-side-panel workbench-right-panel",
+                    !rightPanelOpen && "workbench-side-panel-closed",
+                  )}
+                  aria-hidden={!rightPanelOpen}
+                  data-focus-zone="git"
+                  tabIndex={-1}
+                >
+                  <GitPanel folderView={folderView} gitWorkspace={gitWorkspace} />
+                </div>
+              </main>
+              <StatusBar
+                document={document}
+                isDirty={isDirty}
+                onChangeEncoding={(option) => void changeDocumentEncoding(option)}
+                onOpenSettings={openSettingsTool}
+                saveState={saveState}
+                gitWorkspace={gitWorkspace}
+              />
+              <GitPreview />
+              <UnsavedChangesDialog
+                open={Boolean(pendingCloseDocument)}
+                onCancel={() => setPendingCloseDocument(null)}
+                onDiscard={() => {
+                  const targetDocument = pendingCloseDocument;
+                  setPendingCloseDocument(null);
+
+                  if (targetDocument) {
+                    closeDocument(targetDocument);
+                  }
+                }}
+                onSave={() => void saveAndClosePendingDocument()}
+                onSaveAs={() => void saveAsAndClosePendingDocument()}
+              />
+              <SaveConflictDialog
+                open={Boolean(saveConflict)}
+                diskContent={saveConflict?.diskContent}
+                diskMissing={saveConflict?.diskMissing}
+                editorContent={saveConflict?.content ?? document.content}
+                message={saveConflict?.message}
+                onCancel={() => setSaveConflict(null)}
+                onOverwrite={() => {
+                  if (saveConflict?.diskMissing) {
+                    const content = saveConflict.content;
+                    setSaveConflict(null);
+                    void saveDocumentAs(content);
+                    return;
+                  }
+
+                  setSaveConflict(null);
+                  void saveDocument({ force: true });
+                }}
+                onReload={() => {
+                  void reloadConflictedDocument();
+                }}
+                onSaveAs={() => {
+                  const content = saveConflict?.content;
+                  setSaveConflict(null);
+                  void saveDocumentAs(content);
+                }}
+              />
+              <FileTreeNameDialogView
+                dialog={fileTreeNameDialog}
+                name={fileTreeNameValue}
+                onCancel={closeFileTreeNameDialog}
+                onNameChange={setFileTreeNameValue}
+                onSubmit={() => void submitFileTreeNameDialog()}
+              />
+              <FileTreeTrashDialog
+                node={fileTreeTrashTarget?.node ?? null}
+                onCancel={() => setFileTreeTrashTarget(null)}
+                onConfirm={() => void confirmTrashTreeNode()}
+              />
+            </div>
+          )}
         </div>
       </TooltipProvider>
     </ActionsProvider>

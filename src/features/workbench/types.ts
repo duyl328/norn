@@ -31,6 +31,18 @@ export type NativeTextFile = {
   content: string;
   size: number;
   lastModified?: number | null;
+  encoding: string;
+  encodingLabel: string;
+  encodingCandidates: TextEncodingCandidate[];
+  hasBom: boolean;
+};
+
+export type TextEncodingCandidate = {
+  encoding: string;
+  label: string;
+  confidence: number;
+  valid: boolean;
+  recommended: boolean;
 };
 
 export type NativeTextFileInspection = {
@@ -40,6 +52,12 @@ export type NativeTextFileInspection = {
   lastModified?: number | null;
   isBinary: boolean;
   isUtf8: boolean;
+  isText: boolean;
+  encoding?: string | null;
+  encodingLabel?: string | null;
+  encodingConfidence: number;
+  encodingCandidates: TextEncodingCandidate[];
+  hasBom: boolean;
   sample: string;
 };
 
@@ -52,6 +70,10 @@ export type NativeTextFileRange = {
   endOffset: number;
   hasMoreBefore: boolean;
   hasMoreAfter: boolean;
+  encoding: string;
+  encodingLabel: string;
+  encodingCandidates: TextEncodingCandidate[];
+  hasBom: boolean;
 };
 
 export type NativeSavedTextFile = {
@@ -59,9 +81,12 @@ export type NativeSavedTextFile = {
   path: string;
   size: number;
   lastModified?: number | null;
+  encoding: string;
+  encodingLabel: string;
+  hasBom: boolean;
 };
 
-export type NativeSaveErrorKind = "deleted" | "invalid-path" | "io" | "modified" | "permission";
+export type NativeSaveErrorKind = "deleted" | "encoding" | "invalid-path" | "io" | "modified" | "permission";
 
 export type NativeSaveError = {
   kind?: NativeSaveErrorKind;
@@ -230,8 +255,17 @@ export type EditorScrollbarGeometry = {
 
 export type SaveState = "idle" | "saving" | "saved" | "error";
 
+export type TextEncodingOption = {
+  label: string;
+  value: string;
+  hasBom?: boolean;
+};
+
 export type SaveConflict = {
   content: string;
+  diskContent?: string;
+  diskLastModified?: number;
+  diskMissing?: boolean;
   lastModified?: number;
   message: string;
   path: string;
@@ -243,8 +277,13 @@ export type WorkbenchDocument = {
   path: string;
   content: string;
   savedContent: string;
+  diskConflict?: SaveConflict;
   size?: number;
   lastModified?: number;
+  encoding?: string;
+  encodingLabel?: string;
+  encodingCandidates?: TextEncodingCandidate[];
+  hasBom?: boolean;
   isUntitled?: boolean;
   mode?: "editable" | "large-readonly";
   range?: {

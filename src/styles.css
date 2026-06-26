@@ -1798,6 +1798,60 @@
       0 2px 8px rgb(0 0 0 / 0.22);
   }
 
+  .save-conflict-dialog {
+    @apply max-w-[560px];
+  }
+
+  .save-conflict-dialog-wide {
+    @apply max-h-[82vh] max-w-[min(980px,calc(100vw-32px))];
+  }
+
+  .save-conflict-diff {
+    @apply min-h-0 overflow-hidden rounded-[6px] border border-border bg-muted/20;
+  }
+
+  .save-conflict-diff-head {
+    @apply grid grid-cols-2 border-b border-border bg-muted/50 text-ui font-medium text-muted-foreground;
+  }
+
+  .save-conflict-diff-head span {
+    @apply min-w-0 px-3 py-2;
+  }
+
+  .save-conflict-diff-head span + span {
+    @apply border-l border-border;
+  }
+
+  .save-conflict-diff-body {
+    @apply max-h-[50vh] overflow-auto font-mono text-[12px] leading-5;
+  }
+
+  .save-conflict-diff-row {
+    @apply grid min-w-[720px] grid-cols-2 border-b border-border/50;
+  }
+
+  .save-conflict-diff-row pre {
+    @apply min-w-0 overflow-x-auto whitespace-pre-wrap break-words px-3 py-1;
+  }
+
+  .save-conflict-diff-row pre + pre {
+    @apply border-l border-border/60;
+  }
+
+  .save-conflict-diff-row-changed pre:first-child,
+  .save-conflict-diff-row-removed pre:first-child {
+    @apply bg-[hsl(var(--diff-delete))];
+  }
+
+  .save-conflict-diff-row-changed pre:last-child,
+  .save-conflict-diff-row-added pre:last-child {
+    @apply bg-[hsl(var(--diff-add))];
+  }
+
+  .save-conflict-diff-row-same {
+    @apply text-muted-foreground;
+  }
+
   .status-token {
     @apply inline-flex h-5 items-center gap-1 whitespace-nowrap font-mono text-ui-sm text-muted-foreground;
   }

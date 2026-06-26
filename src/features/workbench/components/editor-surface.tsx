@@ -1,4 +1,4 @@
-import { Compartment, EditorState, StateEffect } from "@codemirror/state";
+import { Compartment, EditorState, StateEffect, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { Plus, X } from "lucide-react";
 import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
@@ -34,7 +34,6 @@ const stackFrameMinCover = 14;
 export function EditorSurface({
   document,
   error,
-  isDirty,
   openDocuments,
   onChange,
   onCloseDocument,
@@ -43,7 +42,6 @@ export function EditorSurface({
 }: {
   document: WorkbenchDocument;
   error: string | null;
-  isDirty: boolean;
   openDocuments: WorkbenchDocument[];
   onChange: (content: string) => void;
   onCloseDocument: (document: WorkbenchDocument) => void;
@@ -55,6 +53,7 @@ export function EditorSurface({
   const scrollDOMRef = useRef<HTMLElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
+  const suppressChangeRef = useRef(false);
   const languageCompartmentRef = useRef(new Compartment());
   const keymapCompartmentRef = useRef(new Compartment());
   const lineWrapCompartmentRef = useRef(new Compartment());
@@ -117,7 +116,11 @@ export function EditorSurface({
           languageCompartmentRef.current,
           lineWrapCompartmentRef.current,
           document,
-          (content) => onChangeRef.current(content),
+          (content) => {
+            if (!suppressChangeRef.current) {
+              onChangeRef.current(content);
+            }
+          },
           keymapCompartmentRef.current.of(buildEditorKeymapExtension(keymapOverridesRef.current)),
           useWorkbenchStore.getState().editorLineWrapping,
         ),
@@ -229,6 +232,28 @@ export function EditorSurface({
       scrollDOMRef.current = null;
     };
   }, [document.id, document.name]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+
+    if (!view || view.state.doc.toString() === document.content) {
+      return;
+    }
+
+    const anchor = Math.min(view.state.selection.main.anchor, document.content.length);
+    const head = Math.min(view.state.selection.main.head, document.content.length);
+
+    suppressChangeRef.current = true;
+    try {
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: document.content },
+        selection: { anchor, head },
+        annotations: Transaction.addToHistory.of(false),
+      });
+    } finally {
+      suppressChangeRef.current = false;
+    }
+  }, [document.content]);
 
   // 设置里切换长行换行时,只重配置 compartment,不重建编辑器(保留光标/滚动/撤销栈)。
   useEffect(() => {

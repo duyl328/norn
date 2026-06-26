@@ -2208,6 +2208,7 @@ name = "norn"
 version = "0.1.0"
 dependencies = [
  "clipboard-rs",
+ "encoding_rs",
  "notify-debouncer-mini",
  "serde",
  "serde_json",

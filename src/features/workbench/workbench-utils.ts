@@ -39,6 +39,7 @@ import type {
   NativeSaveError,
   ProjectAccentStyle,
   RecentFolder,
+  TextEncodingOption,
   TreeDropTarget,
   TreeSelection,
   TreeSelectionModifiers,
@@ -126,16 +127,16 @@ const fileNameIconMap: Record<string, string> = {
   "babel.config.mjs": "babel",
   "cargo.lock": "cargo",
   "cargo.toml": "cargo",
-  "changelog": "changelog",
+  changelog: "changelog",
   "changelog.md": "changelog",
   "cmakelists.txt": "cmake",
   "compose.yaml": "docker-compose",
   "compose.yml": "docker-compose",
-  "contributing": "text",
+  contributing: "text",
   "contributing.md": "text",
   "docker-compose.yaml": "docker-compose",
   "docker-compose.yml": "docker-compose",
-  "dockerfile": "docker",
+  dockerfile: "docker",
   "eslint.config.cjs": "eslint",
   "eslint.config.js": "eslint",
   "eslint.config.mjs": "eslint",
@@ -143,11 +144,11 @@ const fileNameIconMap: Record<string, string> = {
   "go.mod": "go-mod",
   "go.sum": "go-mod",
   "go.work": "go-mod",
-  "gnumakefile": "makefile",
-  "license": "license",
+  gnumakefile: "makefile",
+  license: "license",
   "license.md": "license",
   "license.txt": "license",
-  "makefile": "makefile",
+  makefile: "makefile",
   "nginx.conf": "nginx",
   "package-lock.json": "npm-lock",
   "package.json": "package-json",
@@ -157,7 +158,7 @@ const fileNameIconMap: Record<string, string> = {
   "postcss.config.js": "postcss",
   "postcss.config.mjs": "postcss",
   "pyproject.toml": "python",
-  "readme": "readme",
+  readme: "readme",
   "readme.md": "readme",
   "robots.txt": "text",
   "schema.json": "json-schema",
@@ -166,7 +167,7 @@ const fileNameIconMap: Record<string, string> = {
   "tailwind.config.mjs": "tailwind",
   "tailwind.config.ts": "tailwind",
   "tauri.conf.json": "tauri",
-  "todo": "todo",
+  todo: "todo",
   "todo.md": "todo",
   "tsconfig.json": "typescript",
   "vite.config.js": "vite",
@@ -615,7 +616,12 @@ export const applyTreeClick = (
   const sameScope = current?.scope === scope;
 
   if (modifiers.range && sameScope && current) {
-    return { scope, anchorPath: current.anchorPath, leadPath: path, paths: orderedRange(order, current.anchorPath, path) };
+    return {
+      scope,
+      anchorPath: current.anchorPath,
+      leadPath: path,
+      paths: orderedRange(order, current.anchorPath, path),
+    };
   }
 
   if (modifiers.toggle && sameScope && current) {
@@ -647,7 +653,12 @@ export const moveTreeLead = (
   const leadPath = order[nextIndex];
 
   if (extend && current?.scope === scope) {
-    return { scope, anchorPath: current.anchorPath, leadPath, paths: orderedRange(order, current.anchorPath, leadPath) };
+    return {
+      scope,
+      anchorPath: current.anchorPath,
+      leadPath,
+      paths: orderedRange(order, current.anchorPath, leadPath),
+    };
   }
 
   return singleSelection(scope, leadPath);
@@ -1038,8 +1049,25 @@ export const createUntitledDocument = (): WorkbenchDocument => ({
   path: "Untitled.txt",
   content: "",
   savedContent: "",
+  encoding: "utf-8",
+  encodingLabel: "UTF-8",
+  encodingCandidates: [],
+  hasBom: false,
   isUntitled: true,
   mode: "editable",
 });
 
 export const initialDocument: WorkbenchDocument = createUntitledDocument();
+
+export const textEncodingOptions: TextEncodingOption[] = [
+  { label: "UTF-8", value: "utf-8" },
+  { label: "UTF-8 with BOM", value: "utf-8-bom", hasBom: true },
+  { label: "UTF-16 LE", value: "utf-16le", hasBom: true },
+  { label: "UTF-16 BE", value: "utf-16be", hasBom: true },
+  { label: "GB18030 / GBK", value: "gb18030" },
+  { label: "Big5", value: "big5" },
+  { label: "Shift_JIS", value: "shift_jis" },
+  { label: "EUC-JP", value: "euc-jp" },
+  { label: "EUC-KR", value: "euc-kr" },
+  { label: "Windows-1252", value: "windows-1252" },
+];
