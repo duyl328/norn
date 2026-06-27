@@ -40,6 +40,7 @@ export function EditorSurface({
   onChange,
   onCloseDocument,
   onCreateFile,
+  onCursorChange,
   onSelectDocument,
 }: {
   document: WorkbenchDocument;
@@ -48,6 +49,7 @@ export function EditorSurface({
   onChange: (content: string) => void;
   onCloseDocument: (document: WorkbenchDocument) => void;
   onCreateFile: () => void;
+  onCursorChange: (position: { column: number; line: number }) => void;
   onSelectDocument: (document: WorkbenchDocument) => void;
 }) {
   const editorFrameRef = useRef<HTMLDivElement>(null);
@@ -55,6 +57,7 @@ export function EditorSurface({
   const scrollDOMRef = useRef<HTMLElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
+  const onCursorChangeRef = useRef(onCursorChange);
   const suppressChangeRef = useRef(false);
   const languageCompartmentRef = useRef(new Compartment());
   const keymapCompartmentRef = useRef(new Compartment());
@@ -93,6 +96,10 @@ export function EditorSurface({
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+
+  useEffect(() => {
+    onCursorChangeRef.current = onCursorChange;
+  }, [onCursorChange]);
 
   // 改键即时生效:overrides 变化 → 重建编辑器 keymap(不重建整个视图)。
   useEffect(() => {
@@ -137,6 +144,12 @@ export function EditorSurface({
     setActiveEditorView(view);
     scrollDOMRef.current = view.scrollDOM;
     setHighlightWarning(null);
+    const reportCursor = () => {
+      const head = view.state.selection.main.head;
+      const line = view.state.doc.lineAt(head);
+      onCursorChangeRef.current({ line: line.number, column: head - line.from + 1 });
+    };
+    reportCursor();
 
     let isCurrentDocument = true;
 
@@ -200,7 +213,16 @@ export function EditorSurface({
     };
 
     view.dispatch({
-      effects: StateEffect.appendConfig.of(EditorView.updateListener.of(updateScrollMetrics)),
+      effects: StateEffect.appendConfig.of(
+        EditorView.updateListener.of((update) => {
+          updateScrollMetrics();
+          if (update.selectionSet || update.docChanged) {
+            const head = update.state.selection.main.head;
+            const line = update.state.doc.lineAt(head);
+            onCursorChangeRef.current({ line: line.number, column: head - line.from + 1 });
+          }
+        }),
+      ),
     });
 
     const resizeObserver = new ResizeObserver(updateScrollMetrics);

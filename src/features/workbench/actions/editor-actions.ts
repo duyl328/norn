@@ -19,7 +19,6 @@ import { foldAll, foldKeymap, unfoldAll } from "@codemirror/language";
 import {
   findNext,
   findPrevious,
-  gotoLine,
   searchKeymap,
   selectNextOccurrence,
   selectSelectionMatches,
@@ -34,6 +33,13 @@ import { useWorkbenchStore } from "../store/workbench-store";
 import { getFileExtension } from "../workbench-utils";
 import { getActiveEditorView } from "./active-editor";
 import type { Action, ActionCategory } from "./types";
+
+export const openGoToLineRequestEvent = "norn:open-go-to-line";
+
+const requestGoToLine: Command = () => {
+  window.dispatchEvent(new CustomEvent(openGoToLineRequestEvent));
+  return true;
+};
 
 /** 整理当前文档:按扩展名选策略(JSON / 括号重排 / 空白整理),整段替换并把光标留在原行。 */
 const formatDocument: Command = (view) => {
@@ -64,15 +70,15 @@ interface EditorActionDef {
 export const EDITOR_ACTIONS: readonly EditorActionDef[] = [
   { id: "editor.find", title: "Find in File", category: "Navigate", keys: ["Mod+F"], command: openFind },
   { id: "editor.replace", title: "Replace in File", category: "Edit", keys: ["Mod+R"], command: openReplace },
-  { id: "editor.findNext", title: "Find Next", category: "Navigate", keys: ["Mod+G"], command: findNext },
+  { id: "editor.findNext", title: "Find Next", category: "Navigate", keys: ["F3"], command: findNext },
   {
     id: "editor.findPrevious",
     title: "Find Previous",
     category: "Navigate",
-    keys: ["Mod+Shift+G"],
+    keys: ["Shift+F3"],
     command: findPrevious,
   },
-  { id: "editor.gotoLine", title: "Go to Line…", category: "Navigate", keys: ["Mod+Alt+G"], command: gotoLine },
+  { id: "editor.gotoLine", title: "Go to Line…", category: "Navigate", keys: ["Ctrl+G"], command: requestGoToLine },
   {
     id: "editor.selectNextOccurrence",
     title: "Select Next Occurrence",

@@ -103,4 +103,18 @@ describe("FileTreePanel", () => {
     expect(rootRow.querySelector("svg.tree-row-icon")).not.toBeNull();
     expect(rootRow.querySelector("img.tree-row-icon")).toBeNull();
   });
+
+  it("keeps the tree scroll position when focusing the tree on click", () => {
+    const focusSpy = vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(() => {});
+
+    try {
+      renderPanel();
+
+      fireEvent.mouseDown(screen.getByRole("tree"));
+
+      expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true });
+    } finally {
+      focusSpy.mockRestore();
+    }
+  });
 });
