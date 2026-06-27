@@ -679,19 +679,27 @@ pub async fn git_worktrees(path: String) -> Result<Vec<GitWorktree>, GitError> {
     let here = workspace.canonicalize().ok();
     let text = git_text(&workspace, &["worktree", "list", "--porcelain"])?;
 
-    let mut worktrees = Vec::new();
+    let mut worktrees = parse_worktrees(&text);
+    // is_current:按真实路径 canonicalize 后比较(解析阶段无文件系统访问,放到这里)。
+    for worktree in worktrees.iter_mut() {
+        worktree.is_current = here
+            .as_ref()
+            .and_then(|h| PathBuf::from(&worktree.path).canonicalize().ok().map(|c| &c == h))
+            .unwrap_or(false);
+    }
+    Ok(worktrees)
+}
+
+/// 纯解析 `git worktree list --porcelain`:记录以 `worktree <path>` 行起始,
+/// 跟随 `branch refs/heads/<name>` 或 `detached`。is_current 留待调用方按文件系统判定。
+fn parse_worktrees(text: &str) -> Vec<GitWorktree> {
+    let mut out = Vec::new();
     let mut wt_path: Option<String> = None;
     let mut branch: Option<String> = None;
     let mut detached = false;
     for line in text.lines() {
         if let Some(rest) = line.strip_prefix("worktree ") {
-            push_worktree(
-                &mut worktrees,
-                &here,
-                &mut wt_path,
-                &mut branch,
-                &mut detached,
-            );
+            flush_worktree(&mut out, &mut wt_path, &mut branch, &mut detached);
             wt_path = Some(rest.to_string());
         } else if let Some(rest) = line.strip_prefix("branch ") {
             branch = Some(rest.trim_start_matches("refs/heads/").to_string());
@@ -699,33 +707,22 @@ pub async fn git_worktrees(path: String) -> Result<Vec<GitWorktree>, GitError> {
             detached = true;
         }
     }
-    push_worktree(
-        &mut worktrees,
-        &here,
-        &mut wt_path,
-        &mut branch,
-        &mut detached,
-    );
-    Ok(worktrees)
+    flush_worktree(&mut out, &mut wt_path, &mut branch, &mut detached);
+    out
 }
 
-fn push_worktree(
+fn flush_worktree(
     out: &mut Vec<GitWorktree>,
-    here: &Option<PathBuf>,
     wt_path: &mut Option<String>,
     branch: &mut Option<String>,
     detached: &mut bool,
 ) {
     if let Some(p) = wt_path.take() {
-        let is_current = here
-            .as_ref()
-            .and_then(|h| PathBuf::from(&p).canonicalize().ok().map(|c| &c == h))
-            .unwrap_or(false);
         out.push(GitWorktree {
             path: p,
             branch: branch.take(),
             detached: *detached,
-            is_current,
+            is_current: false,
         });
     }
     *detached = false;
@@ -769,6 +766,25 @@ pub fn git_worktree_add(
         .unwrap_or(abs)
         .to_string_lossy()
         .into_owned())
+}
+
+/// 删除一个 worktree。force=true 时即使有未提交改动也强删(`--force`)。
+#[tauri::command]
+pub fn git_worktree_remove(path: String, worktree_path: String, force: bool) -> Result<(), GitError> {
+    let mut args: Vec<&str> = vec!["worktree", "remove"];
+    if force {
+        args.push("--force");
+    }
+    args.push(&worktree_path);
+    git_text(&PathBuf::from(path), &args)?;
+    Ok(())
+}
+
+/// 清理已被手动删除目录的 worktree 登记项(`git worktree prune`)。
+#[tauri::command]
+pub fn git_worktree_prune(path: String) -> Result<(), GitError> {
+    git_text(&PathBuf::from(path), &["worktree", "prune"])?;
+    Ok(())
 }
 
 fn current_branch(workspace: &Path) -> Result<String, GitError> {
@@ -1161,6 +1177,20 @@ mod tests {
         assert_eq!(map.get("src/app.tsx"), Some(&(2, 3)));
         assert_eq!(map.get("src/new/file.ts"), Some(&(7, 1)));
         assert_eq!(map.get("asset.bin"), Some(&(0, 0)));
+    }
+
+    #[test]
+    fn parses_worktree_porcelain() {
+        let raw = "worktree /repo\nHEAD abc\nbranch refs/heads/main\n\nworktree /repo-feat\nHEAD def\nbranch refs/heads/feature/x\n\nworktree /repo-detach\nHEAD 999\ndetached\n";
+        let result = parse_worktrees(raw);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].path, "/repo");
+        assert_eq!(result[0].branch.as_deref(), Some("main"));
+        assert!(!result[0].detached);
+        assert_eq!(result[1].branch.as_deref(), Some("feature/x"));
+        assert_eq!(result[2].path, "/repo-detach");
+        assert_eq!(result[2].branch, None);
+        assert!(result[2].detached);
     }
 
     #[test]

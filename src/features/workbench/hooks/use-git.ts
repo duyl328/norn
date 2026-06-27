@@ -246,6 +246,10 @@ export const gitActions = {
       useWorkbenchStore.getState().setGitBusy(false);
     }
   },
+  removeWorktree: (worktreePath: string, force: boolean, okMessage?: string) =>
+    withBusy((path) => invoke("git_worktree_remove", { path, worktreePath, force }), okMessage),
+  pruneWorktrees: (okMessage?: string) =>
+    withBusy((path) => invoke("git_worktree_prune", { path }), okMessage),
   loadDivergence: async (branch: string, base?: string): Promise<GitDivergence | null> => {
     const path = repoPath();
     if (!path) {

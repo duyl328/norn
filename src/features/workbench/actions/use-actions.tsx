@@ -118,6 +118,8 @@ export const buildActions = (deps: ActionDeps): Action[] => {
       title: "action.navigate.focusFileTree",
       category: "action.category.navigate",
       keys: ["Alt+1"],
+      // capture:抢在编辑器/Webview 前处理。macOS 上 Option+1 会被输入法当作字符(¡)吞掉,故同 Alt 导航键一样捕获。
+      capture: true,
       // IDEA 语义:未开→开并聚焦;已开且焦点已在内→收起(焦点回编辑器);已开但焦点在别处→聚焦。
       run: () => {
         const s = store();
@@ -137,6 +139,8 @@ export const buildActions = (deps: ActionDeps): Action[] => {
       title: "action.navigate.focusGit",
       category: "action.category.navigate",
       keys: ["Alt+9"],
+      // 同 Alt+1:capture 抢在编辑器/Webview 前,避免 Option+9 被当作字符吞掉。
+      capture: true,
       run: () => {
         const s = store();
         if (!s.rightPanelOpen) {

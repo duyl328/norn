@@ -2744,6 +2744,8 @@ pub fn run() {
             git::git_merge,
             git::git_worktrees,
             git::git_worktree_add,
+            git::git_worktree_remove,
+            git::git_worktree_prune,
             git::git_pending_op,
             git::git_abort_op,
             git::git_init,

@@ -4,12 +4,14 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Eraser,
   FolderGit2,
   FolderOpen,
   GitBranch as GitBranchIcon,
   GitBranchPlus,
   GitMerge,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -524,6 +526,20 @@ function WorktreeSection({
     }
   };
 
+  // 删除工作树:确认对话框带「强制」选项(默认关,避免误删未提交改动)。清理后列表随刷新自动更新。
+  const [removeTarget, setRemoveTarget] = useState<GitWorktree | null>(null);
+  const [removeForce, setRemoveForce] = useState(false);
+  const labelOf = (worktree: GitWorktree) =>
+    worktree.branch ?? (worktree.detached ? "(detached)" : worktree.path.replace(/^.*[/\\]/, ""));
+  const confirmRemove = () => {
+    const target = removeTarget;
+    const force = removeForce;
+    setRemoveTarget(null);
+    if (target) {
+      void gitActions.removeWorktree(target.path, force, t("git.worktreeRemoved", { name: labelOf(target) }));
+    }
+  };
+
   return (
     <>
       <button type="button" className="git-branches-group-label git-worktree-header" onClick={() => setOpen((v) => !v)}>
@@ -531,6 +547,24 @@ function WorktreeSection({
         <FolderGit2 className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">{t("git.worktrees")}</span>
         <span className="git-branches-toolbar-spacer" aria-hidden="true" />
+        <span
+          role="button"
+          tabIndex={0}
+          className="git-worktree-add"
+          title={t("git.pruneWorktreesTitle")}
+          onClick={(event) => {
+            event.stopPropagation();
+            void gitActions.pruneWorktrees(t("git.worktreesPruned"));
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.stopPropagation();
+              void gitActions.pruneWorktrees(t("git.worktreesPruned"));
+            }
+          }}
+        >
+          <Eraser className="h-3.5 w-3.5" />
+        </span>
         <span
           role="button"
           tabIndex={0}
@@ -552,21 +586,20 @@ function WorktreeSection({
       </button>
 
       {open
-        ? worktrees.map((worktree) => {
-            const label = worktree.branch ?? (worktree.detached ? "(detached)" : worktree.path.replace(/^.*[/\\]/, ""));
-            return (
-              <div
-                key={worktree.path}
-                className={cn("git-branch-leaf", worktree.isCurrent && "git-branch-leaf-current")}
-              >
-                <div className="git-branch-leaf-main git-worktree-leaf" title={worktree.path}>
-                  <span className="git-branch-leaf-check">
-                    <FolderGit2 className="h-3.5 w-3.5 text-muted-foreground" />
-                  </span>
-                  <span className="truncate">{label}</span>
-                  {worktree.isCurrent ? <span className="git-branch-base-chip">{t("git.currentWorktree")}</span> : null}
-                </div>
-                {!worktree.isCurrent ? (
+        ? worktrees.map((worktree) => (
+            <div
+              key={worktree.path}
+              className={cn("git-branch-leaf", worktree.isCurrent && "git-branch-leaf-current")}
+            >
+              <div className="git-branch-leaf-main git-worktree-leaf" title={worktree.path}>
+                <span className="git-branch-leaf-check">
+                  <FolderGit2 className="h-3.5 w-3.5 text-muted-foreground" />
+                </span>
+                <span className="truncate">{labelOf(worktree)}</span>
+                {worktree.isCurrent ? <span className="git-branch-base-chip">{t("git.currentWorktree")}</span> : null}
+              </div>
+              {!worktree.isCurrent ? (
+                <>
                   <button
                     type="button"
                     className="git-branch-leaf-checkout"
@@ -576,10 +609,22 @@ function WorktreeSection({
                     <FolderOpen className="h-3.5 w-3.5" />
                     {t("git.openWorktree")}
                   </button>
-                ) : null}
-              </div>
-            );
-          })
+                  <button
+                    type="button"
+                    className="git-branch-leaf-merge"
+                    disabled={gitBusy}
+                    title={t("git.removeWorktree")}
+                    onClick={() => {
+                      setRemoveForce(false);
+                      setRemoveTarget(worktree);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ))
         : null}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -610,6 +655,26 @@ function WorktreeSection({
             <Button onClick={() => void confirmCreate()} disabled={!path.trim() || !branch.trim()}>
               {t("common.create")}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={removeTarget !== null} onOpenChange={(value) => !value && setRemoveTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("git.removeWorktreeTitle", { name: removeTarget ? labelOf(removeTarget) : "" })}</DialogTitle>
+            <DialogDescription>{t("git.removeWorktreeConfirm")}</DialogDescription>
+          </DialogHeader>
+          <div className="git-worktree-field-label">{removeTarget?.path}</div>
+          <label className="git-worktree-checkbox">
+            <input type="checkbox" checked={removeForce} onChange={(event) => setRemoveForce(event.target.checked)} />
+            {t("git.removeWorktreeForce")}
+          </label>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRemoveTarget(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={confirmRemove}>{t("git.removeWorktree")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
