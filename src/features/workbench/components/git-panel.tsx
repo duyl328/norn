@@ -76,42 +76,46 @@ export function GitPanel({
     PANEL_MODES.findIndex((item) => item.key === mode),
   );
   const paneHeight = `${100 / count}%`;
+  const hasWorkspace = Boolean(folderView);
+  const shouldShowWorkspaceNotice =
+    !hasWorkspace || gitWorkspace.kind !== "ready" || !gitWorkspace.inspection.isRepository;
 
   return (
     <div className="git-panel-shell">
       <div className="git-panel-stack">
-        {/* N 个模式纵向堆叠,切换时整条 track 上下滑动 = 模式切换的「上下滚动」手感。 */}
-        <div
-          className="git-panel-track"
-          style={{ height: `${count * 100}%`, transform: `translateY(-${(index * 100) / count}%)` } as CSSProperties}
-        >
-          <div className="git-panel-pane" style={{ height: paneHeight }} aria-hidden={mode !== "commit"}>
-            <GitCommitMode
-              folderView={folderView}
-              gitWorkspace={gitWorkspace}
-              onOpenDiff={onOpenDiff}
-              onOpenFile={onOpenFile}
+        {shouldShowWorkspaceNotice ? (
+          <GitWorkspaceNoticePanel gitWorkspace={gitWorkspace} hasWorkspace={hasWorkspace} />
+        ) : (
+          // N 个模式纵向堆叠,切换时整条 track 上下滑动 = 模式切换的「上下滚动」手感。
+          <div
+            className="git-panel-track"
+            style={{ height: `${count * 100}%`, transform: `translateY(-${(index * 100) / count}%)` } as CSSProperties}
+          >
+            <div className="git-panel-pane" style={{ height: paneHeight }} aria-hidden={mode !== "commit"}>
+              <GitCommitMode onOpenDiff={onOpenDiff} onOpenFile={onOpenFile} />
+            </div>
+            <div className="git-panel-pane" style={{ height: paneHeight }} aria-hidden={mode !== "branch"}>
+              <GitBranchMode />
+            </div>
+            <div className="git-panel-pane" style={{ height: paneHeight }} aria-hidden={mode !== "history"}>
+              <GitHistoryMode onOpenCommitDiff={onOpenCommitDiff} />
+            </div>
+          </div>
+        )}
+      </div>
+      {shouldShowWorkspaceNotice ? null : (
+        <div className="git-panel-rail" role="tablist" aria-orientation="vertical">
+          {PANEL_MODES.map((item) => (
+            <RailTab
+              key={item.key}
+              icon={item.icon}
+              label={item.label}
+              active={mode === item.key}
+              onClick={() => setMode(item.key)}
             />
-          </div>
-          <div className="git-panel-pane" style={{ height: paneHeight }} aria-hidden={mode !== "branch"}>
-            <GitBranchMode />
-          </div>
-          <div className="git-panel-pane" style={{ height: paneHeight }} aria-hidden={mode !== "history"}>
-            <GitHistoryMode onOpenCommitDiff={onOpenCommitDiff} />
-          </div>
+          ))}
         </div>
-      </div>
-      <div className="git-panel-rail" role="tablist" aria-orientation="vertical">
-        {PANEL_MODES.map((item) => (
-          <RailTab
-            key={item.key}
-            icon={item.icon}
-            label={item.label}
-            active={mode === item.key}
-            onClick={() => setMode(item.key)}
-          />
-        ))}
-      </div>
+      )}
     </div>
   );
 }
@@ -142,13 +146,9 @@ function RailTab({
 }
 
 function GitCommitMode({
-  folderView,
-  gitWorkspace,
   onOpenDiff,
   onOpenFile,
 }: {
-  folderView: FolderView | null;
-  gitWorkspace: GitWorkspaceState;
   onOpenDiff: (file: string) => void;
   onOpenFile: (path: string, size?: number) => void;
 }) {
@@ -162,8 +162,6 @@ function GitCommitMode({
   // 记录被取消勾选的文件;新文件默认勾选(选中=不在该集合中),刷新无需重新同步。
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
 
-  const hasWorkspace = Boolean(folderView);
-  const isNonRepository = gitWorkspace.kind === "ready" && !gitWorkspace.inspection.isRepository;
   const changeCount = changes.length;
   const hasChanges = changeCount > 0;
   // 已跟踪改动进主区;未跟踪(新文件)挪到底部单独分组(类似 IDEA)。提交集合仍含勾选的未跟踪文件。
@@ -196,13 +194,11 @@ function GitCommitMode({
   return (
     <RightTaskPanel
       toolbar={<RefreshButton busy={gitBusy} />}
-      footer={isNonRepository ? null : <GitCommitBox disabled={!hasChanges} busy={gitBusy} files={selectedFiles} />}
+      footer={<GitCommitBox disabled={!hasChanges} busy={gitBusy} files={selectedFiles} />}
     >
       <div className="git-panel-body" ref={bodyRef}>
         {gitError ? <GitErrorNotice error={gitError} /> : null}
-        {isNonRepository ? (
-          <GitWorkspaceNotice gitWorkspace={gitWorkspace} hasWorkspace={hasWorkspace} busy={gitBusy} />
-        ) : hasChanges ? (
+        {hasChanges ? (
           <>
             {tracked.length > 0 ? <GitChangesTree changes={tracked} {...treeProps} /> : null}
             {untracked.length > 0 ? <GitUntrackedSection changes={untracked} {...treeProps} /> : null}
@@ -213,7 +209,7 @@ function GitCommitMode({
             <div className="git-panel-clean-description">当前没有本地变更，可以放心切换分支。</div>
           </div>
         )}
-        {!isNonRepository ? <GitIgnoredSection onOpenFile={onOpenFile} /> : null}
+        <GitIgnoredSection onOpenFile={onOpenFile} />
       </div>
     </RightTaskPanel>
   );
@@ -418,16 +414,36 @@ export function GitWorkspaceNotice({
     <div className="git-workspace-notice">
       <div className="git-workspace-notice-title">{title}</div>
       <div className="git-workspace-notice-description">{description}</div>
-      <Button
-        className="git-action-button"
-        size="sm"
-        variant="ghost"
-        disabled={!hasWorkspace || busy || gitWorkspace.kind === "loading"}
-        onClick={() => void gitActions.initRepo()}
-      >
-        创建 Git 仓库
-      </Button>
+      {hasWorkspace ? (
+        <Button
+          className="git-action-button"
+          size="sm"
+          variant="ghost"
+          disabled={busy || gitWorkspace.kind === "loading"}
+          onClick={() => void gitActions.initRepo()}
+        >
+          创建 Git 仓库
+        </Button>
+      ) : null}
     </div>
+  );
+}
+
+function GitWorkspaceNoticePanel({
+  gitWorkspace,
+  hasWorkspace,
+}: {
+  gitWorkspace: GitWorkspaceState;
+  hasWorkspace: boolean;
+}) {
+  const gitBusy = useWorkbenchStore((state) => state.gitBusy);
+
+  return (
+    <RightTaskPanel toolbar={<RefreshButton busy={gitBusy} />}>
+      <div className="git-panel-body">
+        <GitWorkspaceNotice busy={gitBusy} gitWorkspace={gitWorkspace} hasWorkspace={hasWorkspace} />
+      </div>
+    </RightTaskPanel>
   );
 }
 

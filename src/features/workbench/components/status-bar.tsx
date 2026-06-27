@@ -178,12 +178,7 @@ export function StatusBar({
         <span className="status-token">{saveLabel}</span>
       </div>
       <div className="status-right-tokens">
-        {!hasGit ? (
-          <span className="status-token">
-            <GitBranch className="h-3 w-3" />
-            No Git
-          </span>
-        ) : (
+        {hasGit ? (
           <>
             <GitBranchMenu>
               <button type="button" className="status-token status-token-button" title="查看和切换 Git 分支">
@@ -201,7 +196,7 @@ export function StatusBar({
               </span>
             ) : null}
           </>
-        )}
+        ) : null}
         <span className="status-token">
           <Terminal className="h-3 w-3" />
           Tauri 2
