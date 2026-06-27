@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { type CSSProperties, useEffect, useMemo, useRef } from "react";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -33,7 +34,11 @@ import { useWorkspaceTree } from "./hooks/use-workspace-tree";
 import { isMac, isWindows } from "./platform";
 import { loadSettings } from "./settings";
 import { useWorkbenchStore } from "./store/workbench-store";
+import type { WorkbenchDocument } from "./types";
 import { isDocumentDirty, isTauriRuntime, loadKeymapOverrides } from "./workbench-utils";
+
+const requiresCloseConfirmation = (targetDocument: WorkbenchDocument) =>
+  isDocumentDirty(targetDocument) || (targetDocument.isUntitled && targetDocument.content.length > 0);
 
 export function WorkbenchPage() {
   const document = useWorkbenchStore((state) => state.document);
@@ -105,10 +110,51 @@ export function WorkbenchPage() {
   } = useDocumentSession();
 
   const requestFileOpenRef = useRef(requestFileOpen);
+  const requestCloseDocumentRef = useRef(requestCloseDocument);
 
   useEffect(() => {
     requestFileOpenRef.current = requestFileOpen;
   }, [requestFileOpen]);
+
+  useEffect(() => {
+    requestCloseDocumentRef.current = requestCloseDocument;
+  }, [requestCloseDocument]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    let disposed = false;
+    let unlisten: UnlistenFn | undefined;
+
+    getCurrentWindow()
+      .onCloseRequested((event) => {
+        const targetDocument = useWorkbenchStore.getState().openDocuments.find(requiresCloseConfirmation);
+
+        if (!targetDocument) {
+          return;
+        }
+
+        event.preventDefault();
+        requestCloseDocumentRef.current(targetDocument);
+      })
+      .then((cleanup) => {
+        if (disposed) {
+          cleanup();
+          return;
+        }
+        unlisten = cleanup;
+      })
+      .catch(() => {
+        unlisten = undefined;
+      });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   // 顶部搜索结果点击 → 打开文件。注册到 store,避免穿过 titlebar 透传回调。
   const setOpenFileFromSearch = useWorkbenchStore((state) => state.setOpenFileFromSearch);

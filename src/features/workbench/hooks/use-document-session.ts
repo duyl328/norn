@@ -148,8 +148,12 @@ export function useDocumentSession() {
     }
   };
 
+  const requiresCloseConfirmation = (targetDocument: WorkbenchDocument) =>
+    isDocumentDirty(targetDocument) || (targetDocument.isUntitled && targetDocument.content.length > 0);
+
   const requestCloseDocument = (targetDocument: WorkbenchDocument) => {
-    if (isDocumentDirty(targetDocument) || targetDocument.isUntitled) {
+    if (requiresCloseConfirmation(targetDocument)) {
+      activateDocument(targetDocument);
       setPendingCloseDocument(targetDocument);
       return;
     }
