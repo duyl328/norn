@@ -1,11 +1,14 @@
+import { EditorView } from "@codemirror/view";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { type CSSProperties, useEffect, useMemo, useRef } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { getActiveEditorView } from "./actions/active-editor";
+import { openGoToLineRequestEvent } from "./actions/editor-actions";
 import { type ActionDeps, ActionsProvider, useActions } from "./actions/use-actions";
 import { useKeybindings } from "./actions/use-keybindings";
 import { CommandPalette } from "./components/command-palette";
@@ -73,7 +76,6 @@ export function WorkbenchPage() {
   const setDraggedTreeNode = useWorkbenchStore((state) => state.setDraggedTreeNode);
   const dropTarget = useWorkbenchStore((state) => state.dropTarget);
   const setDropTarget = useWorkbenchStore((state) => state.setDropTarget);
-  const saveState = useWorkbenchStore((state) => state.saveState);
   const searchOpen = useWorkbenchStore((state) => state.searchOpen);
   const showStatusBar = useWorkbenchStore((state) => state.showStatusBar);
   const gitStatus = useWorkbenchStore((state) => state.gitStatus);
@@ -81,6 +83,8 @@ export function WorkbenchPage() {
   const showMacTitlebar = useMemo(() => isMac(), []);
   const isDirty = isDocumentDirty(document);
   const gitBadgeCount = gitStatus?.changes.length ?? 0;
+  const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
+  const [goToLineRequestId, setGoToLineRequestId] = useState(0);
 
   const {
     toggleFilesTool,
@@ -108,6 +112,39 @@ export function WorkbenchPage() {
     updateDocumentContent,
     changeDocumentEncoding,
   } = useDocumentSession();
+
+  const goToLine = (line: number, column = 1) => {
+    const view = getActiveEditorView();
+    if (!view) return;
+
+    const targetLine = Math.min(Math.max(Math.trunc(line), 1), view.state.doc.lines);
+    const lineInfo = view.state.doc.line(targetLine);
+    const targetColumn = Math.max(Math.trunc(column), 1);
+    const pos = Math.min(lineInfo.from + targetColumn - 1, lineInfo.to);
+    view.dispatch({
+      selection: { anchor: pos, head: pos },
+      effects: EditorView.scrollIntoView(pos, { x: "nearest", y: "center" }),
+      scrollIntoView: true,
+    });
+    view.focus();
+  };
+
+  const cancelGoToLine = () => {
+    getActiveEditorView()?.focus();
+  };
+
+  useEffect(() => {
+    const openGoToLine = () => setGoToLineRequestId((value) => value + 1);
+    window.addEventListener(openGoToLineRequestEvent, openGoToLine);
+    return () => window.removeEventListener(openGoToLineRequestEvent, openGoToLine);
+  }, []);
+
+  const changeDocumentLineEnding = (lineEnding: "crlf" | "lf") => {
+    if (document.mode === "large-readonly" || document.mode === "diff") return;
+
+    const normalized = document.content.replace(/\r\n|\r|\n/g, lineEnding === "crlf" ? "\r\n" : "\n");
+    updateDocumentContent(normalized);
+  };
 
   const requestFileOpenRef = useRef(requestFileOpen);
   const requestCloseDocumentRef = useRef(requestCloseDocument);
@@ -421,6 +458,7 @@ export function WorkbenchPage() {
                   onChange={updateDocumentContent}
                   onCloseDocument={requestCloseDocument}
                   onCreateFile={createFile}
+                  onCursorChange={setCursorPosition}
                   onSelectDocument={activateDocument}
                 />
                 <PanelResizeHandle
@@ -459,10 +497,13 @@ export function WorkbenchPage() {
               {showStatusBar ? (
                 <StatusBar
                   document={document}
+                  cursorPosition={cursorPosition}
+                  goToLineRequestId={goToLineRequestId}
                   isDirty={isDirty}
+                  onCancelGoToLine={cancelGoToLine}
                   onChangeEncoding={(option) => void changeDocumentEncoding(option)}
-                  onOpenSettings={openSettingsTool}
-                  saveState={saveState}
+                  onChangeLineEnding={changeDocumentLineEnding}
+                  onGoToLine={goToLine}
                   gitWorkspace={gitWorkspace}
                 />
               ) : null}
