@@ -306,6 +306,7 @@ export function MacTitlebar({
 
   return (
     <header className="mac-titlebar" data-tauri-drag-region style={editorRegionStyle}>
+      <div className="mac-titlebar-drag-layer" data-tauri-drag-region />
       <div className="mac-titlebar-side mac-titlebar-side-left" data-tauri-drag-region>
         <PanelToggleButton
           className="titlebar-panel-button mac-panel-toggle-button"
