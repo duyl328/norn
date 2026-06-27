@@ -15,6 +15,7 @@ export const nativeMenuCommands = {
   saveFileAs: "menu-save-file-as",
   showExplorer: "menu-show-explorer",
   toggleGitPanel: "menu-toggle-git-panel",
+  welcome: "menu-welcome",
 } as const;
 
 export const EDITOR_SCROLLBAR_SIZE = 18;
@@ -101,7 +102,7 @@ export const windowsTitlebarMenus: ReadonlyArray<{
     id: "help",
     label: "Help",
     children: [
-      { label: "Welcome" },
+      { label: "Welcome", actionId: "help.welcome" },
       { label: "Documentation" },
       { label: "Keyboard Shortcuts", actionId: "view.settings" },
       { label: "About Norn" },

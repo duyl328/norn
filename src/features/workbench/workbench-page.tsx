@@ -37,6 +37,8 @@ import { useWorkspaceTree } from "./hooks/use-workspace-tree";
 import { isMac, isWindows } from "./platform";
 import { loadSettings } from "./settings";
 import { useWorkbenchStore } from "./store/workbench-store";
+import { hasSeenWelcome } from "./welcome";
+import { startWelcomeTour } from "./welcome-tour";
 import {
   isDocumentDirty,
   isTauriRuntime,
@@ -616,6 +618,7 @@ const NATIVE_MENU_TO_ACTION: Record<string, string> = {
   [nativeMenuCommands.showExplorer]: "view.toggleExplorer",
   [nativeMenuCommands.find]: "navigate.goToFile",
   [nativeMenuCommands.toggleGitPanel]: "view.toggleGit",
+  [nativeMenuCommands.welcome]: "help.welcome",
 };
 
 /**
@@ -627,6 +630,16 @@ function WorkbenchActionsRuntime() {
   useSettingsRuntime();
   const { dispatch } = useActions();
   const setKeymapOverrides = useWorkbenchStore((state) => state.setKeymapOverrides);
+  const language = useWorkbenchStore((state) => state.language);
+
+  // 首次启动:没看过引导就自动开启漫游(只跑一次)。延迟一拍等标题栏挂载,高亮才能锚到目标。
+  useEffect(() => {
+    if (hasSeenWelcome()) return;
+    const timer = window.setTimeout(() => startWelcomeTour(language), 500);
+    return () => window.clearTimeout(timer);
+    // 仅首启跑一次,不随 language 重启;开 tour 时读当时的语言即可。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 启动时从 keybindings.json(Tauri)/ localStorage(Web)载入自定义快捷键。
   useEffect(() => {

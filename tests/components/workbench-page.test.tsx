@@ -5,10 +5,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { WorkbenchPage } from "@/features/workbench/workbench-page";
 import { I18nProvider } from "@/features/workbench/i18n-provider";
 import { useWorkbenchStore } from "@/features/workbench/store/workbench-store";
 import type { WorkbenchDocument } from "@/features/workbench/types";
+import { WorkbenchPage } from "@/features/workbench/workbench-page";
 
 const onCloseRequestedMock = vi.hoisted(() => vi.fn());
 

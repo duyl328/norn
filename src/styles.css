@@ -4482,3 +4482,80 @@
 .mac-titlebar-side-right-passthrough > * {
   pointer-events: auto;
 }
+
+/* ---------------------------------------------------------------------------
+ * driver.js 引导漫游:套用应用主题 token(popover/accent/primary),明暗自适应。
+ * 用 .norn-tour(driver 的 popoverClass)抬高优先级,确保压过默认浅色皮肤 #fff;
+ * 否则 driver.css 的同级选择器按加载顺序可能反盖,暗色主题下仍是白框。
+ * ------------------------------------------------------------------------- */
+.driver-popover.norn-tour {
+  background-color: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.375rem;
+  box-shadow:
+    0 10px 30px hsl(0 0% 0% / 0.35),
+    0 2px 8px hsl(0 0% 0% / 0.2);
+  padding: 14px 16px;
+}
+.driver-popover.norn-tour * {
+  font-family: inherit;
+}
+.norn-tour .driver-popover-title {
+  color: hsl(var(--popover-foreground));
+  font-size: 14px;
+  font-weight: 600;
+}
+.norn-tour .driver-popover-description {
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  line-height: 1.55;
+}
+.norn-tour .driver-popover-progress-text {
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+}
+.norn-tour .driver-popover-close-btn {
+  color: hsl(var(--muted-foreground));
+}
+.norn-tour .driver-popover-close-btn:hover,
+.norn-tour .driver-popover-close-btn:focus {
+  color: hsl(var(--popover-foreground));
+}
+.norn-tour .driver-popover-footer-btn {
+  background-color: transparent;
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  text-shadow: none;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.norn-tour .driver-popover-footer-btn:hover,
+.norn-tour .driver-popover-footer-btn:focus {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+}
+.norn-tour .driver-popover-next-btn {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-color: hsl(var(--primary));
+}
+.norn-tour .driver-popover-next-btn:hover,
+.norn-tour .driver-popover-next-btn:focus {
+  background-color: hsl(var(--primary) / 0.9);
+  color: hsl(var(--primary-foreground));
+}
+/* 小箭头颜色跟随 popover 背景(默认写死 #fff) */
+.norn-tour .driver-popover-arrow-side-left {
+  border-left-color: hsl(var(--popover));
+}
+.norn-tour .driver-popover-arrow-side-right {
+  border-right-color: hsl(var(--popover));
+}
+.norn-tour .driver-popover-arrow-side-top {
+  border-top-color: hsl(var(--popover));
+}
+.norn-tour .driver-popover-arrow-side-bottom {
+  border-bottom-color: hsl(var(--popover));
+}
