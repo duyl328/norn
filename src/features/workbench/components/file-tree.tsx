@@ -44,6 +44,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
+import { useI18n } from "../i18n";
 import type {
   FileTreeClipboard,
   FileTreeContextMenuState,
@@ -133,6 +134,7 @@ export function FileTreePanel({
   onCollapseAll?: () => void;
   onRevealActiveFile?: () => void;
 }) {
+  const { t } = useI18n();
   const scrollParentRef = useRef<HTMLDivElement>(null);
   // 该作用域当前选中的路径集合与光标行(跨作用域时为空,避免另一棵树误高亮)。
   const selectedPaths = useMemo(
@@ -231,7 +233,9 @@ export function FileTreePanel({
       {searchQuery ? (
         <div className="file-tree-search-bar">
           <span className="file-tree-search-query">{searchQuery}</span>
-          <span className="file-tree-search-count">{searchMatchCount > 0 ? `${searchMatchCount} 项` : "无匹配"}</span>
+          <span className="file-tree-search-count">
+            {searchMatchCount > 0 ? t("fileTree.searchCount", { count: searchMatchCount }) : t("fileTree.noMatches")}
+          </span>
         </div>
       ) : null}
       <div
@@ -256,7 +260,7 @@ export function FileTreePanel({
           onBlur={onTreeBlur}
         >
           {treeView.loadingPath === treeView.rootPath && treeView.nodes.length === 0 ? (
-            <div className="px-2 py-2 text-ui text-muted-foreground">Loading folder...</div>
+            <div className="px-2 py-2 text-ui text-muted-foreground">{t("fileTree.loadingFolder")}</div>
           ) : null}
           <div className="file-tree-virtual-inner" style={{ height: `${treeVirtualizer.getTotalSize()}px` }}>
             {treeVirtualizer.getVirtualItems().map((virtualRow) => {
@@ -298,7 +302,7 @@ export function FileTreePanel({
           treeView.nodes.length === 0 &&
           treeView.loadingPath !== treeView.rootPath &&
           !treeView.error ? (
-            <div className="px-2 py-2 text-ui text-muted-foreground">No files in this folder.</div>
+            <div className="px-2 py-2 text-ui text-muted-foreground">{t("fileTree.emptyFolder")}</div>
           ) : null}
         </div>
       </div>
@@ -354,6 +358,7 @@ export function FileTreeRootRow({
   onRevealActiveFile?: () => void;
   canRevealActiveFile?: boolean;
 }) {
+  const { t } = useI18n();
   const isDropTarget = dropTarget?.scope === scope && dropTarget.path === treeView.rootPath;
   const hasActions = Boolean(onExpandAll || onCollapseAll || onRevealActiveFile);
   const rootNode: FileTreeNode = {
@@ -402,8 +407,8 @@ export function FileTreeRootRow({
             <button
               className="file-tree-root-action"
               type="button"
-              title="定位当前文件"
-              aria-label="Reveal active file in tree"
+              title={t("fileTree.revealActive")}
+              aria-label={t("fileTree.revealActiveAria")}
               disabled={!canRevealActiveFile}
               onClick={onRevealActiveFile}
             >
@@ -414,8 +419,8 @@ export function FileTreeRootRow({
             <button
               className="file-tree-root-action"
               type="button"
-              title="全部展开"
-              aria-label="Expand all folders"
+              title={t("fileTree.expandAll")}
+              aria-label={t("fileTree.expandAllAria")}
               onClick={onExpandAll}
             >
               <ChevronsUpDown className="h-3.5 w-3.5" />
@@ -425,8 +430,8 @@ export function FileTreeRootRow({
             <button
               className="file-tree-root-action"
               type="button"
-              title="全部折叠"
-              aria-label="Collapse all folders"
+              title={t("fileTree.collapseAll")}
+              aria-label={t("fileTree.collapseAllAria")}
               onClick={onCollapseAll}
             >
               <ChevronsDownUp className="h-3.5 w-3.5" />
@@ -496,6 +501,7 @@ export function FileTreeRow({
   onSelectNode: (node: FileTreeNode, modifiers: TreeSelectionModifiers, scope: "main" | "scratch") => void;
   onToggleDirectory: (node: FileTreeNode) => void;
 }) {
+  const { t } = useI18n();
   const isDirectory = node.kind === "directory";
   const isSelected = selectedPaths.has(node.path);
   const isLead = node.path === leadPath;
@@ -587,7 +593,7 @@ export function FileTreeRow({
         // 否则该行被虚拟化卸载后焦点丢到 body,方向键就失效了。光标由容器的 aria-activedescendant 跟踪。
         id={`tree-row:${scope}:${node.path}`}
         style={{ "--tree-depth": depth } as CSSProperties}
-        title={wouldCycle ? `${node.path}\nSymlink loop blocked.` : node.path}
+        title={wouldCycle ? t("fileTree.symlinkLoopTitle", { path: node.path }) : node.path}
         onClick={handleSelect}
         onDoubleClick={handleConfirm}
         onContextMenu={(event) => {
@@ -618,12 +624,12 @@ export function FileTreeRow({
           {node.isSymlink ? <Link2 className="tree-row-badge-icon" /> : null}
         </span>
         <span className="tree-row-size">
-          {isLoading ? "..." : wouldCycle ? "loop" : isDirectory ? "" : formatFileSize(node.size)}
+          {isLoading ? "..." : wouldCycle ? t("fileTree.loop") : isDirectory ? "" : formatFileSize(node.size)}
         </span>
       </div>
       {node.error || wouldCycle ? (
         <div className="tree-row-error" style={{ "--tree-depth": depth } as CSSProperties}>
-          {wouldCycle ? "Symlink loop blocked." : node.error}
+          {wouldCycle ? t("fileTree.symlinkLoopBlocked") : node.error}
         </div>
       ) : null}
     </div>
@@ -665,6 +671,7 @@ export function FileTreeContextMenu({
   x: number;
   y: number;
 }) {
+  const { t } = useI18n();
   const isRootNode = Boolean(node && node.kind === "directory" && node.path === rootPath);
   const menuStyle = {
     left: Math.min(x, window.innerWidth - 216),
@@ -675,15 +682,15 @@ export function FileTreeContextMenu({
     <div className="file-tree-context-menu" role="menu" style={menuStyle} onClick={(event) => event.stopPropagation()}>
       <button className="file-tree-context-item" role="menuitem" type="button" onClick={onRequestCreateFile}>
         <FilePlus className="file-tree-context-icon" />
-        New File
+        {t("fileTree.newFile")}
       </button>
       <button className="file-tree-context-item" role="menuitem" type="button" onClick={onRequestCreateDirectory}>
         <FolderPlus className="file-tree-context-icon" />
-        New Folder
+        {t("fileTree.newFolder")}
       </button>
       <button className="file-tree-context-item" role="menuitem" type="button" onClick={onRefresh}>
         <RefreshCw className="file-tree-context-icon" />
-        Refresh
+        {t("common.refresh")}
       </button>
       <button
         className="file-tree-context-item"
@@ -693,7 +700,7 @@ export function FileTreeContextMenu({
         onClick={() => node && onRevealNode(node)}
       >
         <FolderSearch className="file-tree-context-icon" />
-        在文件管理器中显示
+        {t("fileTree.revealInFileManager")}
       </button>
       <button
         className="file-tree-context-item"
@@ -703,7 +710,7 @@ export function FileTreeContextMenu({
         onClick={() => node && onOpenTerminal(node)}
       >
         <Terminal className="file-tree-context-icon" />
-        在此处打开终端
+        {t("fileTree.openTerminalHere")}
       </button>
       <div className="file-tree-context-separator" />
       <button
@@ -714,7 +721,7 @@ export function FileTreeContextMenu({
         onClick={() => node && onRequestRenameNode(node)}
       >
         <Pencil className="file-tree-context-icon" />
-        Rename
+        {t("common.rename")}
       </button>
       <button
         className="file-tree-context-item"
@@ -724,7 +731,7 @@ export function FileTreeContextMenu({
         onClick={() => node && onCopyNode(node)}
       >
         <Copy className="file-tree-context-icon" />
-        Copy
+        {t("common.copy")}
       </button>
       <button
         className="file-tree-context-item"
@@ -734,11 +741,11 @@ export function FileTreeContextMenu({
         onClick={() => node && onCutNode(node)}
       >
         <Scissors className="file-tree-context-icon" />
-        Cut
+        {t("common.cut")}
       </button>
       <button className="file-tree-context-item" disabled={!clipboard} role="menuitem" type="button" onClick={onPasteNode}>
         <ClipboardPaste className="file-tree-context-icon" />
-        Paste
+        {t("common.paste")}
       </button>
       <div className="file-tree-context-separator" />
       <button
@@ -749,7 +756,7 @@ export function FileTreeContextMenu({
         onClick={() => node && onCopyPath(node, "absolute")}
       >
         <ClipboardCopy className="file-tree-context-icon" />
-        复制路径
+        {t("fileTree.copyPath")}
       </button>
       <button
         className="file-tree-context-item"
@@ -759,7 +766,7 @@ export function FileTreeContextMenu({
         onClick={() => node && onCopyPath(node, "relative")}
       >
         <ClipboardCopy className="file-tree-context-icon" />
-        复制相对路径
+        {t("fileTree.copyRelativePath")}
       </button>
       <div className="file-tree-context-separator" />
       <button
@@ -770,7 +777,7 @@ export function FileTreeContextMenu({
         onClick={() => node && onRequestTrashNode(node)}
       >
         <Trash2 className="file-tree-context-icon" />
-        Move to Trash
+        {t("fileTree.moveToTrash")}
       </button>
     </div>
   );
@@ -791,8 +798,13 @@ export function FileTreeNameDialogView({
   onNameChange: (value: string) => void;
   onSubmit: () => void;
 }) {
+  const { t } = useI18n();
   const title =
-    dialog?.kind === "create-file" ? "New File" : dialog?.kind === "create-directory" ? "New Folder" : "Rename";
+    dialog?.kind === "create-file"
+      ? t("fileTree.newFile")
+      : dialog?.kind === "create-directory"
+        ? t("fileTree.newFolder")
+        : t("common.rename");
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -805,14 +817,14 @@ export function FileTreeNameDialogView({
         <form onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
-            <DialogDescription>Enter a name for this file tree item.</DialogDescription>
+            <DialogDescription>{t("fileTree.nameDialogDescription")}</DialogDescription>
           </DialogHeader>
           <Input autoFocus className="mt-4" value={name} onChange={(event) => onNameChange(event.target.value)} />
           <DialogFooter className="mt-4">
             <Button type="button" variant="ghost" onClick={onCancel}>
-              Cancel
+              {t("common.cancel")}
             </Button>
-            <Button type="submit">{dialog?.kind === "rename" ? "Rename" : "Create"}</Button>
+            <Button type="submit">{dialog?.kind === "rename" ? t("common.rename") : t("common.create")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -829,21 +841,23 @@ export function FileTreeTrashDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <Dialog open={Boolean(node)} onOpenChange={(nextOpen) => (!nextOpen ? onCancel() : undefined)}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Move to Trash?</DialogTitle>
+          <DialogTitle>{t("fileTree.moveToTrashTitle")}</DialogTitle>
           <DialogDescription>
-            {node ? `${node.name} will be moved to the system Trash.` : "This item will be moved to the system Trash."}
+            {node ? t("fileTree.moveToTrashNamed", { name: node.name }) : t("fileTree.moveToTrashFallback")}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="ghost" onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button variant="destructive" onClick={onConfirm}>
-            Move to Trash
+            {t("fileTree.moveToTrash")}
           </Button>
         </DialogFooter>
       </DialogContent>

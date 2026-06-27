@@ -4,6 +4,7 @@ import { type MouseEvent as ReactMouseEvent, useState } from "react";
 import { cn } from "@/lib/utils";
 
 import { buildFileTree, type FileTreeNode } from "../change-tree";
+import { useI18n } from "../i18n";
 import type { GitChange } from "../types";
 import { getPathDisplayIcon } from "../workbench-utils";
 import { ContextMenu } from "./context-menu";
@@ -31,6 +32,7 @@ export function GitChangesTree({
   onTogglePaths: (paths: string[], value: boolean) => void;
   selectedPath: string | null;
 }) {
+  const { t } = useI18n();
   const tree = buildFileTree(changes);
   const [menu, setMenu] = useState<{ x: number; y: number; entry: string } | null>(null);
 
@@ -51,7 +53,7 @@ export function GitChangesTree({
           onClose={() => setMenu(null)}
           items={[
             {
-              label: `加入 .gitignore`,
+              label: t("git.addToGitignore"),
               icon: <EyeOff className="h-3.5 w-3.5" />,
               onClick: () => onAddIgnore(menu.entry),
             },
@@ -123,6 +125,7 @@ function ChangeFile({
   node,
   ...shared
 }: { depth: number; node: Extract<ChangeNode, { kind: "file" }> } & SharedProps) {
+  const { t } = useI18n();
   const change = node.item;
   const checked = shared.isChecked(change.path);
 
@@ -138,7 +141,7 @@ function ChangeFile({
         className="git-tree-file-main"
         onClick={() => shared.onSelect(change.path)}
         onDoubleClick={() => shared.onOpen(change.path)}
-        title={`${change.path}（双击并排对照）`}
+        title={t("git.openDiffTitle", { path: change.path })}
       >
         <TreeIcon name={node.name} kind="file" />
         <span className="min-w-0 flex-1 truncate text-ui-md">{node.name}</span>

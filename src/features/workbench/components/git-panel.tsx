@@ -22,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 import { gitActions } from "../hooks/use-git";
+import { useI18n } from "../i18n";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type { FolderView, GitChange, GitChangeStatus, GitError, GitPanelMode, GitWorkspaceState } from "../types";
 import { GitBranchesPane } from "./git-branches-pane";
@@ -30,24 +31,28 @@ import { GitHistoryPane } from "./git-history";
 import { GitIgnoredTree } from "./git-ignored-tree";
 import { useRailRowInset } from "./use-rail-row-inset";
 
-const PANEL_MODES: { key: GitPanelMode; icon: ComponentType<{ className?: string }>; label: string }[] = [
-  { key: "commit", icon: GitCommitVertical, label: "提交" },
-  { key: "branch", icon: GitFork, label: "分支" },
-  { key: "history", icon: History, label: "历史" },
+const PANEL_MODES: { key: GitPanelMode; icon: ComponentType<{ className?: string }>; labelKey: "git.mode.commit" | "git.mode.branch" | "git.mode.history" }[] = [
+  { key: "commit", icon: GitCommitVertical, labelKey: "git.mode.commit" },
+  { key: "branch", icon: GitFork, labelKey: "git.mode.branch" },
+  { key: "history", icon: History, labelKey: "git.mode.history" },
 ];
 
-const RefreshButton = ({ busy }: { busy: boolean }) => (
-  <Button
-    size="toolbar"
-    variant="ghost"
-    className="git-toolbar-button"
-    onClick={() => void gitActions.refresh()}
-    disabled={busy}
-  >
-    <RefreshCw className={cn("h-3.5 w-3.5", busy && "animate-spin")} />
-    刷新
-  </Button>
-);
+const RefreshButton = ({ busy }: { busy: boolean }) => {
+  const { t } = useI18n();
+
+  return (
+    <Button
+      size="toolbar"
+      variant="ghost"
+      className="git-toolbar-button"
+      onClick={() => void gitActions.refresh()}
+      disabled={busy}
+    >
+      <RefreshCw className={cn("h-3.5 w-3.5", busy && "animate-spin")} />
+      {t("git.refresh")}
+    </Button>
+  );
+};
 
 // 各模式里会被右上角竖排标签盖住的行/卡片,交给 useRailRowInset 逐个判断、缩进。
 const COMMIT_ROW_SELECTOR = ".git-tree-file, .git-tree-folder, .git-ignored-row, .git-ignored-head";
@@ -67,6 +72,7 @@ export function GitPanel({
   onOpenDiff: (file: string) => void;
   onOpenFile: (path: string, size?: number) => void;
 }) {
+  const { t } = useI18n();
   const mode = useWorkbenchStore((state) => state.gitPanelMode);
   const setMode = useWorkbenchStore((state) => state.setGitPanelMode);
 
@@ -109,7 +115,7 @@ export function GitPanel({
             <RailTab
               key={item.key}
               icon={item.icon}
-              label={item.label}
+              label={t(item.labelKey)}
               active={mode === item.key}
               onClick={() => setMode(item.key)}
             />
@@ -152,6 +158,7 @@ function GitCommitMode({
   onOpenDiff: (file: string) => void;
   onOpenFile: (path: string, size?: number) => void;
 }) {
+  const { t } = useI18n();
   const gitStatus = useWorkbenchStore((state) => state.gitStatus);
   const gitBusy = useWorkbenchStore((state) => state.gitBusy);
   const gitError = useWorkbenchStore((state) => state.gitError);
@@ -205,8 +212,8 @@ function GitCommitMode({
           </>
         ) : (
           <div className="git-panel-clean">
-            <div className="git-panel-clean-title">工作区已干净</div>
-            <div className="git-panel-clean-description">当前没有本地变更，可以放心切换分支。</div>
+            <div className="git-panel-clean-title">{t("git.cleanTitle")}</div>
+            <div className="git-panel-clean-description">{t("git.cleanDescription")}</div>
           </div>
         )}
         <GitIgnoredSection onOpenFile={onOpenFile} />
@@ -217,6 +224,7 @@ function GitCommitMode({
 
 /** 底部「已忽略」区:被 .gitignore 忽略的条目;目录可展开看真实内容、文件可点击打开。默认收起。 */
 function GitIgnoredSection({ onOpenFile }: { onOpenFile: (path: string, size?: number) => void }) {
+  const { t } = useI18n();
   const rootPath = useWorkbenchStore((state) => state.folderView?.rootPath ?? null);
   const gitStatus = useWorkbenchStore((state) => state.gitStatus);
   const [items, setItems] = useState<string[]>([]);
@@ -247,7 +255,7 @@ function GitIgnoredSection({ onOpenFile }: { onOpenFile: (path: string, size?: n
       <button type="button" className="git-ignored-head" onClick={() => setOpen((value) => !value)}>
         {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
         <EyeOff className="h-3.5 w-3.5 shrink-0" />
-        <span>已忽略</span>
+        <span>{t("git.ignored")}</span>
         <span className="git-ignored-count">{items.length}</span>
       </button>
       {open ? <GitIgnoredTree entries={items} rootPath={rootPath} onOpenFile={onOpenFile} /> : null}
@@ -273,13 +281,14 @@ function GitUntrackedSection({
   onTogglePaths: (paths: string[], value: boolean) => void;
   selectedPath: string | null;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   return (
     <div className="git-ignored-section">
       <button type="button" className="git-ignored-head" onClick={() => setOpen((value) => !value)}>
         {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
         <FilePlus2 className="h-3.5 w-3.5 shrink-0" />
-        <span>未跟踪</span>
+        <span>{t("git.untracked")}</span>
         <span className="git-ignored-count">{changes.length}</span>
       </button>
       {open ? (
@@ -320,6 +329,7 @@ function GitHistoryMode({ onOpenCommitDiff }: { onOpenCommitDiff: (hash: string,
 }
 
 export function GitCommitBox({ busy, disabled, files }: { busy: boolean; disabled: boolean; files: string[] }) {
+  const { t } = useI18n();
   const [summary, setSummary] = useState("");
   const fileCount = files.length;
   const canCommit = !disabled && !busy && summary.trim().length > 0 && fileCount > 0;
@@ -337,14 +347,18 @@ export function GitCommitBox({ busy, disabled, files }: { busy: boolean; disable
     <div className="git-commit-box">
       <Textarea
         className="git-commit-summary"
-        placeholder="提交摘要"
+        placeholder={t("git.commitSummaryPlaceholder")}
         disabled={disabled || busy}
         value={summary}
         onChange={(event) => setSummary(event.target.value)}
       />
       <div className="git-commit-actions">
         <span className="git-commit-hint">
-          {disabled ? "暂无可提交的变更" : fileCount > 0 ? `将提交 ${fileCount} 个文件` : "未勾选任何文件"}
+          {disabled
+            ? t("git.noCommitChanges")
+            : fileCount > 0
+              ? t("git.willCommitFiles", { count: fileCount })
+              : t("git.noFilesSelected")}
         </span>
         <div className="git-commit-split">
           <Button
@@ -354,7 +368,7 @@ export function GitCommitBox({ busy, disabled, files }: { busy: boolean; disable
             disabled={!canCommit}
             onClick={() => void submit(false, false)}
           >
-            提交
+            {t("git.commit")}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -369,10 +383,10 @@ export function GitCommitBox({ busy, disabled, files }: { busy: boolean; disable
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" sideOffset={6}>
               <DropdownMenuItem disabled={!canCommit} onClick={() => void submit(true, false)}>
-                提交并推送
+                {t("git.commitAndPush")}
               </DropdownMenuItem>
               <DropdownMenuItem disabled={!canAmend} onClick={() => void submit(false, true)}>
-                修订上一条提交（amend）
+                {t("git.amendCommit")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -391,24 +405,25 @@ export function GitWorkspaceNotice({
   gitWorkspace: GitWorkspaceState;
   hasWorkspace: boolean;
 }) {
+  const { t } = useI18n();
   const title =
     gitWorkspace.kind === "loading"
-      ? "正在检测 Git 状态"
+      ? t("git.detecting")
       : !hasWorkspace
-        ? "尚未打开工作区"
+        ? t("git.noWorkspace")
         : gitWorkspace.kind === "error"
-          ? "无法检测 Git 状态"
-          : "当前文件夹不是 Git 仓库";
+          ? t("git.detectFailed")
+          : t("git.notRepo");
   const description =
     gitWorkspace.kind === "loading"
-      ? "正在读取 Git 命令和当前文件夹状态。"
+      ? t("git.detectingDescription")
       : !hasWorkspace
-        ? "请先从左侧打开一个文件夹，然后再查看 Git 变更。"
+        ? t("git.noWorkspaceDescription")
         : gitWorkspace.kind === "ready"
           ? gitWorkspace.inspection.message
           : gitWorkspace.kind === "error"
             ? gitWorkspace.message
-            : "打开文件夹后即可检测 Git 仓库。";
+            : t("git.readyDescription");
 
   return (
     <div className="git-workspace-notice">
@@ -422,7 +437,7 @@ export function GitWorkspaceNotice({
           disabled={busy || gitWorkspace.kind === "loading"}
           onClick={() => void gitActions.initRepo()}
         >
-          创建 Git 仓库
+          {t("git.createRepo")}
         </Button>
       ) : null}
     </div>
@@ -448,30 +463,32 @@ function GitWorkspaceNoticePanel({
 }
 
 function GitErrorNotice({ error }: { error: GitError }) {
+  const { t } = useI18n();
+
   return (
     <div className="git-error-notice">
-      <div className="git-error-notice-title">操作未完成</div>
-      <div className="git-error-notice-message">{getGitErrorHint(error)}</div>
+      <div className="git-error-notice-title">{t("git.operationIncomplete")}</div>
+      <div className="git-error-notice-message">{getGitErrorHint(error, t)}</div>
     </div>
   );
 }
 
-function getGitErrorHint(error: GitError): string {
+function getGitErrorHint(error: GitError, t: ReturnType<typeof useI18n>["t"]): string {
   switch (error.kind) {
     case "identity-missing":
-      return '请先配置 Git 身份：git config --global user.name "你的名字" 与 user.email "邮箱"。';
+      return t("git.error.identityMissing");
     case "auth-failed":
-      return "鉴权失败，请检查 Git 凭证或 SSH key 后重试。";
+      return t("git.error.authFailed");
     case "no-upstream":
-      return "当前分支没有上游分支，推送时已尝试 origin。";
+      return t("git.error.noUpstream");
     case "nothing-to-commit":
-      return "没有可提交的改动。";
+      return t("git.error.nothingToCommit");
     case "conflict":
-      return error.message ?? "存在冲突或未保存的改动，请先处理后再试。";
+      return error.message ?? t("git.error.conflict");
     case "git-not-found":
-      return "未检测到 Git 命令，请先安装 Git。";
+      return t("git.error.notFound");
     default:
-      return error.message ?? "操作失败，请重试。";
+      return error.message ?? t("git.error.default");
   }
 }
 

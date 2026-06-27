@@ -12,6 +12,7 @@ import {
   workspaceFsChangeEvent,
 } from "../constants";
 import { formatText } from "../formatter";
+import { translate } from "../i18n-dictionaries";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type {
   NativeDirectoryEntry,
@@ -56,6 +57,8 @@ export function useDocumentSession() {
 
   const diskChangePromptRef = useRef<string | null>(null);
   const isDirty = isDocumentDirty(document);
+  const t = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) =>
+    translate(useWorkbenchStore.getState().language, key, params);
 
   const updateOpenDocumentById = (
     documentId: string,
@@ -273,13 +276,13 @@ export function useDocumentSession() {
   const saveDocumentAs = async (contentOverride?: string): Promise<WorkbenchDocument | null> => {
     if (document.mode === "large-readonly") {
       setSaveState("error");
-      setFileError("Large files are opened in read-only browsing mode and cannot be saved yet.");
+      setFileError(t("editor.largeFileReadOnlySaveError"));
       return null;
     }
 
     if (!isTauriRuntime()) {
       setSaveState("error");
-      setFileError("Native saving is only available in the Tauri desktop app.");
+      setFileError(t("editor.nativeSavingDesktopOnly"));
       return null;
     }
 
@@ -306,7 +309,7 @@ export function useDocumentSession() {
     } catch (error) {
       const saveError = getNativeSaveError(error);
       setSaveState("error");
-      setFileError(saveError.message ?? "Unable to save this file.");
+      setFileError(saveError.message ?? t("editor.unableSave"));
       return null;
     }
   };
@@ -323,7 +326,7 @@ export function useDocumentSession() {
 
     if (document.mode === "large-readonly") {
       setSaveState("error");
-      setFileError("Large files are opened in read-only browsing mode and cannot be saved yet.");
+      setFileError(t("editor.largeFileReadOnlySaveError"));
       return null;
     }
 
@@ -333,7 +336,7 @@ export function useDocumentSession() {
 
     if (!isTauriRuntime()) {
       setSaveState("error");
-      setFileError("Native saving is only available in the Tauri desktop app.");
+      setFileError(t("editor.nativeSavingDesktopOnly"));
       return null;
     }
 
@@ -366,7 +369,7 @@ export function useDocumentSession() {
 
       if (saveError.kind === "deleted") {
         setSaveState("idle");
-        setFileError(saveError.message ?? "The original file was deleted. Choose a new location to save it.");
+        setFileError(saveError.message ?? t("editor.originalDeletedSaveAs"));
         return await saveDocumentAs(content);
       }
 
@@ -375,14 +378,14 @@ export function useDocumentSession() {
         setSaveConflict({
           content,
           lastModified: document.lastModified,
-          message: saveError.message ?? "This file was changed outside Norn.",
+          message: saveError.message ?? t("editor.changedOutside"),
           path: document.path,
         });
         return null;
       }
 
       setSaveState("error");
-      setFileError(saveError.message ?? "Unable to save this file.");
+      setFileError(saveError.message ?? t("editor.unableSave"));
       return null;
     }
   };
@@ -411,7 +414,7 @@ export function useDocumentSession() {
       content: latestDocument.content,
       diskMissing: true,
       lastModified: latestDocument.lastModified,
-      message: message ?? "This file was deleted on disk. Save the editor version somewhere else, or close this tab.",
+      message: message ?? t("editor.deletedOnDisk"),
       path: latestDocument.path,
     });
   };
@@ -555,8 +558,7 @@ export function useDocumentSession() {
             diskContent,
             diskLastModified,
             lastModified: currentDocument.lastModified,
-            message:
-              "This file changed on disk while you also have local edits. Choose the disk version or keep the editor version.",
+            message: t("editor.changedOutsideWithLocalEdits"),
             path: currentDocument.path,
           },
         }));
@@ -570,8 +572,7 @@ export function useDocumentSession() {
               content: currentDocument.content,
               diskMissing: true,
               lastModified: currentDocument.lastModified,
-              message:
-                message ?? "This file was deleted on disk. Save the editor version somewhere else, or close this tab.",
+              message: message ?? t("editor.deletedOnDisk"),
               path: currentDocument.path,
             },
           }));
@@ -614,7 +615,7 @@ export function useDocumentSession() {
       if (!latestIsDirty && arePathsEqual(latestDocument.path, document.path)) {
         if (inspection.isBinary || !inspection.isText) {
           setSaveState("error");
-          setFileError(`${inspection.name} changed on disk and can no longer be opened as supported text.`);
+          setFileError(t("editor.changedUnsupported", { name: inspection.name }));
           return;
         }
 
@@ -628,8 +629,7 @@ export function useDocumentSession() {
             diskContent: file.content,
             diskLastModified: file.lastModified ?? undefined,
             lastModified: documentBeforeReload.lastModified,
-            message:
-              "This file changed on disk while you also have local edits. Choose the disk version or keep the editor version.",
+            message: t("editor.changedOutsideWithLocalEdits"),
             path: document.path,
           });
           return;
@@ -656,8 +656,7 @@ export function useDocumentSession() {
         diskContent,
         diskLastModified: diskLastModified,
         lastModified: latestDocument.lastModified,
-        message:
-          "This file changed on disk while you also have local edits. Choose the disk version or keep the editor version.",
+        message: t("editor.changedOutsideWithLocalEdits"),
         path: document.path,
       });
     } catch (error) {
@@ -702,7 +701,7 @@ export function useDocumentSession() {
       const inspection = await invoke<NativeTextFileInspection>("inspect_text_file", { path });
 
       if (inspection.isBinary || !inspection.isText) {
-        setFileError(`${inspection.name} cannot be opened as a supported text encoding.`);
+        setFileError(t("editor.unsupportedEncoding", { name: inspection.name }));
         return;
       }
 
@@ -714,8 +713,8 @@ export function useDocumentSession() {
           offset: rangeOffset,
           length: LARGE_FILE_CHUNK_BYTES,
         });
-        const contentPrefix = range.hasMoreBefore ? "[Earlier content omitted in large file browsing mode]\n\n" : "";
-        const contentSuffix = range.hasMoreAfter ? "\n\n[More content omitted in large file browsing mode]" : "";
+        const contentPrefix = range.hasMoreBefore ? `${t("editor.largeFileOmittedBefore")}\n\n` : "";
+        const contentSuffix = range.hasMoreAfter ? `\n\n${t("editor.largeFileOmittedAfter")}` : "";
         const rangeContent = `${contentPrefix}${range.content}${contentSuffix}`;
 
         activateOpenedDocument({
@@ -749,7 +748,7 @@ export function useDocumentSession() {
       }
 
       if ((typeof size === "number" ? size : inspection.size) > LARGE_FILE_CONFIRM_BYTES) {
-        const shouldOpen = window.confirm(`This file is ${formatFileSize(inspection.size)}. Open it as text?`);
+        const shouldOpen = window.confirm(t("editor.largeFileConfirm", { size: formatFileSize(inspection.size) }));
 
         if (!shouldOpen) {
           return;
@@ -787,7 +786,7 @@ export function useDocumentSession() {
     const currentDocument = useWorkbenchStore.getState().document;
 
     if (currentDocument.mode === "large-readonly") {
-      setFileError("Large files are opened in read-only browsing mode and cannot change encoding yet.");
+      setFileError(t("editor.largeFileReadOnlyEncodingError"));
       return;
     }
 
@@ -807,7 +806,7 @@ export function useDocumentSession() {
     }
 
     if (!isTauriRuntime()) {
-      setFileError("Native file encoding changes are only available in the Tauri desktop app.");
+      setFileError(t("editor.nativeEncodingDesktopOnly"));
       return;
     }
 
@@ -855,7 +854,7 @@ export function useDocumentSession() {
     }
 
     if (!isTauriRuntime()) {
-      setFileError("Native file opening is only available in the Tauri desktop app.");
+      setFileError(t("editor.nativeOpeningDesktopOnly"));
       return;
     }
 

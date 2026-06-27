@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+import { useI18n } from "../i18n";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type { GitWorkspaceState, SaveState, TextEncodingOption, WorkbenchDocument } from "../types";
 import { formatFileSize, getDocumentLines, getTailPath, textEncodingOptions } from "../workbench-utils";
@@ -32,6 +33,7 @@ export function StatusBar({
   onOpenSettings: () => void;
   saveState: SaveState;
 }) {
+  const { t } = useI18n();
   const lineCount = getDocumentLines(document).length;
   const documentPathLabel = getTailPath(document.path, 34);
   const encodingLabel = document.encodingLabel ?? "UTF-8";
@@ -60,14 +62,14 @@ export function StatusBar({
   const behind = gitStatus?.behind ?? 0;
   const saveLabel =
     document.mode === "large-readonly"
-      ? "Read-only"
+      ? t("status.save.readonly")
       : saveState === "saving"
-        ? "Saving..."
+        ? t("status.save.saving")
         : saveState === "error"
-          ? "Save failed"
+          ? t("status.save.error")
           : isDirty || document.isUntitled
-            ? "Unsaved"
-            : "Saved";
+            ? t("status.save.unsaved")
+            : t("status.save.saved");
 
   const copyDocumentPath = () => {
     const done = () => {
@@ -115,24 +117,28 @@ export function StatusBar({
         >
           <span className="status-path-token-text">{documentPathLabel}</span>
         </button>
-        <span className="status-token">{lineCount} lines</span>
+        <span className="status-token">{t("status.lines", { count: lineCount })}</span>
         {document.size ? <span className="status-token">{formatFileSize(document.size)}</span> : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               className="status-token status-token-button"
               type="button"
-              title={isDirty ? "Change save encoding" : "Reopen with encoding"}
+              title={isDirty ? t("status.encoding.changeSave") : t("status.encoding.reopen")}
             >
               {triggerEncodingLabel}
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" side="top" className="w-64">
-            <DropdownMenuLabel>{isDirty ? "Save encoding" : "Reopen with encoding"}</DropdownMenuLabel>
+            <DropdownMenuLabel>
+              {isDirty ? t("status.encoding.save") : t("status.encoding.reopen")}
+            </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {encodingCandidates.length > 0 ? (
               <>
-                <DropdownMenuLabel className="font-normal text-muted-foreground">Detected candidates</DropdownMenuLabel>
+                <DropdownMenuLabel className="font-normal text-muted-foreground">
+                  {t("status.encoding.detected")}
+                </DropdownMenuLabel>
                 {encodingCandidates.slice(0, 5).map((candidate) => (
                   <DropdownMenuRadioItem
                     key={`candidate-${candidate.encoding}`}
@@ -148,7 +154,7 @@ export function StatusBar({
                   >
                     <span className="min-w-0 flex-1 truncate">{candidate.label}</span>
                     <span className="ml-3 font-mono text-ui-sm text-muted-foreground">
-                      {candidate.valid ? candidate.confidence.toFixed(2) : "invalid"}
+                      {candidate.valid ? candidate.confidence.toFixed(2) : t("status.encoding.invalid")}
                     </span>
                   </DropdownMenuRadioItem>
                 ))}
@@ -157,7 +163,9 @@ export function StatusBar({
             ) : null}
             {remainingEncodingOptions.length > 0 ? (
               <>
-                <DropdownMenuLabel className="font-normal text-muted-foreground">All encodings</DropdownMenuLabel>
+                <DropdownMenuLabel className="font-normal text-muted-foreground">
+                  {t("status.encoding.all")}
+                </DropdownMenuLabel>
                 <DropdownMenuRadioGroup value={document.encoding ?? "utf-8"}>
                   {remainingEncodingOptions.map((option) => (
                     <DropdownMenuRadioItem
@@ -174,14 +182,14 @@ export function StatusBar({
           </DropdownMenuContent>
         </DropdownMenu>
         <span className="status-token">LF</span>
-        {document.mode === "large-readonly" ? <span className="status-token">Read-only range</span> : null}
+        {document.mode === "large-readonly" ? <span className="status-token">{t("status.readonlyRange")}</span> : null}
         <span className="status-token">{saveLabel}</span>
       </div>
       <div className="status-right-tokens">
         {hasGit ? (
           <>
             <GitBranchMenu>
-              <button type="button" className="status-token status-token-button" title="查看和切换 Git 分支">
+              <button type="button" className="status-token status-token-button" title={t("status.gitBranchesTitle")}>
                 <GitBranch className="h-3 w-3" />
                 {branchLabel}
                 {ahead > 0 ? <span className="status-ahead">+{ahead}</span> : null}
@@ -190,7 +198,7 @@ export function StatusBar({
             </GitBranchMenu>
             {changeFiles > 0 ? (
               <span className="status-token">
-                {changeFiles} files
+                {t("status.files", { count: changeFiles })}
                 <span className="status-additions">+{additions}</span>
                 <span className="status-deletions">-{deletions}</span>
               </span>

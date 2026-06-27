@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { formatKey } from "../actions/registry";
 import type { Action } from "../actions/types";
 import { useActions } from "../actions/use-actions";
+import { useI18n } from "../i18n";
 import { useWorkbenchStore } from "../store/workbench-store";
 
 /** 子序列匹配:query 的字符按序出现在 text 中即命中(轻量模糊,非打分排序)。 */
@@ -19,6 +20,7 @@ const subseqMatch = (text: string, query: string): boolean => {
 
 /** Find Action 命令面板:模糊搜索并执行任意 action(IDEA 的 Mod+Shift+A)。 */
 export function CommandPalette() {
+  const { t } = useI18n();
   const open = useWorkbenchStore((state) => state.commandPaletteOpen);
   const setOpen = useWorkbenchStore((state) => state.setCommandPaletteOpen);
   const { actions, dispatch } = useActions();
@@ -73,7 +75,7 @@ export function CommandPalette() {
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 pt-[12vh]"
       role="dialog"
-      aria-label="Find action"
+      aria-label={t("commandPalette.label")}
       onClick={close}
     >
       <div
@@ -83,7 +85,7 @@ export function CommandPalette() {
         <input
           className="border-b border-border bg-transparent px-3 py-2.5 text-ui outline-none placeholder:text-muted-foreground"
           autoFocus
-          placeholder="输入命令名称…"
+          placeholder={t("commandPalette.placeholder")}
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
@@ -93,7 +95,7 @@ export function CommandPalette() {
         />
         <div className="max-h-[50vh] overflow-y-auto py-1" ref={listRef}>
           {results.length === 0 ? (
-            <div className="px-3 py-6 text-center text-ui text-muted-foreground">无匹配命令</div>
+            <div className="px-3 py-6 text-center text-ui text-muted-foreground">{t("commandPalette.noMatches")}</div>
           ) : (
             results.map((action, index) => (
               <button

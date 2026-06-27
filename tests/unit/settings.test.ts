@@ -18,6 +18,11 @@ describe("mergeSettings", () => {
     expect(mergeSettings({ theme: "dark" }).theme).toBe("dark");
   });
 
+  it("非法语言回退默认,合法语言保留", () => {
+    expect(mergeSettings({ language: "jp" }).language).toBe(DEFAULT_SETTINGS.language);
+    expect(mergeSettings({ language: "en" }).language).toBe("en");
+  });
+
   it("数值越界被夹取、非数值回退默认", () => {
     expect(mergeSettings({ editor: { fontSize: 999 } }).editor.fontSize).toBe(28);
     expect(mergeSettings({ editor: { fontSize: 1 } }).editor.fontSize).toBe(9);

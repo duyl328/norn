@@ -8,6 +8,7 @@ import { isTauriRuntime } from "./workbench-utils";
  * 机器本地状态(最近文件夹、搜索历史)不在此处,留在 localStorage,不参与导出。
  */
 export interface AppSettings {
+  language: AppLanguage;
   theme: "system" | "light" | "dark";
   editor: {
     fontSize: number;
@@ -22,7 +23,10 @@ export interface AppSettings {
   };
 }
 
+export type AppLanguage = "zh" | "en";
+
 export const DEFAULT_SETTINGS: AppSettings = {
+  language: "zh",
   theme: "system",
   editor: { fontSize: 13, tabSize: 2, lineWrapping: false, formatOnSave: false },
   ui: { showStatusBar: true, resizeHandleHints: false, restoreLastWorkspace: false },
@@ -45,6 +49,9 @@ const clampInt = (value: unknown, min: number, max: number, fallback: number): n
   return Math.min(max, Math.max(min, Math.round(value)));
 };
 
+const language = (value: unknown): AppLanguage =>
+  value === "zh" || value === "en" ? value : DEFAULT_SETTINGS.language;
+
 /** 把任意外来对象收敛成合法 AppSettings:校验枚举、夹取数值、布尔回退默认。 */
 export function mergeSettings(raw: unknown): AppSettings {
   const r = (raw ?? {}) as Partial<AppSettings> & {
@@ -54,6 +61,7 @@ export function mergeSettings(raw: unknown): AppSettings {
   const theme: AppSettings["theme"] =
     r.theme === "light" || r.theme === "dark" || r.theme === "system" ? r.theme : DEFAULT_SETTINGS.theme;
   return {
+    language: language(r.language),
     theme,
     editor: {
       fontSize: clampInt(r.editor?.fontSize, FONT_SIZE_MIN, FONT_SIZE_MAX, DEFAULT_SETTINGS.editor.fontSize),

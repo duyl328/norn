@@ -2,6 +2,7 @@ import { type ReactNode, useLayoutEffect, useMemo, useRef, useState, type WheelE
 
 import { cn } from "@/lib/utils";
 
+import { useI18n } from "../i18n";
 import { type DiffSegment, diffSegments, inlineParts } from "../line-diff";
 
 const CTX_MARGIN = 3; // 折叠未改动段时上下各保留的行数
@@ -15,6 +16,7 @@ const BLOCK_MAX = 48; // 改动段超过此高度先折叠
  * - 多行纯增/删用对侧等高占位（淡底+虚线+左缘竖条）；等行数修改做词级高亮。
  */
 export function DiffView({ modified, name, original }: { modified: string; name?: string; original: string }) {
+  const { t } = useI18n();
   const segs = useMemo(() => diffSegments(original, modified), [original, modified]);
   const stats = useMemo(() => {
     let add = 0;
@@ -96,7 +98,7 @@ export function DiffView({ modified, name, original }: { modified: string; name?
   if (segs.length === 0) {
     return (
       <div className="diff-view-root">
-        <div className="diff-view-empty">无差异</div>
+        <div className="diff-view-empty">{t("diff.noDiff")}</div>
       </div>
     );
   }
@@ -104,9 +106,9 @@ export function DiffView({ modified, name, original }: { modified: string; name?
   const isNew = original.length === 0 && modified.length > 0;
   const isDeleted = modified.length === 0 && original.length > 0;
   const heading = isNew
-    ? `新文件${name ? ` · ${name}` : ""}`
+    ? t("diff.newFile", { name: name ?? "" })
     : isDeleted
-      ? `已删除${name ? ` · ${name}` : ""}`
+      ? t("diff.deletedFile", { name: name ?? "" })
       : (name ?? "");
   const expand = (i: number) => setExpanded((prev) => new Set(prev).add(i));
 
@@ -124,9 +126,9 @@ export function DiffView({ modified, name, original }: { modified: string; name?
             className="diff-tool-btn"
             data-active={wrap}
             onClick={() => setWrap((v) => !v)}
-            title="切换自动换行（关闭后由底部滚动条横向移动两栏）"
+            title={t("diff.toggleWrap")}
           >
-            自动换行
+            {t("diff.wrap")}
           </button>
         </div>
       </div>
@@ -141,6 +143,7 @@ export function DiffView({ modified, name, original }: { modified: string; name?
               isFirst={i === 0}
               isLast={i === segs.length - 1}
               onExpand={() => expand(i)}
+              t={t}
             />
           ))}
         </div>
@@ -160,12 +163,14 @@ function SegRows({
   onExpand,
   open,
   seg,
+  t,
 }: {
   isFirst: boolean;
   isLast: boolean;
   onExpand: () => void;
   open: boolean;
   seg: DiffSegment;
+  t: ReturnType<typeof useI18n>["t"];
 }) {
   if (seg.kind === "ctx") {
     const n = seg.left.length;
@@ -181,7 +186,7 @@ function SegRows({
     for (let j = 0; j < head; j += 1) rows.push(ctx(j));
     rows.push(
       <FoldRow key="fold" onClick={onExpand}>
-        ⋯ 展开 {n - head - tail} 行未改动 ⋯
+        {t("diff.expandUnchanged", { count: n - head - tail })}
       </FoldRow>,
     );
     for (let j = n - tail; j < n; j += 1) rows.push(ctx(j));
@@ -190,7 +195,7 @@ function SegRows({
 
   const height = Math.max(seg.left.length, seg.right.length);
   if (!open && height > BLOCK_MAX) {
-    return <FoldRow onClick={onExpand}>⋯ 展开 {height} 行改动 ⋯</FoldRow>;
+    return <FoldRow onClick={onExpand}>{t("diff.expandChanged", { count: height })}</FoldRow>;
   }
   const paired = seg.left.length === seg.right.length; // 行数相等才逐行做词级
   const rows: ReactNode[] = [];

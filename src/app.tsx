@@ -1,6 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect } from "react";
 
+import { I18nProvider } from "@/features/workbench/i18n-provider";
 import { WorkbenchPage } from "@/features/workbench/workbench-page";
 
 export function App() {
@@ -17,5 +18,9 @@ export function App() {
     }
   }, []);
 
-  return <WorkbenchPage />;
+  return (
+    <I18nProvider>
+      <WorkbenchPage />
+    </I18nProvider>
+  );
 }

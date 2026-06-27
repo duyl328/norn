@@ -1,5 +1,6 @@
-import { createContext, type ReactNode,useContext, useMemo } from "react";
+import { createContext, type ReactNode, useContext, useMemo } from "react";
 
+import { translate, type TranslationKey } from "../i18n-dictionaries";
 import { useWorkbenchStore } from "../store/workbench-store";
 import { saveKeymapOverrides } from "../workbench-utils";
 import { buildEditorActions } from "./editor-actions";
@@ -26,8 +27,8 @@ export const buildActions = (deps: ActionDeps): Action[] => {
   return [
     {
       id: "file.new",
-      title: "New File",
-      category: "File",
+      title: "action.file.new",
+      category: "action.category.file",
       keys: ["Mod+N"],
       run: () => {
         closeSettings();
@@ -36,8 +37,8 @@ export const buildActions = (deps: ActionDeps): Action[] => {
     },
     {
       id: "file.open",
-      title: "Open File…",
-      category: "File",
+      title: "action.file.open",
+      category: "action.category.file",
       keys: ["Mod+O"],
       run: () => {
         closeSettings();
@@ -46,8 +47,8 @@ export const buildActions = (deps: ActionDeps): Action[] => {
     },
     {
       id: "file.openFolder",
-      title: "Open Folder…",
-      category: "File",
+      title: "action.file.openFolder",
+      category: "action.category.file",
       keys: ["Mod+Shift+O"],
       run: () => {
         closeSettings();
@@ -56,36 +57,36 @@ export const buildActions = (deps: ActionDeps): Action[] => {
     },
     {
       id: "file.save",
-      title: "Save File",
-      category: "File",
+      title: "action.file.save",
+      category: "action.category.file",
       keys: ["Mod+S"],
       run: () => void deps.saveDocument(),
     },
     {
       id: "file.saveAs",
-      title: "Save File As…",
-      category: "File",
+      title: "action.file.saveAs",
+      category: "action.category.file",
       keys: ["Mod+Shift+S"],
       run: () => void deps.saveDocumentAs(),
     },
     {
       id: "navigate.commandPalette",
-      title: "Find Action…",
-      category: "Navigate",
+      title: "action.navigate.commandPalette",
+      category: "action.category.navigate",
       keys: ["Mod+Shift+A"],
       run: () => store().setCommandPaletteOpen(true),
     },
     {
       id: "navigate.goToFile",
-      title: "Go to File…",
-      category: "Navigate",
+      title: "action.navigate.goToFile",
+      category: "action.category.navigate",
       keys: ["Mod+P"],
       run: () => deps.openSearchTool(),
     },
     {
       id: "navigate.focusFileTree",
-      title: "Focus File Tree",
-      category: "Navigate",
+      title: "action.navigate.focusFileTree",
+      category: "action.category.navigate",
       keys: ["Alt+1"],
       // IDEA 语义:未开→开并聚焦;已开且焦点已在内→收起(焦点回编辑器);已开但焦点在别处→聚焦。
       run: () => {
@@ -103,8 +104,8 @@ export const buildActions = (deps: ActionDeps): Action[] => {
     },
     {
       id: "navigate.focusGit",
-      title: "Focus Git Panel",
-      category: "Navigate",
+      title: "action.navigate.focusGit",
+      category: "action.category.navigate",
       keys: ["Alt+9"],
       run: () => {
         const s = store();
@@ -121,8 +122,8 @@ export const buildActions = (deps: ActionDeps): Action[] => {
     },
     {
       id: "navigate.backToEditor",
-      title: "Back to Editor",
-      category: "Navigate",
+      title: "action.navigate.backToEditor",
+      category: "action.category.navigate",
       keys: ["Escape"],
       // 有弹窗/面板打开时 Esc 归它们处理,这里只在「无模态」时把焦点拉回编辑器。
       when: (ctx) => !ctx.store.commandPaletteOpen && !ctx.store.searchOpen && !ctx.store.settingsOpen,
@@ -130,20 +131,20 @@ export const buildActions = (deps: ActionDeps): Action[] => {
     },
     {
       id: "view.toggleExplorer",
-      title: "Toggle File Tree",
-      category: "View",
+      title: "action.view.toggleExplorer",
+      category: "action.category.view",
       run: () => deps.toggleFilesTool(),
     },
     {
       id: "view.toggleGit",
-      title: "Toggle Git Panel",
-      category: "View",
+      title: "action.view.toggleGit",
+      category: "action.category.view",
       run: () => store().setRightPanelOpen((value) => !value),
     },
     {
       id: "view.settings",
-      title: "Open Settings",
-      category: "View",
+      title: "action.view.settings",
+      category: "action.category.view",
       run: () => deps.openSettingsTool(),
     },
   ];
@@ -173,12 +174,17 @@ const ActionsContext = createContext<ActionsApi>({
 });
 
 export function ActionsProvider({ deps, children }: { deps: ActionDeps; children: ReactNode }) {
+  const language = useWorkbenchStore((state) => state.language);
   const overrides = useWorkbenchStore((state) => state.keymapOverrides);
   const setKeymapOverrides = useWorkbenchStore((state) => state.setKeymapOverrides);
 
   const api = useMemo<ActionsApi>(() => {
     // 统一注册表 = 应用级 action(global) + 编辑器命令(editor, B1)。键位都受 overrides 影响。
-    const base = [...buildActions(deps), ...buildEditorActions()];
+    const base = [...buildActions(deps), ...buildEditorActions()].map((action) => ({
+      ...action,
+      category: translate(language, action.category as TranslationKey),
+      title: translate(language, action.title as TranslationKey),
+    }));
     const defaultsById = new Map(base.map((action) => [action.id, action.keys ?? []]));
 
     // 有效 action:键位取「自定义优先,否则默认」。所有消费方(分发器/面板/菜单/设置)都读这份。
@@ -224,7 +230,7 @@ export function ActionsProvider({ deps, children }: { deps: ActionDeps; children
 
     return { actions, dispatch, defaultKeysOf, setBinding, resetBinding };
     // deps 的回调每次渲染都是新引用但语义稳定;真正影响 keys 的是 overrides。
-  }, [deps, overrides, setKeymapOverrides]);
+  }, [deps, language, overrides, setKeymapOverrides]);
 
   return <ActionsContext.Provider value={api}>{children}</ActionsContext.Provider>;
 }

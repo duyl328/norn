@@ -14,11 +14,13 @@ import { cn } from "@/lib/utils";
 
 import { type BranchTreeNode, buildBranchTree } from "../branch-tree";
 import { gitActions } from "../hooks/use-git";
+import { useI18n } from "../i18n";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type { GitBranch, GitDivergence } from "../types";
 
 /** 分支模式:本地/远程分支树（按 "/" 折叠）+ 选中分支的关系（上游、领先落后、独有提交）。 */
 export function GitBranchesPane() {
+  const { t } = useI18n();
   const branches = useWorkbenchStore((state) => state.gitBranches);
   const gitBusy = useWorkbenchStore((state) => state.gitBusy);
   const [selected, setSelected] = useState<string | null>(null);
@@ -58,7 +60,7 @@ export function GitBranchesPane() {
   }, [localKey]);
 
   const createBranch = () => {
-    const name = window.prompt("从当前分支新建分支，输入名称：");
+    const name = window.prompt(t("git.createBranchPrompt"));
     if (name && name.trim()) {
       void gitActions.createBranch(name.trim());
     }
@@ -71,7 +73,7 @@ export function GitBranchesPane() {
       <div className="git-branches-toolbar">
         <Button className="git-toolbar-button" size="toolbar" variant="ghost" disabled={gitBusy} onClick={createBranch}>
           <GitBranchPlus className="h-3.5 w-3.5" />
-          新建分支
+          {t("git.newBranch")}
         </Button>
         <span className="git-branches-toolbar-spacer" aria-hidden="true" />
         <Button
@@ -82,7 +84,7 @@ export function GitBranchesPane() {
           onClick={() => void gitActions.pull()}
         >
           <ArrowDownToLine className="h-3.5 w-3.5" />
-          拉取
+          {t("git.pull")}
         </Button>
         <Button
           className="git-toolbar-button"
@@ -92,11 +94,11 @@ export function GitBranchesPane() {
           onClick={() => void gitActions.push()}
         >
           <ArrowUpFromLine className="h-3.5 w-3.5" />
-          推送
+          {t("git.push")}
         </Button>
       </div>
 
-      <div className="git-branches-group-label">本地</div>
+      <div className="git-branches-group-label">{t("git.local")}</div>
       <BranchTree
         nodes={localTree}
         selected={selected}
@@ -104,11 +106,11 @@ export function GitBranchesPane() {
         onSelect={setSelected}
         onCheckout={(branch) => void gitActions.checkout(branch.name)}
       />
-      {local.length === 0 ? <div className="git-branch-empty">无本地分支</div> : null}
+      {local.length === 0 ? <div className="git-branch-empty">{t("git.noLocalBranches")}</div> : null}
 
       {remote.length > 0 ? (
         <>
-          <div className="git-branches-group-label">远程 · origin</div>
+          <div className="git-branches-group-label">{t("git.remoteOrigin")}</div>
           <BranchTree
             nodes={remoteTree}
             selected={selected}
@@ -123,6 +125,7 @@ export function GitBranchesPane() {
 }
 
 function BranchSummary() {
+  const { t } = useI18n();
   const gitStatus = useWorkbenchStore((state) => state.gitStatus);
   const branch = gitStatus?.branch ?? "—";
   const upstream = gitStatus?.upstream ?? null;
@@ -138,12 +141,12 @@ function BranchSummary() {
       </div>
       <div className="git-branch-summary-rows">
         <span className={cn("git-branch-summary-pill", changeCount > 0 && "git-branch-summary-pill-warn")}>
-          {changeCount > 0 ? `${changeCount} 个未提交变更` : "工作区干净"}
+          {changeCount > 0 ? t("git.uncommittedChanges", { count: changeCount }) : t("git.workspaceClean")}
         </span>
         {!upstream ? (
-          <span className="git-branch-summary-pill">无上游 · 仅本地</span>
+          <span className="git-branch-summary-pill">{t("git.localOnlyNoUpstream")}</span>
         ) : ahead === 0 && behind === 0 ? (
-          <span className="git-branch-summary-pill git-branch-summary-pill-ok">已与上游同步</span>
+          <span className="git-branch-summary-pill git-branch-summary-pill-ok">{t("git.syncedWithUpstream")}</span>
         ) : null}
         {/* 始终直接展示领先 / 落后数量,一眼看清是否需要推送 / 拉取。 */}
         {upstream ? (
@@ -154,8 +157,8 @@ function BranchSummary() {
               behind > 0 && "git-branch-summary-pill-behind",
             )}
           >
-            <span className="git-branch-ahead">↑{ahead} 待推送</span>
-            <span className="git-branch-behind">↓{behind} 待拉取</span>
+            <span className="git-branch-ahead">{t("git.aheadToPush", { count: ahead })}</span>
+            <span className="git-branch-behind">{t("git.behindToPull", { count: behind })}</span>
           </span>
         ) : null}
       </div>
@@ -214,6 +217,7 @@ function BranchLeaf({
   onSelect,
   selected,
 }: { depth: number; node: Extract<BranchTreeNode, { kind: "branch" }> } & BranchTreeShared) {
+  const { t } = useI18n();
   const { branch } = node;
   const isSelected = branch.name === selected;
   const divergence = divergences[branch.name];
@@ -236,7 +240,7 @@ function BranchLeaf({
           className="git-branch-leaf-main"
           onClick={() => onSelect(isSelected ? null : branch.name)}
           onDoubleClick={() => !branch.current && onCheckout(branch)}
-          title={`${branch.name}（双击切换）`}
+          title={t("git.branchCheckoutTitle", { name: branch.name })}
         >
           <span className="git-branch-leaf-check">
             {branch.current ? (
@@ -247,7 +251,7 @@ function BranchLeaf({
           </span>
           <span className="truncate">{node.name}</span>
           {showBase ? (
-            <span className="git-branch-base-chip" title={`相对 ${baseName}`}>
+            <span className="git-branch-base-chip" title={t("git.relativeTo", { name: baseName })}>
               {baseName}
               {(divergence?.aheadOfBase ?? 0) > 0 ? (
                 <span className="git-branch-ahead">↑{divergence?.aheadOfBase}</span>
@@ -266,7 +270,7 @@ function BranchLeaf({
         </button>
         {!branch.current ? (
           <button type="button" className="git-branch-leaf-checkout" onClick={() => onCheckout(branch)}>
-            切换
+            {t("git.checkout")}
           </button>
         ) : null}
       </div>
@@ -276,6 +280,7 @@ function BranchLeaf({
 }
 
 function BranchRelationship({ branch }: { branch: GitBranch }) {
+  const { t } = useI18n();
   const [divergence, setDivergence] = useState<GitDivergence | null>(null);
 
   useEffect(() => {
@@ -298,25 +303,25 @@ function BranchRelationship({ branch }: { branch: GitBranch }) {
       <div className="git-branch-relationship-row">
         {branch.upstream ? (
           <span className="git-branch-relationship-chip">
-            上游 {branch.upstream}
+            {t("git.upstream", { upstream: branch.upstream })}
             {branch.ahead ? <span className="git-branch-ahead">↑{branch.ahead}</span> : null}
             {branch.behind ? <span className="git-branch-behind">↓{branch.behind}</span> : null}
           </span>
         ) : (
-          <span className="git-branch-relationship-chip">无上游 · 仅本地</span>
+          <span className="git-branch-relationship-chip">{t("git.localOnlyNoUpstream")}</span>
         )}
         {base ? (
           <span className="git-branch-relationship-chip">
-            vs {base}
-            <span className="git-branch-ahead">领先{divergence?.aheadOfBase ?? 0}</span>
-            <span className="git-branch-behind">落后{divergence?.behindBase ?? 0}</span>
+            {t("git.vsBase", { base })}
+            <span className="git-branch-ahead">{t("git.aheadToPush", { count: divergence?.aheadOfBase ?? 0 })}</span>
+            <span className="git-branch-behind">{t("git.behindToPull", { count: divergence?.behindBase ?? 0 })}</span>
           </span>
         ) : null}
       </div>
 
       {ownCommits.length > 0 ? (
         <div className="git-branch-relationship-commits">
-          <div className="git-branch-relationship-label">{base ? `领先 ${base} 的提交` : "最近提交"}</div>
+          <div className="git-branch-relationship-label">{base ? t("git.relativeTo", { name: base }) : t("git.recentCommits")}</div>
           {ownCommits.slice(0, 6).map((commit) => (
             <div className="git-branch-relationship-commit" key={commit.hash} title={commit.subject}>
               <span className="truncate">{commit.subject}</span>
@@ -325,7 +330,7 @@ function BranchRelationship({ branch }: { branch: GitBranch }) {
           ))}
         </div>
       ) : (
-        <div className="git-branch-empty">无独有提交</div>
+        <div className="git-branch-empty">{t("git.noCommits")}</div>
       )}
     </div>
   );

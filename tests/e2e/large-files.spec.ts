@@ -32,10 +32,10 @@ test("大文件：确认后普通大文件仍可编辑保存", async ({ page }) 
 
   await page.locator(".cm-content").click();
   await page.keyboard.type("EDITED");
-  await expect(page.locator(".status-bar")).toContainText("Unsaved");
+  await expect(page.locator(".status-bar")).toContainText("未保存");
 
   await emitMenu(page, "menu-save-file");
-  await expect(page.locator(".status-bar")).toContainText("Saved");
+  await expect(page.locator(".status-bar")).toContainText("已保存");
 });
 
 test("大文件：超过 25MB 进入只读 range 模式并禁止保存", async ({ page }) => {
@@ -47,8 +47,8 @@ test("大文件：超过 25MB 进入只读 range 模式并禁止保存", async (
 
   await expect(page.getByRole("tab", { name: /huge\.log/ })).toBeVisible();
   await expect(page.locator(".cm-content")).toContainText("huge range content");
-  await expect(page.getByText(/Large file browsing mode/)).toBeVisible();
-  await expect(page.locator(".status-bar")).toContainText("Read-only range");
+  await expect(page.getByText(/大文件浏览模式/)).toBeVisible();
+  await expect(page.locator(".status-bar")).toContainText("只读范围");
 
   const calls = await getTauriInvokeCalls(page);
   expect(calls?.some((call) => call.cmd === "read_text_file_range" && call.args.path === "/mock/project/huge.log")).toBe(
@@ -60,7 +60,7 @@ test("大文件：超过 25MB 进入只读 range 模式并禁止保存", async (
   await expect(page.locator(".cm-content")).not.toContainText("SHOULD_NOT_APPEAR");
 
   await emitMenu(page, "menu-save-file");
-  await expect(page.getByText("Large files are opened in read-only browsing mode and cannot be saved yet.")).toBeVisible();
+  await expect(page.getByText("大文件已以只读浏览模式打开，暂时无法保存。")).toBeVisible();
 });
 
 test("大文件：超过 100MB 默认读取尾部 range", async ({ page }) => {
@@ -76,4 +76,3 @@ test("大文件：超过 100MB 默认读取尾部 range", async ({ page }) => {
   expect(rangeCall?.args.offset).toBe(120 * 1024 * 1024 - 512 * 1024);
   expect(rangeCall?.args.length).toBe(512 * 1024);
 });
-

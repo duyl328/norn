@@ -26,6 +26,7 @@ import { EDITOR_PRIMITIVES } from "../actions/editor-actions";
 import { eventToSpec, formatKey } from "../actions/registry";
 import { useActions } from "../actions/use-actions";
 import { settingsSidebarDefaultWidth, settingsSidebarMaxWidth, settingsSidebarMinWidth } from "../constants";
+import { type TranslationKey, useI18n } from "../i18n";
 import {
   exportSettings,
   FONT_SIZE_MAX,
@@ -41,29 +42,29 @@ import { clamp, isTauriRuntime, loadKeymapOverrides, saveKeymapOverrides } from 
 type SettingsTabId = "general" | "permissions" | "git" | "appearance" | "shortcuts" | "data" | "advanced";
 
 const settingsGroups: Array<{
-  title: string;
-  items: Array<{ id: SettingsTabId; icon: typeof Settings; label: string }>;
+  titleKey: TranslationKey;
+  items: Array<{ id: SettingsTabId; icon: typeof Settings; labelKey: TranslationKey }>;
 }> = [
   {
-    title: "基础",
+    titleKey: "settings.group.basic",
     items: [
-      { id: "general", icon: Gauge, label: "通用设置" },
-      { id: "appearance", icon: Palette, label: "外观设置" },
-      { id: "shortcuts", icon: Keyboard, label: "快捷键" },
+      { id: "general", icon: Gauge, labelKey: "settings.tab.general" },
+      { id: "appearance", icon: Palette, labelKey: "settings.tab.appearance" },
+      { id: "shortcuts", icon: Keyboard, labelKey: "settings.tab.shortcuts" },
     ],
   },
   {
-    title: "安全",
+    titleKey: "settings.group.security",
     items: [
-      { id: "permissions", icon: ShieldCheck, label: "权限设置" },
-      { id: "git", icon: GitBranch, label: "Git 设置" },
+      { id: "permissions", icon: ShieldCheck, labelKey: "settings.tab.permissions" },
+      { id: "git", icon: GitBranch, labelKey: "settings.tab.git" },
     ],
   },
   {
-    title: "其他",
+    titleKey: "settings.group.other",
     items: [
-      { id: "data", icon: Database, label: "数据 / 同步" },
-      { id: "advanced", icon: MonitorCog, label: "高级选项" },
+      { id: "data", icon: Database, labelKey: "settings.tab.data" },
+      { id: "advanced", icon: MonitorCog, labelKey: "settings.tab.advanced" },
     ],
   },
 ];
@@ -75,6 +76,7 @@ export function SettingsPage({
   onBack: () => void;
   showMacTitlebar: boolean;
 }) {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<SettingsTabId>("general");
   const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(settingsSidebarDefaultWidth);
   const [settingsResizing, setSettingsResizing] = useState(false);
@@ -150,16 +152,16 @@ export function SettingsPage({
         <aside className="settings-sidebar">
           <button className="settings-back-button" type="button" onClick={onBack}>
             <ArrowLeft className="h-4 w-4" />
-            回到软件
+            {t("settings.back")}
           </button>
           <div className="settings-search">
             <Search className="h-4 w-4" />
-            <span>搜索设置...</span>
+            <span>{t("settings.search")}</span>
           </div>
-          <nav className="settings-nav" aria-label="设置分类">
+          <nav className="settings-nav" aria-label={t("settings.navLabel")}>
             {settingsGroups.map((group) => (
-              <div className="settings-nav-group" key={group.title}>
-                <div className="settings-nav-heading">{group.title}</div>
+              <div className="settings-nav-group" key={group.titleKey}>
+                <div className="settings-nav-heading">{t(group.titleKey)}</div>
                 {group.items.map((item) => {
                   const Icon = item.icon;
 
@@ -171,7 +173,7 @@ export function SettingsPage({
                       onClick={() => setActiveTab(item.id)}
                     >
                       <Icon className="h-4 w-4" />
-                      <span>{item.label}</span>
+                      <span>{t(item.labelKey)}</span>
                     </button>
                   );
                 })}
@@ -180,7 +182,7 @@ export function SettingsPage({
           </nav>
         </aside>
         <div
-          aria-label="调整设置侧栏宽度"
+          aria-label={t("settings.resizeSidebar")}
           aria-orientation="vertical"
           aria-valuemax={settingsSidebarMaxWidth}
           aria-valuemin={settingsSidebarMinWidth}
@@ -200,13 +202,26 @@ export function SettingsPage({
 }
 
 export function SettingsContent({ activeTab }: { activeTab: SettingsTabId }) {
+  const { t } = useI18n();
+
   if (activeTab === "permissions") {
     return (
-      <SettingsPanel title="权限设置" description="管理 Norn 对文件、命令和系统能力的访问方式。">
+      <SettingsPanel title={t("settings.tab.permissions")} description={t("settings.permissions.description")}>
         <SettingsList>
-          <SettingsListRow title="默认工作区权限" description="允许读取和编辑当前打开工作区内的文件。" enabled />
-          <SettingsListRow title="Git 命令权限" description="允许在当前工作区内读取 Git 状态和分支信息。" enabled />
-          <SettingsListRow title="跨目录写入" description="需要单独确认后才允许写入工作区外的路径。" />
+          <SettingsListRow
+            title={t("settings.permissions.workspace.title")}
+            description={t("settings.permissions.workspace.description")}
+            enabled
+          />
+          <SettingsListRow
+            title={t("settings.permissions.git.title")}
+            description={t("settings.permissions.git.description")}
+            enabled
+          />
+          <SettingsListRow
+            title={t("settings.permissions.crossDirectory.title")}
+            description={t("settings.permissions.crossDirectory.description")}
+          />
         </SettingsList>
       </SettingsPanel>
     );
@@ -223,8 +238,8 @@ export function SettingsContent({ activeTab }: { activeTab: SettingsTabId }) {
   if (activeTab === "shortcuts") {
     return (
       <SettingsPanel
-        title="快捷键"
-        description="点击某条的键位按钮，按下新组合即可改键；重复键位会自动从原命令解绑。Esc 取消录制。"
+        title={t("settings.tab.shortcuts")}
+        description={t("settings.shortcuts.description")}
       >
         <KeymapEditor />
       </SettingsPanel>
@@ -244,6 +259,7 @@ export function SettingsContent({ activeTab }: { activeTab: SettingsTabId }) {
 
 /** 通用:编辑器基础行为。 */
 function GeneralPanel() {
+  const { language, setLanguage, t } = useI18n();
   const tabSize = useWorkbenchStore((state) => state.editorTabSize);
   const setTabSize = useWorkbenchStore((state) => state.setEditorTabSize);
   const formatOnSave = useWorkbenchStore((state) => state.editorFormatOnSave);
@@ -254,31 +270,41 @@ function GeneralPanel() {
   const setShowStatusBar = useWorkbenchStore((state) => state.setShowStatusBar);
 
   return (
-    <SettingsPanel title="通用设置" description="调整 Norn 的基础行为和默认工作方式。">
+    <SettingsPanel title={t("settings.tab.general")} description={t("settings.general.description")}>
       <SettingsList>
+        <SettingsSegmentedRow<"zh" | "en">
+          title={t("settings.general.language.title")}
+          description={t("settings.general.language.description")}
+          value={language}
+          options={[
+            { value: "zh", label: t("settings.general.language.zh") },
+            { value: "en", label: t("settings.general.language.en") },
+          ]}
+          onChange={setLanguage}
+        />
         <SettingsStepperRow
-          title="Tab 宽度"
-          description="一个缩进等于几个空格,影响显示与缩进键。"
+          title={t("settings.general.tabSize.title")}
+          description={t("settings.general.tabSize.description")}
           value={tabSize}
           min={TAB_SIZE_MIN}
           max={TAB_SIZE_MAX}
           onChange={setTabSize}
         />
         <SettingsListRow
-          title="保存时整理"
-          description="保存前按文件类型整理缩进与空白(JSON / 花括号 / 标签 / 空白),不改变语义。"
+          title={t("settings.general.formatOnSave.title")}
+          description={t("settings.general.formatOnSave.description")}
           enabled={formatOnSave}
           onClick={() => setFormatOnSave(!formatOnSave)}
         />
         <SettingsListRow
-          title="启动后恢复上次工作区"
-          description="下次打开时自动恢复最近使用的文件夹。"
+          title={t("settings.general.restoreWorkspace.title")}
+          description={t("settings.general.restoreWorkspace.description")}
           enabled={restoreLastWorkspace}
           onClick={() => setRestoreLastWorkspace(!restoreLastWorkspace)}
         />
         <SettingsListRow
-          title="显示底部状态栏"
-          description="展示当前文件、编码和 Git 状态。"
+          title={t("settings.general.statusBar.title")}
+          description={t("settings.general.statusBar.description")}
           enabled={showStatusBar}
           onClick={() => setShowStatusBar(!showStatusBar)}
         />
@@ -289,6 +315,7 @@ function GeneralPanel() {
 
 /** 外观:主题、字号与面板显示。 */
 function AppearancePanel() {
+  const { t } = useI18n();
   const theme = useWorkbenchStore((state) => state.theme);
   const setTheme = useWorkbenchStore((state) => state.setTheme);
   const fontSize = useWorkbenchStore((state) => state.editorFontSize);
@@ -299,36 +326,36 @@ function AppearancePanel() {
   const setResizeHandleHints = useWorkbenchStore((state) => state.setResizeHandleHintsVisible);
 
   return (
-    <SettingsPanel title="外观设置" description="控制主题、编辑器字号和面板的显示方式。">
+    <SettingsPanel title={t("settings.tab.appearance")} description={t("settings.appearance.description")}>
       <SettingsList>
         <SettingsSegmentedRow
-          title="主题"
-          description="跟随系统会随操作系统的明暗自动切换。"
+          title={t("settings.appearance.theme.title")}
+          description={t("settings.appearance.theme.description")}
           value={theme}
           options={[
-            { value: "system", label: "跟随系统" },
-            { value: "light", label: "浅色" },
-            { value: "dark", label: "深色" },
+            { value: "system", label: t("settings.appearance.theme.system") },
+            { value: "light", label: t("settings.appearance.theme.light") },
+            { value: "dark", label: t("settings.appearance.theme.dark") },
           ]}
           onChange={setTheme}
         />
         <SettingsStepperRow
-          title="编辑器字号"
-          description="编辑区文字大小。"
+          title={t("settings.appearance.fontSize.title")}
+          description={t("settings.appearance.fontSize.description")}
           value={fontSize}
           min={FONT_SIZE_MIN}
           max={FONT_SIZE_MAX}
           onChange={setFontSize}
         />
         <SettingsListRow
-          title="长行自动换行"
-          description="超出宽度的长行自动折到下一行显示，不再横向滚动。"
+          title={t("settings.appearance.lineWrapping.title")}
+          description={t("settings.appearance.lineWrapping.description")}
           enabled={lineWrapping}
           onClick={() => setLineWrapping(!lineWrapping)}
         />
         <SettingsListRow
-          title="显示面板调节提示"
-          description="常驻显示左右面板之间的淡色拖拽区域。关闭后仍可拖动，鼠标移入时显示反馈。"
+          title={t("settings.appearance.resizeHints.title")}
+          description={t("settings.appearance.resizeHints.description")}
           enabled={resizeHandleHints}
           onClick={() => setResizeHandleHints(!resizeHandleHints)}
         />
@@ -339,6 +366,7 @@ function AppearancePanel() {
 
 /** 数据 / 同步:导入导出一整套习惯,跨设备搬运。 */
 function DataPanel() {
+  const { t } = useI18n();
   const applySettings = useWorkbenchStore((state) => state.applySettings);
   const setKeymapOverrides = useWorkbenchStore((state) => state.setKeymapOverrides);
   const [note, setNote] = useState<string | null>(null);
@@ -354,9 +382,9 @@ function DataPanel() {
       const settings = collectSettings(useWorkbenchStore.getState());
       const keybindings = await loadKeymapOverrides();
       const target = await exportSettings(settings, keybindings);
-      setNote(target ? `已导出到 ${target}` : "已取消导出。");
+      setNote(target ? t("settings.data.exported", { target }) : t("settings.data.exportCanceled"));
     } catch (error) {
-      setNote(`导出失败:${String(error)}`);
+      setNote(t("settings.data.exportFailed", { error: String(error) }));
     }
   };
 
@@ -365,44 +393,42 @@ function DataPanel() {
     try {
       const result = await importSettings();
       if (!result) {
-        setNote("已取消导入。");
+        setNote(t("settings.data.importCanceled"));
         return;
       }
       applySettings(result.settings);
       setKeymapOverrides(result.keybindings);
       await saveKeymapOverrides(result.keybindings);
-      setNote("已导入并应用。设置与快捷键均已更新。");
+      setNote(t("settings.data.imported"));
     } catch (error) {
-      setNote(`导入失败:${String(error)}`);
+      setNote(t("settings.data.importFailed", { error: String(error) }));
     }
   };
 
   return (
-    <SettingsPanel title="数据 / 同步" description="把设置与快捷键打包成一个文件,在多台设备间搬运同一套习惯。">
+    <SettingsPanel title={t("settings.tab.data")} description={t("settings.data.description")}>
       <div className="flex flex-wrap gap-2 px-1 pb-2">
         <button
           type="button"
           className="rounded border border-border px-3 py-1.5 text-ui text-foreground hover:bg-accent"
           onClick={() => void onExport()}
         >
-          导出设置…
+          {t("settings.data.export")}
         </button>
         <button
           type="button"
           className="rounded border border-border px-3 py-1.5 text-ui text-foreground hover:bg-accent"
           onClick={() => void onImport()}
         >
-          导入设置…
+          {t("settings.data.import")}
         </button>
       </div>
       {note ? <div className="px-1 pb-2 text-ui text-muted-foreground">{note}</div> : null}
       <SettingsList>
-        <SettingsInfoRow title="配置文件" value="settings.json + keybindings.json" />
-        <SettingsInfoRow title="存储位置" value={configDir ?? "浏览器本地存储"} />
+        <SettingsInfoRow title={t("settings.data.configFile")} value="settings.json + keybindings.json" />
+        <SettingsInfoRow title={t("settings.data.storageLocation")} value={configDir ?? t("settings.data.browserLocalStorage")} />
       </SettingsList>
-      <div className="settings-note">
-        导出包含主题、编辑器与界面偏好、以及自定义快捷键。最近文件夹、搜索历史等本机状态不会被导出。
-      </div>
+      <div className="settings-note">{t("settings.data.note")}</div>
     </SettingsPanel>
   );
 }
@@ -415,6 +441,7 @@ interface GitCliDetection {
 
 /** Git 设置:当前工作区的检测结果 + 一键检测 Git 命令(不依赖打开的文件夹)。 */
 function GitSettingsPanel() {
+  const { t } = useI18n();
   const gitWorkspace = useWorkbenchStore((state) => state.gitWorkspace);
   const gitInspection = gitWorkspace.kind === "ready" ? gitWorkspace.inspection : null;
   const [detecting, setDetecting] = useState(false);
@@ -424,50 +451,50 @@ function GitSettingsPanel() {
     detection?.available && detection.version
       ? detection.version
       : gitWorkspace.kind === "loading"
-        ? "检测中"
+        ? t("settings.git.detecting")
         : gitInspection?.gitAvailable
-          ? (gitInspection.gitVersion ?? "可用")
+          ? (gitInspection.gitVersion ?? t("settings.git.available"))
           : gitWorkspace.kind === "ready"
-            ? "不可用"
-            : "尚未检测";
+            ? t("settings.git.unavailable")
+            : t("settings.git.notDetected");
   const repositoryLabel =
     gitWorkspace.kind === "loading"
-      ? "检测中"
+      ? t("settings.git.detecting")
       : gitInspection?.isRepository
-        ? "已检测到 Git 仓库"
+        ? t("settings.git.repoDetected")
         : gitInspection
-          ? "当前文件夹不是 Git 仓库"
-          : "请先从左侧打开文件夹";
-  const gitRootLabel = gitInspection?.gitRoot ?? "无";
+          ? t("settings.git.notRepo")
+          : t("settings.git.openFolderFirst");
+  const gitRootLabel = gitInspection?.gitRoot ?? t("settings.git.none");
   const dotGitLabel = gitInspection
     ? gitInspection.hasDotGit
-      ? "当前文件夹存在 .git"
-      : "当前文件夹没有 .git"
-    : "尚未检测";
-  const branchLabel = gitInspection?.branch ?? "无";
+      ? t("settings.git.dotGitExists")
+      : t("settings.git.dotGitMissing")
+    : t("settings.git.notDetected");
+  const branchLabel = gitInspection?.branch ?? t("settings.git.none");
   const messageLabel =
     detection?.message ??
     (gitWorkspace.kind === "error"
       ? gitWorkspace.message
-      : (gitInspection?.message ?? "打开文件夹后会自动检测 Git 状态。"));
+      : (gitInspection?.message ?? t("settings.git.autoDetectNote")));
 
   const runDetect = async () => {
     if (!isTauriRuntime()) {
-      setDetection({ available: false, version: null, message: "仅桌面端可检测 Git 命令。" });
+      setDetection({ available: false, version: null, message: t("settings.git.desktopOnly") });
       return;
     }
     setDetecting(true);
     try {
       setDetection(await invoke<GitCliDetection>("detect_git_cli"));
     } catch (error) {
-      setDetection({ available: false, version: null, message: `检测失败：${String(error)}` });
+      setDetection({ available: false, version: null, message: t("settings.git.detectFailed", { error: String(error) }) });
     } finally {
       setDetecting(false);
     }
   };
 
   return (
-    <SettingsPanel title="Git 设置" description="Git 检测以左侧当前打开的文件夹为准;也可直接检测 Git 命令是否可用。">
+    <SettingsPanel title={t("settings.tab.git")} description={t("settings.git.description")}>
       <div className="flex flex-wrap gap-2 px-1 pb-2">
         <button
           type="button"
@@ -475,15 +502,15 @@ function GitSettingsPanel() {
           disabled={detecting}
           onClick={() => void runDetect()}
         >
-          {detecting ? "检测中…" : "检测 Git 命令"}
+          {detecting ? `${t("settings.git.detecting")}…` : t("settings.git.detectCommand")}
         </button>
       </div>
       <SettingsList>
-        <SettingsInfoRow title="Git 命令" value={gitCommandLabel} />
-        <SettingsInfoRow title="仓库状态" value={repositoryLabel} />
-        <SettingsInfoRow title=".git 检测" value={dotGitLabel} />
-        <SettingsInfoRow title="Git 根目录" value={gitRootLabel} />
-        <SettingsInfoRow title="当前分支" value={branchLabel} />
+        <SettingsInfoRow title={t("settings.git.command")} value={gitCommandLabel} />
+        <SettingsInfoRow title={t("settings.git.repositoryStatus")} value={repositoryLabel} />
+        <SettingsInfoRow title={t("settings.git.dotGit")} value={dotGitLabel} />
+        <SettingsInfoRow title={t("settings.git.root")} value={gitRootLabel} />
+        <SettingsInfoRow title={t("settings.git.currentBranch")} value={branchLabel} />
       </SettingsList>
       <div className="settings-note">{messageLabel}</div>
     </SettingsPanel>
@@ -492,12 +519,14 @@ function GitSettingsPanel() {
 
 /** 高级:只读诊断信息。 */
 function AdvancedPanel() {
+  const { t } = useI18n();
+
   return (
-    <SettingsPanel title="高级选项" description="环境与内核信息,便于排查问题。">
+    <SettingsPanel title={t("settings.tab.advanced")} description={t("settings.advanced.description")}>
       <SettingsList>
-        <SettingsInfoRow title="编辑器内核" value="CodeMirror 6" />
-        <SettingsInfoRow title="快捷键方案" value="JetBrains 兼容" />
-        <SettingsInfoRow title="配置存储" value="appConfigDir / settings.json" />
+        <SettingsInfoRow title={t("settings.advanced.editorCore")} value="CodeMirror 6" />
+        <SettingsInfoRow title={t("settings.advanced.keymap")} value="JetBrains" />
+        <SettingsInfoRow title={t("settings.advanced.configStorage")} value="appConfigDir / settings.json" />
       </SettingsList>
     </SettingsPanel>
   );
@@ -529,6 +558,7 @@ export function SettingsList({ children }: { children: ReactNode }) {
 
 /** 可编辑的快捷键列表:点击键位按钮录制新组合,自动解绑冲突,支持恢复默认。 */
 function KeymapEditor() {
+  const { t } = useI18n();
   const { actions, defaultKeysOf, setBinding, resetBinding } = useActions();
   const [recordingId, setRecordingId] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -551,7 +581,7 @@ function KeymapEditor() {
 
       const owner = actions.find((action) => action.id !== recordingId && (action.keys ?? []).includes(spec));
       setBinding(recordingId, spec);
-      setNote(owner ? `已将「${owner.title}」原本的该键位解绑。` : null);
+      setNote(owner ? t("settings.shortcuts.conflictUnbound", { title: owner.title }) : null);
       setRecordingId(null);
     };
 
@@ -586,13 +616,13 @@ function KeymapEditor() {
                     setRecordingId(action.id);
                   }}
                 >
-                  {recording ? "按下快捷键…" : current ? formatKey(current) : "未绑定"}
+                  {recording ? t("settings.shortcuts.pressShortcut") : current ? formatKey(current) : t("settings.shortcuts.unbound")}
                 </button>
                 {!isDefault ? (
                   <button
                     type="button"
                     className="rounded border border-border px-2 py-1 text-ui text-muted-foreground hover:bg-accent"
-                    title="恢复默认"
+                    title={t("settings.shortcuts.resetDefault")}
                     onClick={() => {
                       setNote(null);
                       resetBinding(action.id);
@@ -607,10 +637,8 @@ function KeymapEditor() {
         })}
       </SettingsList>
 
-      <div className="px-1 pb-1 pt-4 text-ui font-medium text-foreground">编辑器原语(只读)</div>
-      <div className="px-1 pb-2 text-ui text-muted-foreground">
-        这些是 CodeMirror 的基础编辑键,不参与改键,仅供你了解哪些键位已被占用。
-      </div>
+      <div className="px-1 pb-1 pt-4 text-ui font-medium text-foreground">{t("settings.shortcuts.primitivesTitle")}</div>
+      <div className="px-1 pb-2 text-ui text-muted-foreground">{t("settings.shortcuts.primitivesDescription")}</div>
       <SettingsList>
         {EDITOR_PRIMITIVES.map((item) => (
           <SettingsInfoRow key={item.title} title={item.title} value={item.keys} />
@@ -677,6 +705,7 @@ function SettingsStepperRow({
   title: string;
   value: number;
 }) {
+  const { t } = useI18n();
   const step = (delta: number) => onChange(clamp(value + delta, min, max));
   return (
     <div className="settings-row">
@@ -690,7 +719,7 @@ function SettingsStepperRow({
           className="rounded border border-border px-2 py-1 text-ui text-foreground hover:bg-accent disabled:opacity-40"
           disabled={value <= min}
           onClick={() => step(-1)}
-          aria-label="减小"
+          aria-label={t("settings.stepper.decrease")}
         >
           −
         </button>
@@ -703,7 +732,7 @@ function SettingsStepperRow({
           className="rounded border border-border px-2 py-1 text-ui text-foreground hover:bg-accent disabled:opacity-40"
           disabled={value >= max}
           onClick={() => step(1)}
-          aria-label="增大"
+          aria-label={t("settings.stepper.increase")}
         >
           +
         </button>

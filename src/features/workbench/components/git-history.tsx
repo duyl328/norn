@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { buildFileTree, type FileTreeNode } from "../change-tree";
 import { assignGraphColumns } from "../git-graph";
 import { gitActions } from "../hooks/use-git";
+import { useI18n } from "../i18n";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type { GitCommitFile, GitGraphCommit } from "../types";
 import { getPathDisplayIcon } from "../workbench-utils";
@@ -88,6 +89,7 @@ const DOT_R = 4;
  * 直接集成在右侧面板,点一条提交,下方列出它的改动文件。
  */
 export function GitHistoryPane({ onOpenCommitDiff }: { onOpenCommitDiff: (hash: string, file: string) => void }) {
+  const { t } = useI18n();
   const [allCommits, setAllCommits] = useState<GitGraphCommit[]>([]);
   const [query, setQuery] = useState("");
   const [selectedHash, setSelectedHash] = useState("");
@@ -158,7 +160,7 @@ export function GitHistoryPane({ onOpenCommitDiff }: { onOpenCommitDiff: (hash: 
         <Search className="h-3.5 w-3.5 text-muted-foreground" />
         <input
           className="git-branch-search-input"
-          placeholder="过滤提交…"
+          placeholder={t("git.filterCommits")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -166,7 +168,7 @@ export function GitHistoryPane({ onOpenCommitDiff }: { onOpenCommitDiff: (hash: 
 
       <div className="git-graph-scroll">
         <GitGraph commits={filtered} drawEdges={!filtering} selectedHash={selectedHash} onSelect={setSelectedHash} />
-        {filtered.length === 0 ? <div className="git-branch-empty">无提交记录</div> : null}
+        {filtered.length === 0 ? <div className="git-branch-empty">{t("git.noCommits")}</div> : null}
       </div>
 
       <CommitDetail commit={selected} files={files} onOpenCommitDiff={onOpenCommitDiff} />
@@ -280,10 +282,11 @@ function CommitDetail({
   files: GitCommitFile[];
   onOpenCommitDiff: (hash: string, file: string) => void;
 }) {
+  const { t } = useI18n();
   const tree = useMemo(() => buildFileTree(files), [files]);
 
   if (!commit) {
-    return <div className="git-graph-detail git-graph-detail-empty">选择一条提交查看改动</div>;
+    return <div className="git-graph-detail git-graph-detail-empty">{t("git.selectCommit")}</div>;
   }
 
   return (
@@ -293,10 +296,12 @@ function CommitDetail({
         {commit.author} · {commit.date} · {commit.hash}
       </div>
       {commit.body ? <div className="git-graph-detail-body">{commit.body}</div> : null}
-      <div className="git-graph-detail-label">{commit.isMerge ? "合并提交" : `改动文件 (${files.length})`}</div>
+      <div className="git-graph-detail-label">
+        {commit.isMerge ? t("git.mergeCommit") : t("git.changedFiles", { count: files.length })}
+      </div>
       <div className="git-graph-detail-files">
         <CommitFileTree nodes={tree} depth={0} onOpen={(file) => onOpenCommitDiff(commit.hash, file)} />
-        {files.length === 0 && !commit.isMerge ? <div className="git-branch-empty">无改动文件</div> : null}
+        {files.length === 0 && !commit.isMerge ? <div className="git-branch-empty">{t("git.noChangedFiles")}</div> : null}
       </div>
     </div>
   );
@@ -311,6 +316,8 @@ function CommitFileTree({
   nodes: FileTreeNode<GitCommitFile>[];
   onOpen: (file: string) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <>
       {nodes.map((node) => {
@@ -323,7 +330,7 @@ function CommitFileTree({
             type="button"
             className="git-history-file git-history-file-clickable"
             style={{ paddingLeft: `${depth * 12 + 4}px` }}
-            title={`${node.item.path}（点击查看该提交的改动）`}
+            title={t("git.viewCommitDiffTitle", { path: node.item.path })}
             onClick={() => onOpen(node.item.path)}
           >
             <TreeIcon name={node.name} kind="file" />

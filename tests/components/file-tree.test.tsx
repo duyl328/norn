@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { FileTreePanel } from "@/features/workbench/components/file-tree";
+import { I18nProvider } from "@/features/workbench/i18n-provider";
 import type {
   FileTreeClipboard,
   FileTreeContextMenuState,
@@ -26,42 +27,44 @@ const renderPanel = (contextMenu: FileTreeContextMenuState | null = null, clipbo
   const onContextMenu = vi.fn();
 
   render(
-    <FileTreePanel
-      activePath="/mock/project/README.md"
-      clipboard={clipboard}
-      contextMenu={contextMenu}
-      draggedNode={null}
-      dropTarget={null}
-      scope="main"
-      search={null}
-      selection={null}
-      treeView={treeView}
-      onCollapseAll={noop}
-      onContextMenu={onContextMenu}
-      onCopyNode={noop}
-      onCopyPath={noop}
-      onCutNode={noop}
-      onDragEnd={noop}
-      onDragNode={noop}
-      onDropNode={noop}
-      onDropTargetChange={noop}
-      onExpandAll={noop}
-      onOpenFile={noop}
-      onOpenTerminal={noop}
-      onPasteNode={noop}
-      onRefreshFolder={noop}
-      onRequestCreateDirectory={noop}
-      onRequestCreateFile={noop}
-      onRequestRenameNode={noop}
-      onRequestTrashNode={noop}
-      onRevealActiveFile={noop}
-      onRevealNode={noop}
-      onSelectNode={noop}
-      onToggleDirectory={noop}
-      onToggleRootDirectory={noop}
-      onTreeBlur={noop}
-      onTreeKeyDown={noop}
-    />,
+    <I18nProvider>
+      <FileTreePanel
+        activePath="/mock/project/README.md"
+        clipboard={clipboard}
+        contextMenu={contextMenu}
+        draggedNode={null}
+        dropTarget={null}
+        scope="main"
+        search={null}
+        selection={null}
+        treeView={treeView}
+        onCollapseAll={noop}
+        onContextMenu={onContextMenu}
+        onCopyNode={noop}
+        onCopyPath={noop}
+        onCutNode={noop}
+        onDragEnd={noop}
+        onDragNode={noop}
+        onDropNode={noop}
+        onDropTargetChange={noop}
+        onExpandAll={noop}
+        onOpenFile={noop}
+        onOpenTerminal={noop}
+        onPasteNode={noop}
+        onRefreshFolder={noop}
+        onRequestCreateDirectory={noop}
+        onRequestCreateFile={noop}
+        onRequestRenameNode={noop}
+        onRequestTrashNode={noop}
+        onRevealActiveFile={noop}
+        onRevealNode={noop}
+        onSelectNode={noop}
+        onToggleDirectory={noop}
+        onToggleRootDirectory={noop}
+        onTreeBlur={noop}
+        onTreeKeyDown={noop}
+      />
+    </I18nProvider>,
   );
 
   return { onContextMenu };
@@ -91,9 +94,9 @@ describe("FileTreePanel", () => {
       y: 20,
     });
 
-    expect(screen.getByRole("menuitem", { name: "Rename" })).toBeDisabled();
-    expect(screen.getByRole("menuitem", { name: "Move to Trash" })).toBeDisabled();
-    expect(screen.getByRole("menuitem", { name: /Refresh/ })).toBeEnabled();
+    expect(screen.getByRole("menuitem", { name: "重命名" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "移到废纸篓" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: /刷新/ })).toBeEnabled();
   });
 
   it("uses inline lucide icons instead of Catppuccin image assets in the tree", () => {

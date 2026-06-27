@@ -63,6 +63,7 @@ export interface WorkbenchState {
   resizingPanel: "left" | "right" | null;
   resizeHandleHintsVisible: boolean;
   editorLineWrapping: boolean;
+  language: AppSettings["language"];
   theme: AppSettings["theme"];
   editorFontSize: number;
   editorTabSize: number;
@@ -86,6 +87,7 @@ export interface WorkbenchState {
   setResizingPanel: (setter: StateSetter<"left" | "right" | null>) => void;
   setResizeHandleHintsVisible: (setter: StateSetter<boolean>) => void;
   setEditorLineWrapping: (setter: StateSetter<boolean>) => void;
+  setLanguage: (setter: StateSetter<AppSettings["language"]>) => void;
   setTheme: (setter: StateSetter<AppSettings["theme"]>) => void;
   setEditorFontSize: (setter: StateSetter<number>) => void;
   setEditorTabSize: (setter: StateSetter<number>) => void;
@@ -181,6 +183,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   resizingPanel: null,
   resizeHandleHintsVisible: loadResizeHandleHints(),
   editorLineWrapping: loadEditorLineWrapping(),
+  language: DEFAULT_SETTINGS.language,
   theme: DEFAULT_SETTINGS.theme,
   editorFontSize: DEFAULT_SETTINGS.editor.fontSize,
   editorTabSize: DEFAULT_SETTINGS.editor.tabSize,
@@ -205,6 +208,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({ resizeHandleHintsVisible: resolveSetter(setter, state.resizeHandleHintsVisible) })),
   setEditorLineWrapping: (setter) =>
     set((state) => ({ editorLineWrapping: resolveSetter(setter, state.editorLineWrapping) })),
+  setLanguage: (setter) => set((state) => ({ language: resolveSetter(setter, state.language) })),
   setTheme: (setter) => set((state) => ({ theme: resolveSetter(setter, state.theme) })),
   setEditorFontSize: (setter) => set((state) => ({ editorFontSize: resolveSetter(setter, state.editorFontSize) })),
   setEditorTabSize: (setter) => set((state) => ({ editorTabSize: resolveSetter(setter, state.editorTabSize) })),
@@ -215,6 +219,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({ restoreLastWorkspace: resolveSetter(setter, state.restoreLastWorkspace) })),
   applySettings: (settings) =>
     set(() => ({
+      language: settings.language,
       theme: settings.theme,
       editorFontSize: settings.editor.fontSize,
       editorTabSize: settings.editor.tabSize,
@@ -302,6 +307,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
 /** 从 store 扁平 prefs 收集成可序列化的 AppSettings(持久化 / 导出用)。 */
 export const collectSettings = (state: WorkbenchState): AppSettings => ({
+  language: state.language,
   theme: state.theme,
   editor: {
     fontSize: state.editorFontSize,

@@ -29,6 +29,7 @@ import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
 
+import { useI18n } from "../i18n";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type { FileTreeNode } from "../types";
 import {
@@ -185,6 +186,7 @@ function MatchTree({
 }
 
 function QuickSearchDialog({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [mode, setMode] = useState<SearchMode>("files");
@@ -487,7 +489,7 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
     <div
       className={cn("windows-quick-search", docked && "windows-quick-search-docked")}
       role="dialog"
-      aria-label="Quick search"
+      aria-label={t("quickSearch.dialogLabel")}
       onClick={docked ? undefined : onClose}
     >
       <div
@@ -517,12 +519,12 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
             onPointerUp={onDockDragEnd}
           >
             <GripHorizontal className="h-3.5 w-3.5 shrink-0" />
-            <span className="windows-quick-search-dock-title">Search results</span>
+            <span className="windows-quick-search-dock-title">{t("quickSearch.resultsTitle")}</span>
             <button
               type="button"
               className="windows-quick-search-icon-button"
-              aria-label={dockCollapsed ? "Expand" : "Collapse"}
-              title={dockCollapsed ? "Expand" : "Collapse"}
+              aria-label={dockCollapsed ? t("common.expand") : t("common.collapse")}
+              title={dockCollapsed ? t("common.expand") : t("common.collapse")}
               onClick={() => setDockCollapsed((value) => !value)}
             >
               {dockCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
@@ -530,8 +532,8 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               className="windows-quick-search-icon-button"
-              aria-label="Close search"
-              title="Close"
+              aria-label={t("quickSearch.closeSearch")}
+              title={t("common.close")}
               onClick={onClose}
             >
               <X className="h-3.5 w-3.5" />
@@ -540,7 +542,7 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
         ) : null}
 
         {docked ? null : (
-          <div className="windows-quick-search-tabs" role="tablist" aria-label="Search mode">
+          <div className="windows-quick-search-tabs" role="tablist" aria-label={t("quickSearch.modeLabel")}>
             {(["files", "text"] as const).map((value) => (
               <button
                 key={value}
@@ -553,7 +555,7 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
                   setDocked(false); // 切换 Tab = 回到搜索弹窗形态
                 }}
               >
-                {value === "files" ? "Files" : "Text"}
+                {value === "files" ? t("quickSearch.files") : t("quickSearch.text")}
               </button>
             ))}
           </div>
@@ -566,7 +568,7 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
             autoFocus
             ref={inputRef}
             value={query}
-            placeholder={mode === "files" ? "Search files by name" : "Search text in folder"}
+            placeholder={mode === "files" ? t("quickSearch.searchFilesPlaceholder") : t("quickSearch.searchTextPlaceholder")}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
@@ -601,7 +603,7 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
             <div className="windows-quick-search-flags">
               <button
                 type="button"
-                title="Match case"
+                title={t("quickSearch.matchCase")}
                 aria-pressed={caseSensitive}
                 className={cn("windows-quick-search-flag", caseSensitive && "windows-quick-search-flag-on")}
                 onClick={() => setCaseSensitive((value) => !value)}
@@ -610,7 +612,7 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
               </button>
               <button
                 type="button"
-                title="Match whole word"
+                title={t("quickSearch.matchWholeWord")}
                 aria-pressed={wholeWord}
                 className={cn("windows-quick-search-flag", wholeWord && "windows-quick-search-flag-on")}
                 onClick={() => setWholeWord((value) => !value)}
@@ -619,7 +621,7 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
               </button>
               <button
                 type="button"
-                title="Use regular expression"
+                title={t("quickSearch.useRegex")}
                 aria-pressed={useRegex}
                 className={cn("windows-quick-search-flag", useRegex && "windows-quick-search-flag-on")}
                 onClick={() => setUseRegex((value) => !value)}
@@ -631,14 +633,14 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         {!docked && quickSearchHistory.length > 0 ? (
-          <section className="windows-quick-search-section" aria-label="Search history">
+          <section className="windows-quick-search-section" aria-label={t("quickSearch.history")}>
             <div className="windows-quick-search-section-heading">
-              <span>Search history</span>
+              <span>{t("quickSearch.history")}</span>
               <button
                 className="windows-quick-search-icon-button"
                 type="button"
-                aria-label="Clear search history"
-                title="Clear search history"
+                aria-label={t("quickSearch.clearHistory")}
+                title={t("quickSearch.clearHistory")}
                 onClick={clearHistory}
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -656,7 +658,7 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
                     )}
                     type="button"
                     key={item}
-                    aria-label={`Use ${item} from search history`}
+                    aria-label={t("quickSearch.useHistoryItem", { item })}
                     aria-current={selected ? "true" : undefined}
                     onClick={() => applyHistoryItem(item)}
                   >
@@ -675,11 +677,11 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
             showTextSplit && "windows-quick-search-results-split",
             !showBody && "hidden",
           )}
-          aria-label="Search results"
+          aria-label={t("quickSearch.resultsLabel")}
         >
           {error ? <div className="windows-quick-search-empty">{error}</div> : null}
           {needsFolderForText ? (
-            <div className="windows-quick-search-empty">Open a folder to search its contents</div>
+            <div className="windows-quick-search-empty">{t("quickSearch.openFolderForText")}</div>
           ) : mode === "files" ? (
             trimmedQuery ? (
               fileResults.length > 0 ? (
@@ -700,18 +702,18 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
                   </button>
                 ))
               ) : (
-                <div className="windows-quick-search-empty">No files match</div>
+                <div className="windows-quick-search-empty">{t("quickSearch.noFilesMatch")}</div>
               )
             ) : quickSearchHistory.length === 0 ? (
-              <div className="windows-quick-search-empty">Type to search files</div>
+              <div className="windows-quick-search-empty">{t("quickSearch.typeToSearchFiles")}</div>
             ) : null
           ) : !trimmedQuery ? (
-            <div className="windows-quick-search-empty">Type to search file contents</div>
+            <div className="windows-quick-search-empty">{t("quickSearch.typeToSearchContents")}</div>
           ) : busy ? (
-            <div className="windows-quick-search-empty">Searching…</div>
+            <div className="windows-quick-search-empty">{t("quickSearch.searching")}</div>
           ) : textGroups.length > 0 ? (
             <div className={cn("windows-quick-search-split", docked && "windows-quick-search-split-docked")}>
-              <div className="windows-quick-search-file-list" role="listbox" aria-label="Matched files">
+              <div className="windows-quick-search-file-list" role="listbox" aria-label={t("quickSearch.matchedFiles")}>
                 <MatchTree
                   collapsed={collapsedDirs}
                   nodes={matchTree}
@@ -731,8 +733,8 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
                     <button
                       type="button"
                       className="windows-quick-search-icon-button"
-                      title="Previous match"
-                      aria-label="Previous match"
+                      title={t("quickSearch.previousMatch")}
+                      aria-label={t("quickSearch.previousMatch")}
                       disabled={selectedHits.length < 2}
                       onClick={() => gotoMatch(-1)}
                     >
@@ -741,8 +743,8 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
                     <button
                       type="button"
                       className="windows-quick-search-icon-button"
-                      title="Next match"
-                      aria-label="Next match"
+                      title={t("quickSearch.nextMatch")}
+                      aria-label={t("quickSearch.nextMatch")}
                       disabled={selectedHits.length < 2}
                       onClick={() => gotoMatch(1)}
                     >
@@ -777,21 +779,21 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
                         );
                       })
                   ) : previewErrorPath === effectiveSelected ? (
-                    <div className="windows-quick-search-empty">Unable to preview file</div>
+                    <div className="windows-quick-search-empty">{t("quickSearch.unablePreview")}</div>
                   ) : (
-                    <div className="windows-quick-search-empty">Loading…</div>
+                    <div className="windows-quick-search-empty">{t("common.loading")}</div>
                   )}
                 </div>
               </div>
             </div>
           ) : (
-            <div className="windows-quick-search-empty">No matches</div>
+            <div className="windows-quick-search-empty">{t("quickSearch.noMatches")}</div>
           )}
         </div>
 
         {docked ? null : (
           <button className="windows-quick-search-close" type="button" onClick={onClose}>
-            Close
+            {t("common.close")}
           </button>
         )}
       </div>

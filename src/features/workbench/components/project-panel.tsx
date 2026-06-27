@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
+import { useI18n } from "../i18n";
 import { isMac } from "../platform";
 import type {
   FileTreeClipboard,
@@ -128,6 +129,7 @@ export function ProjectPanel({
   onCollapseAll: () => void;
   onRevealActiveFile: () => void;
 }) {
+  const { t } = useI18n();
   const scratchPanelMinRatio = 0.1;
   const scratchPanelMaxRatio = 0.6;
   const [scratchPanelRatio, setScratchPanelRatio] = useState(0.3);
@@ -233,7 +235,7 @@ export function ProjectPanel({
           />
         </div>
         <div
-          aria-label="Resize temporary folder area"
+          aria-label={t("project.resizeTemporaryFolder")}
           aria-orientation="horizontal"
           aria-valuemax={scratchPanelMaxRatio * 100}
           aria-valuemin={scratchPanelMinRatio * 100}
@@ -287,11 +289,13 @@ export function ProjectPanel({
 }
 
 export function ProjectPanelFooter({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const { t } = useI18n();
+
   return (
     <div className="project-panel-footer">
       <button className="project-panel-action-button" type="button" onClick={onOpenSettings}>
         <Settings className="h-[18px] w-[18px] shrink-0" />
-        <span className="truncate">Settings</span>
+        <span className="truncate">{t("common.settings")}</span>
       </button>
     </div>
   );
@@ -309,10 +313,11 @@ export function ProjectPanelStart({
   onOpenRecentFolder: (path: string) => void;
   recentFolders: RecentFolder[];
 }) {
+  const { t } = useI18n();
   const activeFolderPath = folderView?.rootPath ?? null;
   const activeRecentFolder = recentFolders.find((folder) => folder.path === activeFolderPath);
   const activeFolderName =
-    activeRecentFolder?.name ?? (folderView ? getPathName(folderView.rootPath) : "Recent folders");
+    activeRecentFolder?.name ?? (folderView ? getPathName(folderView.rootPath) : t("project.recentFolders"));
   const activePathMaxLength = Math.max(18, Math.floor((leftPanelWidth - 96) / 6.2));
   const activeFolderPathLabel = folderView ? getTailPath(folderView.rootPath, activePathMaxLength) : "";
   const activeFolderAccentStyle = getProjectAccentStyle(activeFolderName);
@@ -342,12 +347,12 @@ export function ProjectPanelStart({
     <div className="project-panel-start">
       <button className="project-panel-action-button" type="button" onClick={onOpenFolder}>
         <FolderOpen className="h-[18px] w-[18px] shrink-0" />
-        Open New Folder
+        {t("project.openNewFolder")}
       </button>
       <div className="project-panel-divider" aria-hidden="true" />
       {folderView ? (
         <div className="project-panel-recent-switcher">
-          <div className="project-panel-recent-heading">Recent folders</div>
+          <div className="project-panel-recent-heading">{t("project.recentFolders")}</div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="project-panel-recent-select" type="button">
@@ -378,7 +383,7 @@ export function ProjectPanelStart({
                   .map((project) => renderRecentFolderItem(project, false))
               ) : currentFolder ? null : (
                 <DropdownMenuItem className="project-panel-recent-menu-item" disabled>
-                  No recent folders yet
+                  {t("project.noRecentFolders")}
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -386,7 +391,7 @@ export function ProjectPanelStart({
         </div>
       ) : (
         <div className="project-panel-recent">
-          <div className="project-panel-recent-label">Recent folders</div>
+          <div className="project-panel-recent-label">{t("project.recentFolders")}</div>
           {recentFolders.length > 0 ? (
             recentFolders.slice(0, 5).map((project) => (
               <button
@@ -402,7 +407,7 @@ export function ProjectPanelStart({
               </button>
             ))
           ) : (
-            <div className="project-panel-recent-empty">No recent folders yet</div>
+            <div className="project-panel-recent-empty">{t("project.noRecentFolders")}</div>
           )}
         </div>
       )}
@@ -477,20 +482,21 @@ export function ProjectPanelScratchFolder({
   onToggleDirectory: (node: FileTreeNode) => void;
   onToggleRootDirectory: () => void;
 }) {
+  const { t } = useI18n();
   const scratchTreeView: TreePanelView | null = scratchFolder
     ? {
         error: scratchFolderView.error,
         loadingPath: scratchFolderView.loadingPath,
         nodes: scratchFolderView.nodes,
         rootExpanded: scratchFolderView.expanded,
-        rootName: "临时文件夹",
+        rootName: t("project.temporaryFolder"),
         rootPath: scratchFolder.path,
       }
     : null;
 
   return (
     <div className="project-panel-scratch" style={style}>
-      <div className="project-panel-scratch-heading">临时文件夹</div>
+      <div className="project-panel-scratch-heading">{t("project.temporaryFolder")}</div>
       <FileTreePanel
         activePath={activePath}
         selection={selection}

@@ -2214,7 +2214,81 @@ fn menu_accelerator(map: &HashMap<String, Vec<String>>, action_id: &str, default
 }
 
 #[cfg(target_os = "macos")]
-fn build_macos_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Result<Menu<R>> {
+#[derive(Clone, Copy)]
+enum MenuLanguage {
+    En,
+    Zh,
+}
+
+#[cfg(target_os = "macos")]
+impl MenuLanguage {
+    fn from_code(language: &str) -> Self {
+        match language {
+            "zh" | "zh-CN" | "zh-Hans" => Self::Zh,
+            _ => Self::En,
+        }
+    }
+
+    fn text(self, key: &str) -> &'static str {
+        match (self, key) {
+            (Self::Zh, "file") => "文件",
+            (Self::Zh, "new_file") => "新建文件",
+            (Self::Zh, "open_file") => "打开文件...",
+            (Self::Zh, "open_folder") => "打开文件夹...",
+            (Self::Zh, "save") => "保存",
+            (Self::Zh, "save_as") => "另存为...",
+            (Self::Zh, "edit") => "编辑",
+            (Self::Zh, "find") => "查找",
+            (Self::Zh, "view") => "视图",
+            (Self::Zh, "explorer") => "资源管理器",
+            (Self::Zh, "git_panel") => "Git 面板",
+            (Self::Zh, "terminal") => "终端",
+            (Self::Zh, "window") => "窗口",
+            (Self::Zh, "help") => "帮助",
+            (Self::Zh, "welcome") => "欢迎",
+            (Self::Zh, "documentation") => "文档",
+            (Self::Zh, "keyboard_shortcuts") => "键盘快捷键",
+            (Self::Zh, "release_notes") => "发行说明",
+            (Self::Zh, "report_issue") => "报告问题",
+            (Self::Zh, "view_logs") => "查看日志",
+            (Self::Zh, "check_for_updates") => "检查更新",
+            (Self::Zh, "community") => "社区",
+            (Self::Zh, "privacy_statement") => "隐私声明",
+            (Self::Zh, "about_norn") => "关于 Norn",
+            (_, "file") => "File",
+            (_, "new_file") => "New File",
+            (_, "open_file") => "Open File...",
+            (_, "open_folder") => "Open Folder...",
+            (_, "save") => "Save",
+            (_, "save_as") => "Save As...",
+            (_, "edit") => "Edit",
+            (_, "find") => "Find",
+            (_, "view") => "View",
+            (_, "explorer") => "Explorer",
+            (_, "git_panel") => "Git Panel",
+            (_, "terminal") => "Terminal",
+            (_, "window") => "Window",
+            (_, "help") => "Help",
+            (_, "welcome") => "Welcome",
+            (_, "documentation") => "Documentation",
+            (_, "keyboard_shortcuts") => "Keyboard Shortcuts",
+            (_, "release_notes") => "Release Notes",
+            (_, "report_issue") => "Report Issue",
+            (_, "view_logs") => "View Logs",
+            (_, "check_for_updates") => "Check for Updates",
+            (_, "community") => "Community",
+            (_, "privacy_statement") => "Privacy Statement",
+            (_, "about_norn") => "About Norn",
+            _ => "",
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn build_macos_menu<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    language: MenuLanguage,
+) -> tauri::Result<Menu<R>> {
     let package_info = app.package_info();
     let config = app.config();
     let about_metadata = AboutMetadata {
@@ -2257,36 +2331,42 @@ fn build_macos_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Resu
 
     let file_menu = Submenu::with_items(
         app,
-        "File",
+        language.text("file"),
         true,
         &[
             &MenuItem::with_id(
                 app,
                 MENU_NEW_FILE,
-                "New File",
+                language.text("new_file"),
                 true,
                 Some(new_file_accel.as_str()),
             )?,
             &MenuItem::with_id(
                 app,
                 MENU_OPEN_FILE,
-                "Open File...",
+                language.text("open_file"),
                 true,
                 Some(open_file_accel.as_str()),
             )?,
             &MenuItem::with_id(
                 app,
                 MENU_OPEN_FOLDER,
-                "Open Folder...",
+                language.text("open_folder"),
                 true,
                 Some(open_folder_accel.as_str()),
             )?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, MENU_SAVE_FILE, "Save", true, Some(save_accel.as_str()))?,
+            &MenuItem::with_id(
+                app,
+                MENU_SAVE_FILE,
+                language.text("save"),
+                true,
+                Some(save_accel.as_str()),
+            )?,
             &MenuItem::with_id(
                 app,
                 MENU_SAVE_FILE_AS,
-                "Save As...",
+                language.text("save_as"),
                 true,
                 Some(save_as_accel.as_str()),
             )?,
@@ -2297,7 +2377,7 @@ fn build_macos_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Resu
 
     let edit_menu = Submenu::with_items(
         app,
-        "Edit",
+        language.text("edit"),
         true,
         &[
             &PredefinedMenuItem::undo(app, None)?,
@@ -2308,25 +2388,49 @@ fn build_macos_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Resu
             &PredefinedMenuItem::paste(app, None)?,
             &PredefinedMenuItem::select_all(app, None)?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, MENU_FIND, "Find", true, Some(find_accel.as_str()))?,
+            &MenuItem::with_id(
+                app,
+                MENU_FIND,
+                language.text("find"),
+                true,
+                Some(find_accel.as_str()),
+            )?,
         ],
     )?;
 
     let view_menu = Submenu::with_items(
         app,
-        "View",
+        language.text("view"),
         true,
         &[
-            &MenuItem::with_id(app, MENU_SHOW_EXPLORER, "Explorer", true, None::<&str>)?,
-            &MenuItem::with_id(app, MENU_TOGGLE_GIT_PANEL, "Git Panel", true, None::<&str>)?,
-            &MenuItem::with_id(app, MENU_TOGGLE_TERMINAL, "Terminal", true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                MENU_SHOW_EXPLORER,
+                language.text("explorer"),
+                true,
+                None::<&str>,
+            )?,
+            &MenuItem::with_id(
+                app,
+                MENU_TOGGLE_GIT_PANEL,
+                language.text("git_panel"),
+                true,
+                None::<&str>,
+            )?,
+            &MenuItem::with_id(
+                app,
+                MENU_TOGGLE_TERMINAL,
+                language.text("terminal"),
+                true,
+                None::<&str>,
+            )?,
         ],
     )?;
 
     let window_menu = Submenu::with_id_and_items(
         app,
         tauri::menu::WINDOW_SUBMENU_ID,
-        "Window",
+        language.text("window"),
         true,
         &[
             &PredefinedMenuItem::minimize(app, None)?,
@@ -2339,37 +2443,55 @@ fn build_macos_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Resu
     let help_menu = Submenu::with_id_and_items(
         app,
         tauri::menu::HELP_SUBMENU_ID,
-        "Help",
+        language.text("help"),
         true,
         &[
-            &MenuItem::with_id(app, MENU_WELCOME, "Welcome", true, None::<&str>)?,
-            &MenuItem::with_id(app, MENU_DOCUMENTATION, "Documentation", true, None::<&str>)?,
+            &MenuItem::with_id(app, MENU_WELCOME, language.text("welcome"), true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                MENU_DOCUMENTATION,
+                language.text("documentation"),
+                true,
+                None::<&str>,
+            )?,
             &MenuItem::with_id(
                 app,
                 MENU_KEYBOARD_SHORTCUTS,
-                "Keyboard Shortcuts",
+                language.text("keyboard_shortcuts"),
                 true,
                 None::<&str>,
             )?,
-            &MenuItem::with_id(app, MENU_RELEASE_NOTES, "Release Notes", true, None::<&str>)?,
-            &MenuItem::with_id(app, MENU_REPORT_ISSUE, "Report Issue", true, None::<&str>)?,
-            &MenuItem::with_id(app, MENU_VIEW_LOGS, "View Logs", true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                MENU_RELEASE_NOTES,
+                language.text("release_notes"),
+                true,
+                None::<&str>,
+            )?,
+            &MenuItem::with_id(
+                app,
+                MENU_REPORT_ISSUE,
+                language.text("report_issue"),
+                true,
+                None::<&str>,
+            )?,
+            &MenuItem::with_id(app, MENU_VIEW_LOGS, language.text("view_logs"), true, None::<&str>)?,
             &MenuItem::with_id(
                 app,
                 MENU_CHECK_FOR_UPDATES,
-                "Check for Updates",
+                language.text("check_for_updates"),
                 true,
                 None::<&str>,
             )?,
-            &MenuItem::with_id(app, MENU_COMMUNITY, "Community", true, None::<&str>)?,
+            &MenuItem::with_id(app, MENU_COMMUNITY, language.text("community"), true, None::<&str>)?,
             &MenuItem::with_id(
                 app,
                 MENU_PRIVACY_STATEMENT,
-                "Privacy Statement",
+                language.text("privacy_statement"),
                 true,
                 None::<&str>,
             )?,
-            &MenuItem::with_id(app, MENU_ABOUT_NORN, "About Norn", true, None::<&str>)?,
+            &MenuItem::with_id(app, MENU_ABOUT_NORN, language.text("about_norn"), true, None::<&str>)?,
         ],
     )?;
 
@@ -2384,6 +2506,19 @@ fn build_macos_menu<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> tauri::Resu
             &help_menu,
         ],
     )
+}
+
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn set_app_language(app: tauri::AppHandle, language: String) -> Result<(), String> {
+    let menu = build_macos_menu(&app, MenuLanguage::from_code(&language)).map_err(|error| error.to_string())?;
+    app.set_menu(menu).map(|_| ()).map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn set_app_language(_app: tauri::AppHandle, _language: String) -> Result<(), String> {
+    Ok(())
 }
 
 fn is_forwarded_menu_event(id: &str) -> bool {
@@ -2476,7 +2611,7 @@ pub fn run() {
 
             #[cfg(target_os = "macos")]
             {
-                let menu = build_macos_menu(app.handle())?;
+                let menu = build_macos_menu(app.handle(), MenuLanguage::Zh)?;
                 app.set_menu(menu)?;
             }
 
@@ -2537,6 +2672,7 @@ pub fn run() {
             read_config_file,
             write_config_file,
             set_window_theme,
+            set_app_language,
             app_config_dir,
             git::git_status,
             git::git_file_diff,

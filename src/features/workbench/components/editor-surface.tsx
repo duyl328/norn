@@ -16,6 +16,7 @@ import {
   resolveHighlightMode,
 } from "../editor-highlighting";
 import { useEditorTabs } from "../hooks/use-editor-tabs";
+import { useI18n } from "../i18n";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type { EditorScrollbarOrientation, EditorScrollMetrics, WorkbenchDocument } from "../types";
 import {
@@ -50,6 +51,7 @@ export function EditorSurface({
   onCreateFile: () => void;
   onSelectDocument: (document: WorkbenchDocument) => void;
 }) {
+  const { t } = useI18n();
   const editorFrameRef = useRef<HTMLDivElement>(null);
   const editorElementRef = useRef<HTMLDivElement>(null);
   const scrollDOMRef = useRef<HTMLElement | null>(null);
@@ -162,7 +164,7 @@ export function EditorSurface({
           return;
         }
 
-        setHighlightWarning(`Syntax highlighting for ${mode.label} could not be loaded. Showing plain text instead.`);
+        setHighlightWarning(t("editor.highlightFallback", { language: mode.label }));
         view.dispatch({
           effects: languageCompartmentRef.current.reconfigure([]),
         });
@@ -237,7 +239,7 @@ export function EditorSurface({
       viewRef.current = null;
       scrollDOMRef.current = null;
     };
-  }, [document.id, document.name]);
+  }, [document.id, document.name, t]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -399,7 +401,7 @@ export function EditorSurface({
           tabOverflow.right && "editor-file-tabs-has-right",
         )}
         role="tablist"
-        aria-label="Open files"
+        aria-label={t("editor.openFiles")}
       >
         <TabFoldStack open={tabBellows === "left"} side="left" tabs={tabFoldStacks.left} />
         <div className="editor-file-tabs-scroll" ref={tabScrollRef}>
@@ -499,8 +501,8 @@ export function EditorSurface({
                       {tab.closable && (
                         <button
                           className="editor-file-tab-close"
-                          aria-label={`Close ${tab.name}`}
-                          title={`Close ${tab.name}`}
+                          aria-label={t("editor.closeTab", { name: tab.name })}
+                          title={t("editor.closeTab", { name: tab.name })}
                           type="button"
                           tabIndex={hideCloseButton ? -1 : 0}
                           onClick={(event) => {
@@ -533,8 +535,8 @@ export function EditorSurface({
         <button
           className="editor-file-tab-add"
           type="button"
-          aria-label="Add test tab"
-          title="Add test tab"
+          aria-label={t("editor.addTestTab")}
+          title={t("editor.addTestTab")}
           onClick={addPreviewTab}
         >
           <Plus className="h-3 w-3" />
@@ -562,8 +564,9 @@ export function EditorSurface({
         <>
           {document.mode === "large-readonly" ? (
             <div className="border-b border-border bg-muted/40 px-3 py-1.5 text-ui text-muted-foreground">
-              Large file browsing mode{document.size ? ` (${formatFileSize(document.size)})` : ""}. This view is
-              read-only and shows a loaded text range.
+              {t("editor.largeFileModeBanner", {
+                size: document.size ? formatFileSize(document.size) : "",
+              })}
             </div>
           ) : null}
           <div className="codemirror-shell-frame min-h-0 flex-1" ref={editorFrameRef}>

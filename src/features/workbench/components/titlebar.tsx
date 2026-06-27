@@ -25,8 +25,26 @@ import { cn } from "@/lib/utils";
 import { formatKey } from "../actions/registry";
 import { useActions } from "../actions/use-actions";
 import { type WindowsMenuItem, type WindowsTitlebarMenuId, windowsTitlebarMenus } from "../constants";
+import { type TranslationKey, useI18n } from "../i18n";
 import type { EditorTabPreview } from "../types";
 import { QuickSearch } from "./quick-search";
+
+const windowsMenuLabelKeys: Record<WindowsTitlebarMenuId, TranslationKey> = {
+  file: "menu.file",
+  view: "menu.view",
+  window: "menu.window",
+  help: "menu.help",
+};
+
+const windowsMenuFallbackLabelKeys: Record<string, TranslationKey> = {
+  Minimize: "menu.minimize",
+  "Maximize / Restore": "menu.maximizeRestore",
+  Close: "menu.close",
+  Welcome: "menu.welcome",
+  Documentation: "menu.documentation",
+  "Keyboard Shortcuts": "menu.keyboardShortcuts",
+  "About Norn": "menu.about",
+};
 
 export function WindowsTitleBar({
   gitBadgeCount,
@@ -51,6 +69,7 @@ export function WindowsTitleBar({
   // 用于设置页顶部 —— Windows 无边框窗口,设置页也需要可关闭窗口与访问菜单。
   variant?: "workbench" | "settings";
 }) {
+  const { t } = useI18n();
   const appWindow = getCurrentWindow();
   const { actions, dispatch } = useActions();
   const menuRef = useRef<HTMLDivElement>(null);
@@ -144,7 +163,7 @@ export function WindowsTitleBar({
             <button
               className="windows-titlebar-menu-button"
               type="button"
-              aria-label="Toggle application menu"
+              aria-label={t("titlebar.toggleMenu")}
               aria-expanded={menuExpanded}
               onClick={openMenu}
             >
@@ -153,7 +172,7 @@ export function WindowsTitleBar({
             {variant === "workbench" ? (
               <PanelToggleButton
                 className="titlebar-panel-button"
-                label={leftPanelOpen ? "Hide file tree" : "Show file tree"}
+                label={leftPanelOpen ? t("titlebar.hideFileTree") : t("titlebar.showFileTree")}
                 open={leftPanelOpen}
                 side="left"
                 onClick={onToggleLeftPanel}
@@ -161,7 +180,7 @@ export function WindowsTitleBar({
             ) : null}
           </>
         ) : (
-          <nav className="windows-titlebar-inline-menu" aria-label="Application menu">
+          <nav className="windows-titlebar-inline-menu" aria-label={t("titlebar.applicationMenu")}>
             {windowsTitlebarMenus.map((item) => (
               <div
                 className="windows-titlebar-parent-menu"
@@ -188,7 +207,7 @@ export function WindowsTitleBar({
                     }
                   }}
                 >
-                  {item.label}
+                  {t(windowsMenuLabelKeys[item.id])}
                 </button>
               </div>
             ))}
@@ -196,7 +215,8 @@ export function WindowsTitleBar({
               <div className="windows-titlebar-submenu" style={{ transform: `translateX(${submenuLeft}px)` }}>
                 {activeMenuConfig.children.map((child) => {
                   const action = child.actionId ? actionById.get(child.actionId) : undefined;
-                  const label = action?.title ?? child.label;
+                  const fallbackLabelKey = windowsMenuFallbackLabelKeys[child.label];
+                  const label = action?.title ?? (fallbackLabelKey ? t(fallbackLabelKey) : child.label);
                   const shortcut = action?.keys?.[0] ? formatKey(action.keys[0]) : null;
 
                   return (
@@ -234,7 +254,7 @@ export function WindowsTitleBar({
         {variant === "workbench" ? (
           <PanelToggleButton
             className="titlebar-panel-button"
-            label={rightPanelOpen ? "Hide Git panel" : "Show Git panel"}
+            label={rightPanelOpen ? t("titlebar.hideGitPanel") : t("titlebar.showGitPanel")}
             open={rightPanelOpen}
             side="right"
             badgeCount={gitBadgeCount}
@@ -247,7 +267,7 @@ export function WindowsTitleBar({
         <button
           className="windows-window-button"
           type="button"
-          aria-label="Minimize"
+          aria-label={t("titlebar.minimize")}
           onClick={() => appWindow.minimize()}
         >
           <Minus className="h-3.5 w-3.5" />
@@ -255,7 +275,7 @@ export function WindowsTitleBar({
         <button
           className="windows-window-button"
           type="button"
-          aria-label="Maximize or restore"
+          aria-label={t("titlebar.maximizeRestore")}
           onClick={() => appWindow.toggleMaximize()}
         >
           <Square className="h-3 w-3" />
@@ -263,7 +283,7 @@ export function WindowsTitleBar({
         <button
           className="windows-window-button windows-window-button-close"
           type="button"
-          aria-label="Close"
+          aria-label={t("titlebar.close")}
           onClick={() => appWindow.close()}
         >
           <X className="h-4 w-4" />
@@ -296,6 +316,7 @@ export function MacTitlebar({
   rightPanelWidth: number;
   searchOpen: boolean;
 }) {
+  const { t } = useI18n();
   // 搜索框跟随「编辑区」:把左/右面板占用的横向区间作为 CSS 变量传给 CSS,
   // 由 .mac-titlebar-search 用 calc 居中到「左面板右沿 ↔ 右面板左沿」之间(即编辑区)。
   // 面板收起时对应区间为 0 → 退化为整窗居中。
@@ -310,7 +331,7 @@ export function MacTitlebar({
       <div className="mac-titlebar-side mac-titlebar-side-left" data-tauri-drag-region>
         <PanelToggleButton
           className="titlebar-panel-button mac-panel-toggle-button"
-          label={leftPanelOpen ? "Hide file tree" : "Show file tree"}
+          label={leftPanelOpen ? t("titlebar.hideFileTree") : t("titlebar.showFileTree")}
           open={leftPanelOpen}
           side="left"
           useLocalSidebarIcon
@@ -329,7 +350,7 @@ export function MacTitlebar({
       >
         <PanelToggleButton
           className="titlebar-panel-button mac-panel-toggle-button"
-          label={rightPanelOpen ? "Hide Git panel" : "Show Git panel"}
+          label={rightPanelOpen ? t("titlebar.hideGitPanel") : t("titlebar.showGitPanel")}
           open={rightPanelOpen}
           side="right"
           badgeCount={gitBadgeCount}
@@ -427,10 +448,12 @@ export function PanelResizeHandle({
   side: "left" | "right";
   value: number;
 }) {
+  const { t } = useI18n();
+
   return (
     <div
       aria-hidden={!open}
-      aria-label={`Resize ${side} panel`}
+      aria-label={t("titlebar.resizePanel", { side })}
       aria-orientation="vertical"
       aria-valuemax={max}
       aria-valuemin={min}
@@ -479,10 +502,12 @@ export function TabFoldStack({
 }
 
 export function TopSearchButton({ className, onClick }: { className: string; onClick: () => void }) {
+  const { t } = useI18n();
+
   return (
     <button className={className} type="button" onClick={onClick}>
       <Search className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">Search files, commands, symbols</span>
+      <span className="truncate">{t("titlebar.searchPlaceholder")}</span>
     </button>
   );
 }

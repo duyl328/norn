@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GitPanel } from "@/features/workbench/components/git-panel";
+import { I18nProvider } from "@/features/workbench/i18n-provider";
 import { useWorkbenchStore } from "@/features/workbench/store/workbench-store";
 import type { FolderView, GitWorkspaceState } from "@/features/workbench/types";
 
@@ -21,13 +22,15 @@ const folderView: FolderView = {
 
 const renderPanel = (options: { folderView: FolderView | null; gitWorkspace: GitWorkspaceState }) =>
   render(
-    <GitPanel
-      folderView={options.folderView}
-      gitWorkspace={options.gitWorkspace}
-      onOpenCommitDiff={noop}
-      onOpenDiff={noop}
-      onOpenFile={noop}
-    />,
+    <I18nProvider>
+      <GitPanel
+        folderView={options.folderView}
+        gitWorkspace={options.gitWorkspace}
+        onOpenCommitDiff={noop}
+        onOpenDiff={noop}
+        onOpenFile={noop}
+      />
+    </I18nProvider>,
   );
 
 describe("GitPanel", () => {

@@ -10,6 +10,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+import { useI18n } from "../i18n";
+
 type DiffLine = {
   index: number;
   left: string;
@@ -89,32 +91,33 @@ export function UnsavedChangesDialog({
   onSaveAs: () => void;
   open: boolean;
 }) {
+  const { t } = useI18n();
+
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => (!nextOpen ? onCancel() : undefined)}>
       <DialogContent className="unsaved-close-dialog">
         <DialogHeader className="unsaved-close-dialog-header">
-          <DialogTitle className="unsaved-close-dialog-title">Unsaved changes</DialogTitle>
+          <DialogTitle className="unsaved-close-dialog-title">{t("dialogs.unsaved.title")}</DialogTitle>
           <DialogDescription className="unsaved-close-dialog-description">
-            This tab has local edits that are not saved yet. Save them, keep a copy, or discard them before closing the
-            tab.
+            {t("dialogs.unsaved.description")}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="unsaved-close-dialog-actions">
           <Button className="unsaved-close-dialog-action" variant="ghost" onClick={onSave}>
-            Save and Close
+            {t("dialogs.unsaved.saveAndClose")}
           </Button>
           <Button className="unsaved-close-dialog-action" variant="ghost" onClick={onSaveAs}>
-            Save As...
+            {t("dialogs.unsaved.saveAs")}
           </Button>
           <Button
             className="unsaved-close-dialog-action unsaved-close-dialog-action-danger"
             variant="ghost"
             onClick={onDiscard}
           >
-            Discard
+            {t("dialogs.unsaved.discard")}
           </Button>
           <Button className="unsaved-close-dialog-action" variant="ghost" onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -143,6 +146,7 @@ export function SaveConflictDialog({
   onSaveAs: () => void;
   open: boolean;
 }) {
+  const { t } = useI18n();
   const [compareOpen, setCompareOpen] = useState(false);
   const canCompare = typeof diskContent === "string";
   const diffLines = useMemo(
@@ -154,17 +158,17 @@ export function SaveConflictDialog({
     <Dialog open={open} onOpenChange={(nextOpen) => (!nextOpen ? onCancel() : undefined)}>
       <DialogContent className={compareOpen && canCompare ? "save-conflict-dialog save-conflict-dialog-wide" : "save-conflict-dialog"}>
         <DialogHeader>
-          <DialogTitle>{diskMissing ? "File deleted on disk" : "File changed on disk"}</DialogTitle>
+          <DialogTitle>{diskMissing ? t("dialogs.conflict.deletedTitle") : t("dialogs.conflict.changedTitle")}</DialogTitle>
           <DialogDescription>
-            {message ?? "This file was changed outside Norn. Choose how to handle your unsaved edits."}
+            {message ?? t("dialogs.conflict.description")}
           </DialogDescription>
         </DialogHeader>
 
         {compareOpen && canCompare ? (
-          <div className="save-conflict-diff" aria-label="File system and editor content comparison">
+          <div className="save-conflict-diff" aria-label={t("dialogs.conflict.compareLabel")}>
             <div className="save-conflict-diff-head">
-              <span>Disk</span>
-              <span>Editor</span>
+              <span>{t("dialogs.conflict.disk")}</span>
+              <span>{t("dialogs.conflict.editor")}</span>
             </div>
             <div className="save-conflict-diff-body">
               {diffLines.map((line) => (
@@ -179,23 +183,23 @@ export function SaveConflictDialog({
 
         <DialogFooter>
           <Button variant="ghost" onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           {canCompare ? (
             <Button variant="ghost" onClick={() => setCompareOpen((value) => !value)}>
-              {compareOpen ? "Hide Compare" : "Compare"}
+              {compareOpen ? t("dialogs.conflict.hideCompare") : t("dialogs.conflict.compare")}
             </Button>
           ) : null}
           <Button variant="ghost" onClick={onSaveAs}>
-            Save As
+            {t("dialogs.conflict.saveAs")}
           </Button>
           {!diskMissing ? (
             <Button variant="ghost" onClick={onReload}>
-              Use Disk
+              {t("dialogs.conflict.useDisk")}
             </Button>
           ) : null}
           <Button variant="destructive" onClick={onOverwrite}>
-            {diskMissing ? "Save Editor As" : "Use Editor"}
+            {diskMissing ? t("dialogs.conflict.saveEditorAs") : t("dialogs.conflict.useEditor")}
           </Button>
         </DialogFooter>
       </DialogContent>

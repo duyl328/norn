@@ -3,7 +3,7 @@ import type { WorkbenchState } from "../store/workbench-store";
 /** 焦点区域:键盘在这些区域间跳转(IDEA 风格)。 */
 export type FocusZone = "editor" | "fileTree" | "git";
 
-export type ActionCategory = "File" | "Edit" | "View" | "Git" | "Navigate";
+export type ActionCategory = string;
 
 /** action 执行时的上下文:用于 when 判断与跨区域操作。 */
 export interface ActionContext {
