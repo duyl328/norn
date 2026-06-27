@@ -240,6 +240,8 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
               message: "Repository detected",
             }
           );
+        case "git_fetch":
+          return null;
         case "read_text_file": {
           const path = String(args.path);
           const inspection = inspectFile(path);

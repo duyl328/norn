@@ -1,14 +1,4 @@
-import {
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  Check,
-  GitBranchPlus,
-  GitMerge,
-  History,
-  ListTree,
-  RefreshCw,
-  Search,
-} from "lucide-react";
+import { Check, Search } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
 import {
@@ -16,10 +6,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 
 import { gitActions } from "../hooks/use-git";
 import { useI18n } from "../i18n";
@@ -29,99 +17,18 @@ import type { GitBranch } from "../types";
 export function GitBranchMenu({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const branches = useWorkbenchStore((state) => state.gitBranches);
-  const gitStatus = useWorkbenchStore((state) => state.gitStatus);
-  const recentCommits = useWorkbenchStore((state) => state.gitRecentCommits);
-  const gitBusy = useWorkbenchStore((state) => state.gitBusy);
-  const setPanelMode = useWorkbenchStore((state) => state.setGitPanelMode);
-  const setRightPanelOpen = useWorkbenchStore((state) => state.setRightPanelOpen);
   const [filter, setFilter] = useState("");
-
-  const openBranches = () => {
-    setRightPanelOpen(true);
-    setPanelMode("branch");
-  };
-
-  const openHistory = () => {
-    setRightPanelOpen(true);
-    setPanelMode("history");
-  };
 
   const matches = (name: string) => name.toLowerCase().includes(filter.trim().toLowerCase());
   const localBranches = (branches?.local ?? []).filter((branch) => matches(branch.name));
   const remoteBranches = (branches?.remote ?? []).filter((branch) => matches(branch.name));
 
-  const currentBranch = gitStatus?.branch ?? branches?.current ?? "—";
-  const currentLocalBranch = branches?.local.find((branch) => branch.current || branch.name === currentBranch);
-  const upstream = gitStatus?.upstream ?? currentLocalBranch?.upstream ?? t("git.noUpstream");
-  const ahead = gitStatus?.ahead ?? currentLocalBranch?.ahead ?? 0;
-  const behind = gitStatus?.behind ?? currentLocalBranch?.behind ?? 0;
-
-  const createBranch = () => {
-    const name = window.prompt(t("git.createBranchPrompt"));
-    if (name && name.trim()) {
-      void gitActions.createBranch(name.trim());
-    }
-  };
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={8} className="git-branch-menu">
-        <div className="git-branch-current">
-          <div className="git-branch-current-label">{t("git.currentBranch")}</div>
-          <div className="git-branch-current-name">{currentBranch}</div>
-          <div className="git-branch-current-meta">
-            <span>{upstream}</span>
-            <span className="git-branch-track">
-              <span className="git-branch-ahead">↑{ahead}</span>
-              <span className="git-branch-behind">↓{behind}</span>
-            </span>
-          </div>
-        </div>
-
-        <div className="git-branch-actions-row">
-          <DropdownMenuItem className="git-branch-action" onClick={openBranches}>
-            <ListTree className="h-3.5 w-3.5" />
-            {t("git.branchPanel")}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            className="git-branch-action"
-            disabled={gitBusy}
-            onClick={() => void gitActions.refresh()}
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            {t("git.refresh")}
-          </DropdownMenuItem>
-        </div>
-
-        <div className="git-branch-actions-row">
-          <DropdownMenuItem
-            className="git-branch-action"
-            disabled={gitBusy}
-            onClick={() => void gitActions.pull()}
-          >
-            <ArrowDownToLine className="h-3.5 w-3.5" />
-            {t("git.pull")}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            className="git-branch-action"
-            disabled={gitBusy}
-            onClick={() => void gitActions.push()}
-          >
-            <ArrowUpFromLine className="h-3.5 w-3.5" />
-            {t("git.push")}
-          </DropdownMenuItem>
-        </div>
-
-        <div className="git-branch-actions-row git-branch-actions-row-single">
-          <DropdownMenuItem className="git-branch-action" onClick={openHistory}>
-            <History className="h-3.5 w-3.5" />
-            {t("git.versionGraph")}
-          </DropdownMenuItem>
-        </div>
-
+      <DropdownMenuContent align="end" sideOffset={6} className="git-branch-menu status-glass-menu">
         <div className="git-branch-search">
-          <Search className="h-3.5 w-3.5 text-muted-foreground" />
+          <Search className="h-3 w-3 text-muted-foreground" />
           <input
             className="git-branch-search-input"
             placeholder={t("git.filterBranches")}
@@ -131,7 +38,7 @@ export function GitBranchMenu({ children }: { children: ReactNode }) {
           />
         </div>
 
-        <DropdownMenuLabel>{t("git.localBranches")}</DropdownMenuLabel>
+        <DropdownMenuLabel className="status-menu-label git-branch-section-label">{t("git.localBranches")}</DropdownMenuLabel>
         {localBranches.length > 0 ? (
           localBranches.map((branch) => (
             <BranchRow key={branch.name} branch={branch} onSelect={() => void gitActions.checkout(branch.name)} />
@@ -142,7 +49,9 @@ export function GitBranchMenu({ children }: { children: ReactNode }) {
 
         {remoteBranches.length > 0 ? (
           <>
-            <DropdownMenuLabel>{t("git.remoteBranches")}</DropdownMenuLabel>
+            <DropdownMenuLabel className="status-menu-label git-branch-section-label">
+              {t("git.remoteBranches")}
+            </DropdownMenuLabel>
             {remoteBranches.map((branch) => {
               const localName = branch.name.replace(/^[^/]+\//, "");
               return (
@@ -155,49 +64,6 @@ export function GitBranchMenu({ children }: { children: ReactNode }) {
             })}
           </>
         ) : null}
-
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="git-branch-action" disabled={gitBusy} onClick={createBranch}>
-          <GitBranchPlus className="h-3.5 w-3.5" />
-          {t("git.createBranchFromCurrent")}
-        </DropdownMenuItem>
-
-        {recentCommits.length > 0 ? (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>{t("git.recentCommits")}</DropdownMenuLabel>
-            <div className="git-lineage">
-              {recentCommits.map((commit, index) => (
-                <div className="git-lineage-row" key={commit.hash}>
-                  <span className="git-lineage-rail" aria-hidden="true">
-                    <span className={cn("git-lineage-dot", commit.isMerge && "git-lineage-dot-merge")}>
-                      {commit.isMerge ? <GitMerge className="h-2.5 w-2.5" /> : null}
-                    </span>
-                    {index < recentCommits.length - 1 ? <span className="git-lineage-line" /> : null}
-                  </span>
-                  <span className="git-lineage-main">
-                    <span className="git-lineage-subject">{commit.subject}</span>
-                    <span className="git-lineage-meta">
-                      {commit.author} · {commit.relativeTime} · {commit.hash}
-                    </span>
-                  </span>
-                  {commit.refs.length > 0 ? (
-                    <span className="git-lineage-refs">
-                      {commit.refs.map((ref) => (
-                        <span
-                          key={ref}
-                          className={cn("git-ref-badge", ref.startsWith("origin/") && "git-ref-badge-remote")}
-                        >
-                          {ref}
-                        </span>
-                      ))}
-                    </span>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </>
-        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -208,7 +74,7 @@ function BranchRow({ branch, onSelect }: { branch: GitBranch; onSelect: () => vo
 
   return (
     <DropdownMenuItem className="git-branch-item" onClick={branch.current ? undefined : onSelect}>
-      <span className="git-branch-check">{branch.current ? <Check className="h-3.5 w-3.5" /> : null}</span>
+      <span className="git-branch-check">{branch.current ? <Check className="h-3 w-3" /> : null}</span>
       <span className="git-branch-name">
         {branch.kind === "remote" ? <span className="git-branch-remote-prefix">origin/</span> : null}
         {displayName}

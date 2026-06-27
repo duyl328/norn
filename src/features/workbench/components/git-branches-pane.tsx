@@ -22,6 +22,7 @@ import type { GitBranch, GitDivergence } from "../types";
 export function GitBranchesPane() {
   const { t } = useI18n();
   const branches = useWorkbenchStore((state) => state.gitBranches);
+  const gitRefreshVersion = useWorkbenchStore((state) => state.gitRefreshVersion);
   const gitBusy = useWorkbenchStore((state) => state.gitBusy);
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -57,7 +58,7 @@ export function GitBranchesPane() {
     return () => {
       alive = false;
     };
-  }, [localKey]);
+  }, [localKey, gitRefreshVersion]);
 
   const createBranch = () => {
     const name = window.prompt(t("git.createBranchPrompt"));
@@ -281,6 +282,7 @@ function BranchLeaf({
 
 function BranchRelationship({ branch }: { branch: GitBranch }) {
   const { t } = useI18n();
+  const gitRefreshVersion = useWorkbenchStore((state) => state.gitRefreshVersion);
   const [divergence, setDivergence] = useState<GitDivergence | null>(null);
 
   useEffect(() => {
@@ -293,7 +295,7 @@ function BranchRelationship({ branch }: { branch: GitBranch }) {
     return () => {
       alive = false;
     };
-  }, [branch.name]);
+  }, [branch.name, gitRefreshVersion]);
 
   const base = divergence?.base ?? null;
   const ownCommits = divergence?.ownCommits ?? [];

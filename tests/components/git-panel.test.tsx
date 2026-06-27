@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GitPanel } from "@/features/workbench/components/git-panel";
@@ -79,5 +79,55 @@ describe("GitPanel", () => {
     expect(screen.getByRole("button", { name: "创建 Git 仓库" })).toBeEnabled();
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
     expect(screen.queryByText("无本地分支")).not.toBeInTheDocument();
+  });
+
+  it("updates branch rail count and behind meta when Git store refreshes", () => {
+    useWorkbenchStore.setState({
+      gitBranches: {
+        current: "main",
+        local: [{ name: "main", upstream: "origin/main", ahead: 0, behind: 0, current: true, kind: "local" }],
+        remote: [{ name: "origin/main", ahead: 0, behind: 0, current: false, kind: "remote" }],
+      },
+      gitStatus: { branch: "main", upstream: "origin/main", ahead: 0, behind: 0, changes: [] },
+      gitPanelMode: "branch",
+    });
+
+    renderPanel({
+      folderView,
+      gitWorkspace: {
+        kind: "ready",
+        inspection: {
+          branch: "main",
+          gitAvailable: true,
+          gitRoot: "/mock/project",
+          gitVersion: "git version 2.50.0",
+          hasDotGit: true,
+          isRepository: true,
+          message: "已检测到 Git 仓库。",
+          workspacePath: "/mock/project",
+        },
+      },
+    });
+
+    expect(screen.getByRole("tab", { name: "分支2" })).toBeInTheDocument();
+
+    act(() => {
+      useWorkbenchStore.setState({
+        gitBranches: {
+          current: "main",
+          local: [
+            { name: "main", upstream: "origin/main", ahead: 0, behind: 3, current: true, kind: "local" },
+            { name: "feature/git-refresh", upstream: null, ahead: 0, behind: 0, current: false, kind: "local" },
+          ],
+          remote: [
+            { name: "origin/main", ahead: 0, behind: 0, current: false, kind: "remote" },
+            { name: "origin/feature/git-refresh", ahead: 0, behind: 0, current: false, kind: "remote" },
+          ],
+        },
+        gitStatus: { branch: "main", upstream: "origin/main", ahead: 0, behind: 3, changes: [] },
+      });
+    });
+
+    expect(screen.getByRole("tab", { name: "分支4 ↓3" })).toBeInTheDocument();
   });
 });

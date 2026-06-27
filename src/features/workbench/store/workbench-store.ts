@@ -112,6 +112,7 @@ export interface WorkbenchState {
   gitWorkspace: GitWorkspaceState;
   gitStatus: GitStatus | null;
   gitBranches: GitBranches | null;
+  gitRefreshVersion: number;
   gitIgnoredFiles: string[];
   gitRecentCommits: GitCommit[];
   gitBusy: boolean;
@@ -125,6 +126,7 @@ export interface WorkbenchState {
   setGitWorkspace: (setter: StateSetter<GitWorkspaceState>) => void;
   setGitStatus: (setter: StateSetter<GitStatus | null>) => void;
   setGitBranches: (setter: StateSetter<GitBranches | null>) => void;
+  bumpGitRefreshVersion: () => void;
   setGitIgnoredFiles: (setter: StateSetter<string[]>) => void;
   setGitRecentCommits: (setter: StateSetter<GitCommit[]>) => void;
   setGitBusy: (setter: StateSetter<boolean>) => void;
@@ -252,6 +254,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   gitWorkspace: { kind: "idle" },
   gitStatus: null,
   gitBranches: null,
+  gitRefreshVersion: 0,
   gitIgnoredFiles: [],
   gitRecentCommits: [],
   gitBusy: false,
@@ -271,6 +274,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setGitWorkspace: (setter) => set((state) => ({ gitWorkspace: resolveSetter(setter, state.gitWorkspace) })),
   setGitStatus: (setter) => set((state) => ({ gitStatus: resolveSetter(setter, state.gitStatus) })),
   setGitBranches: (setter) => set((state) => ({ gitBranches: resolveSetter(setter, state.gitBranches) })),
+  bumpGitRefreshVersion: () => set((state) => ({ gitRefreshVersion: state.gitRefreshVersion + 1 })),
   setGitIgnoredFiles: (setter) =>
     set((state) => ({ gitIgnoredFiles: resolveSetter(setter, state.gitIgnoredFiles) })),
   setGitRecentCommits: (setter) => set((state) => ({ gitRecentCommits: resolveSetter(setter, state.gitRecentCommits) })),

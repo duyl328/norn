@@ -539,6 +539,9 @@ export function WorkbenchPage() {
                   onChangeEncoding={(option) => void changeDocumentEncoding(option)}
                   onChangeLineEnding={changeDocumentLineEnding}
                   onGoToLine={goToLine}
+                  onOpenDiff={(file) =>
+                    void gitActions.loadFileVersions(file).then((versions) => openDiff(file, versions))
+                  }
                   gitWorkspace={gitWorkspace}
                 />
               ) : null}
