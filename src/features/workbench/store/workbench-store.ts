@@ -12,6 +12,7 @@ import type {
   GitBranches,
   GitCommit,
   GitError,
+  GitNotice,
   GitPanelMode,
   GitStatus,
   GitWorkspaceState,
@@ -117,6 +118,8 @@ export interface WorkbenchState {
   gitRecentCommits: GitCommit[];
   gitBusy: boolean;
   gitError: GitError | null;
+  gitNotice: GitNotice | null;
+  gitPendingOp: string | null;
   gitPanelMode: GitPanelMode;
   recentFolders: RecentFolder[];
   scratchFolder: ScratchFolder | null;
@@ -131,6 +134,8 @@ export interface WorkbenchState {
   setGitRecentCommits: (setter: StateSetter<GitCommit[]>) => void;
   setGitBusy: (setter: StateSetter<boolean>) => void;
   setGitError: (setter: StateSetter<GitError | null>) => void;
+  setGitNotice: (setter: StateSetter<GitNotice | null>) => void;
+  setGitPendingOp: (setter: StateSetter<string | null>) => void;
   setGitPanelMode: (setter: StateSetter<GitPanelMode>) => void;
   setRecentFolders: (setter: StateSetter<RecentFolder[]>) => void;
   setScratchFolder: (setter: StateSetter<ScratchFolder | null>) => void;
@@ -259,6 +264,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   gitRecentCommits: [],
   gitBusy: false,
   gitError: null,
+  gitNotice: null,
+  gitPendingOp: null,
   gitPanelMode: "commit",
   recentFolders: loadRecentFolders(),
   scratchFolder: null,
@@ -280,6 +287,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setGitRecentCommits: (setter) => set((state) => ({ gitRecentCommits: resolveSetter(setter, state.gitRecentCommits) })),
   setGitBusy: (setter) => set((state) => ({ gitBusy: resolveSetter(setter, state.gitBusy) })),
   setGitError: (setter) => set((state) => ({ gitError: resolveSetter(setter, state.gitError) })),
+  setGitNotice: (setter) => set((state) => ({ gitNotice: resolveSetter(setter, state.gitNotice) })),
+  setGitPendingOp: (setter) => set((state) => ({ gitPendingOp: resolveSetter(setter, state.gitPendingOp) })),
   setGitPanelMode: (setter) => set((state) => ({ gitPanelMode: resolveSetter(setter, state.gitPanelMode) })),
   setRecentFolders: (setter) => set((state) => ({ recentFolders: resolveSetter(setter, state.recentFolders) })),
   setScratchFolder: (setter) => set((state) => ({ scratchFolder: resolveSetter(setter, state.scratchFolder) })),

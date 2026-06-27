@@ -6,6 +6,7 @@ import {
   ChevronRight,
   GitBranch as GitBranchIcon,
   GitBranchPlus,
+  Loader2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -33,7 +34,14 @@ export function GitBranchesPane() {
   const branches = useWorkbenchStore((state) => state.gitBranches);
   const gitRefreshVersion = useWorkbenchStore((state) => state.gitRefreshVersion);
   const gitBusy = useWorkbenchStore((state) => state.gitBusy);
+  const detached = useWorkbenchStore((state) => state.gitStatus?.detached ?? false);
   const [selected, setSelected] = useState<string | null>(null);
+  // 记录正在切换的分支名,在对应行上显示 spinner —— checkout 要 fetch/切工作区,有可感知延迟。
+  const [checkingOut, setCheckingOut] = useState<string | null>(null);
+  const handleCheckout = (branch: GitBranch, localName?: string) => {
+    setCheckingOut(branch.name);
+    void gitActions.checkout(localName ?? branch.name).finally(() => setCheckingOut(null));
+  };
 
   const local = branches?.local ?? [];
   const remote = branches?.remote ?? [];
@@ -103,7 +111,8 @@ export function GitBranchesPane() {
           className="git-toolbar-button"
           size="toolbar"
           variant="ghost"
-          disabled={gitBusy}
+          disabled={gitBusy || detached}
+          title={detached ? t("git.pullPushDisabledDetached") : undefined}
           onClick={() => void gitActions.pull()}
         >
           <ArrowDownToLine className="h-3.5 w-3.5" />
@@ -113,7 +122,8 @@ export function GitBranchesPane() {
           className="git-toolbar-button"
           size="toolbar"
           variant="ghost"
-          disabled={gitBusy}
+          disabled={gitBusy || detached}
+          title={detached ? t("git.pullPushDisabledDetached") : undefined}
           onClick={() => void gitActions.push()}
         >
           <ArrowUpFromLine className="h-3.5 w-3.5" />
@@ -127,7 +137,8 @@ export function GitBranchesPane() {
         selected={selected}
         divergences={divergences}
         onSelect={setSelected}
-        onCheckout={(branch) => void gitActions.checkout(branch.name)}
+        onCheckout={(branch) => handleCheckout(branch)}
+        checkingOut={checkingOut}
       />
       {local.length === 0 ? <div className="git-branch-empty">{t("git.noLocalBranches")}</div> : null}
 
@@ -139,7 +150,8 @@ export function GitBranchesPane() {
             selected={selected}
             divergences={divergences}
             onSelect={setSelected}
-            onCheckout={(branch) => void gitActions.checkout(branch.name.replace(/^[^/]+\//, ""))}
+            onCheckout={(branch) => handleCheckout(branch, branch.name.replace(/^[^/]+\//, ""))}
+            checkingOut={checkingOut}
           />
         </>
       ) : null}
@@ -175,6 +187,7 @@ export function GitBranchesPane() {
 function BranchSummary() {
   const { t } = useI18n();
   const gitStatus = useWorkbenchStore((state) => state.gitStatus);
+  const detached = gitStatus?.detached ?? false;
   const branch = gitStatus?.branch ?? "—";
   const upstream = gitStatus?.upstream ?? null;
   const ahead = gitStatus?.ahead ?? 0;
@@ -184,9 +197,10 @@ function BranchSummary() {
   return (
     <div className="git-branch-summary">
       <div className="git-branch-summary-head">
-        <GitBranchIcon className="h-4 w-4 text-primary" />
-        <span className="git-branch-summary-name">{branch}</span>
+        <GitBranchIcon className={cn("h-4 w-4", detached ? "text-amber-500" : "text-primary")} />
+        <span className="git-branch-summary-name">{detached ? t("git.detachedHead") : branch}</span>
       </div>
+      {detached ? <div className="git-branch-detached-hint">{t("git.detachedHint")}</div> : null}
       <div className="git-branch-summary-rows">
         <span className={cn("git-branch-summary-pill", changeCount > 0 && "git-branch-summary-pill-warn")}>
           {changeCount > 0 ? t("git.uncommittedChanges", { count: changeCount }) : t("git.workspaceClean")}
@@ -219,6 +233,7 @@ type BranchTreeShared = {
   onCheckout: (branch: GitBranch) => void;
   onSelect: (name: string | null) => void;
   selected: string | null;
+  checkingOut: string | null;
 };
 
 function BranchTree({ depth = 0, nodes, ...shared }: { depth?: number; nodes: BranchTreeNode[] } & BranchTreeShared) {
@@ -264,10 +279,12 @@ function BranchLeaf({
   onCheckout,
   onSelect,
   selected,
+  checkingOut,
 }: { depth: number; node: Extract<BranchTreeNode, { kind: "branch" }> } & BranchTreeShared) {
   const { t } = useI18n();
   const { branch } = node;
   const isSelected = branch.name === selected;
+  const isCheckingOut = checkingOut === branch.name;
   const divergence = divergences[branch.name];
   const baseName = divergence?.base ? divergence.base.replace(/^[^/]+\//, "") : null;
   const showBase =
@@ -291,7 +308,9 @@ function BranchLeaf({
           title={t("git.branchCheckoutTitle", { name: branch.name })}
         >
           <span className="git-branch-leaf-check">
-            {branch.current ? (
+            {isCheckingOut ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+            ) : branch.current ? (
               <Check className="h-3.5 w-3.5" />
             ) : (
               <GitBranchIcon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -317,8 +336,13 @@ function BranchLeaf({
           ) : null}
         </button>
         {!branch.current ? (
-          <button type="button" className="git-branch-leaf-checkout" onClick={() => onCheckout(branch)}>
-            {t("git.checkout")}
+          <button
+            type="button"
+            className="git-branch-leaf-checkout"
+            disabled={checkingOut !== null}
+            onClick={() => onCheckout(branch)}
+          >
+            {isCheckingOut ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t("git.checkout")}
           </button>
         ) : null}
       </div>

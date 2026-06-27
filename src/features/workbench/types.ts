@@ -137,6 +137,7 @@ export type GitChange = {
 
 export type GitStatus = {
   branch?: string | null;
+  detached?: boolean;
   upstream?: string | null;
   ahead: number;
   behind: number;
@@ -225,6 +226,9 @@ export type GitError = {
   kind?: GitErrorKind;
   message?: string;
 };
+
+/** 写操作后的临时提示条:成功(自带文案)或失败(带错误对象,供面板本地化)。 */
+export type GitNotice = { tone: "ok"; text: string } | { tone: "err"; error: GitError };
 
 export type FolderView = {
   rootPath: string;

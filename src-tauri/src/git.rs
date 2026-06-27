@@ -51,6 +51,7 @@ pub struct GitChange {
 #[serde(rename_all = "camelCase")]
 pub struct GitStatusResult {
     branch: Option<String>,
+    detached: bool,
     upstream: Option<String>,
     ahead: u32,
     behind: u32,
@@ -203,6 +204,7 @@ fn parse_status(stdout: &[u8]) -> GitStatusResult {
     let text = String::from_utf8_lossy(stdout);
     let tokens: Vec<&str> = text.split('\0').collect();
     let mut branch = None;
+    let mut detached = false;
     let mut upstream = None;
     let mut ahead = 0u32;
     let mut behind = 0u32;
@@ -218,7 +220,8 @@ fn parse_status(stdout: &[u8]) -> GitStatusResult {
         match token.chars().next().unwrap() {
             '#' => {
                 if let Some(rest) = token.strip_prefix("# branch.head ") {
-                    branch = (rest != "(detached)").then(|| rest.to_string());
+                    detached = rest == "(detached)";
+                    branch = (!detached).then(|| rest.to_string());
                 } else if let Some(rest) = token.strip_prefix("# branch.upstream ") {
                     upstream = Some(rest.to_string());
                 } else if let Some(rest) = token.strip_prefix("# branch.ab ") {
@@ -289,6 +292,7 @@ fn parse_status(stdout: &[u8]) -> GitStatusResult {
 
     GitStatusResult {
         branch,
+        detached,
         upstream,
         ahead,
         behind,
@@ -556,6 +560,70 @@ pub fn git_checkout(path: String, branch: String) -> Result<(), GitError> {
 #[tauri::command]
 pub fn git_create_branch(path: String, name: String) -> Result<(), GitError> {
     git_text(&PathBuf::from(path), &["switch", "-c", &name])?;
+    Ok(())
+}
+
+/// 从指定提交新建并切换到分支(常用于把「分离 HEAD」固化成一条分支)。
+#[tauri::command]
+pub fn git_create_branch_at(path: String, name: String, hash: String) -> Result<(), GitError> {
+    git_text(&PathBuf::from(path), &["switch", "-c", &name, &hash])?;
+    Ok(())
+}
+
+/// 检测当前是否有进行中的 revert / merge / cherry-pick(冲突卡住时用)。
+#[tauri::command]
+pub fn git_pending_op(path: String) -> Result<String, GitError> {
+    let workspace = PathBuf::from(path);
+    for (marker, op) in [
+        ("REVERT_HEAD", "revert"),
+        ("MERGE_HEAD", "merge"),
+        ("CHERRY_PICK_HEAD", "cherry-pick"),
+    ] {
+        if run_git(&workspace, &["rev-parse", "-q", "--verify", marker])
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            return Ok(op.to_string());
+        }
+    }
+    Ok(String::new())
+}
+
+/// 中止进行中的 revert / merge / cherry-pick,回到操作前的状态。
+#[tauri::command]
+pub fn git_abort_op(path: String, op: String) -> Result<(), GitError> {
+    let sub = match op.as_str() {
+        "merge" => "merge",
+        "cherry-pick" => "cherry-pick",
+        _ => "revert",
+    };
+    git_text(&PathBuf::from(path), &[sub, "--abort"])?;
+    Ok(())
+}
+
+/// 签出某个提交(分离 HEAD)。用于历史里「单独签出此节点」。
+#[tauri::command]
+pub fn git_checkout_commit(path: String, hash: String) -> Result<(), GitError> {
+    git_text(&PathBuf::from(path), &["checkout", &hash])?;
+    Ok(())
+}
+
+/// 重置当前分支到某提交。mode: soft(保留改动+暂存)/mixed(保留改动)/hard(丢弃改动)。
+#[tauri::command]
+pub fn git_reset(path: String, hash: String, mode: String) -> Result<(), GitError> {
+    let flag = match mode.as_str() {
+        "soft" => "--soft",
+        "hard" => "--hard",
+        _ => "--mixed",
+    };
+    git_text(&PathBuf::from(path), &["reset", flag, &hash])?;
+    Ok(())
+}
+
+/// 还原某个提交(生成一条反向提交,不改写历史)。
+#[tauri::command]
+pub fn git_revert(path: String, hash: String) -> Result<(), GitError> {
+    git_text(&PathBuf::from(path), &["revert", "--no-edit", &hash])?;
     Ok(())
 }
 

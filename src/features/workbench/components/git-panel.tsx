@@ -7,8 +7,9 @@ import {
   GitFork,
   History,
   RefreshCw,
+  X,
 } from "lucide-react";
-import { type ComponentType, type CSSProperties, type ReactNode, useRef, useState } from "react";
+import { type ComponentType, type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -138,6 +139,62 @@ export function GitPanel({
           ))}
         </div>
       )}
+      <GitPendingOpBanner />
+      <GitToast />
+    </div>
+  );
+}
+
+/** 进行中的 revert/merge/cherry-pick(通常因冲突卡住)横幅:顶部醒目提示 + 「放弃」按钮,免去跑命令行。 */
+function GitPendingOpBanner() {
+  const { t } = useI18n();
+  const pendingOp = useWorkbenchStore((state) => state.gitPendingOp);
+  const gitBusy = useWorkbenchStore((state) => state.gitBusy);
+  if (!pendingOp) return null;
+
+  const opLabel =
+    pendingOp === "merge" ? t("git.opMerge") : pendingOp === "cherry-pick" ? t("git.opCherryPick") : t("git.opRevert");
+
+  return (
+    <div className="git-pending-banner" role="alert">
+      <div className="git-pending-banner-text">
+        <div className="git-pending-banner-title">{t("git.pendingOpBanner", { op: opLabel })}</div>
+        <div className="git-pending-banner-hint">{t("git.pendingOpHint")}</div>
+      </div>
+      <Button
+        size="sm"
+        variant="destructive"
+        disabled={gitBusy}
+        onClick={() => void gitActions.abortOp(pendingOp, t("git.toastOpAborted", { op: opLabel }))}
+      >
+        {t("git.abortOp")}
+      </Button>
+    </div>
+  );
+}
+
+/** 写操作后的临时提示条:成功绿色一闪、失败红色显示原因，几秒后自动消失，可点 × 关闭。所有模式可见。 */
+function GitToast() {
+  const { t } = useI18n();
+  const notice = useWorkbenchStore((state) => state.gitNotice);
+  const setGitNotice = useWorkbenchStore((state) => state.setGitNotice);
+
+  useEffect(() => {
+    // 成功提示 3.2s 自动消失;错误保留(需手动 × 关闭),方便阅读 / 复制排查。
+    if (!notice || notice.tone !== "ok") return;
+    const timer = window.setTimeout(() => setGitNotice(null), 3200);
+    return () => window.clearTimeout(timer);
+  }, [notice, setGitNotice]);
+
+  if (!notice) return null;
+  const text = notice.tone === "ok" ? notice.text : getGitErrorHint(notice.error, t);
+
+  return (
+    <div className={cn("git-toast", notice.tone === "ok" ? "git-toast-ok" : "git-toast-err")} role="status">
+      <span className="git-toast-text">{text}</span>
+      <button type="button" className="git-toast-close" aria-label={t("common.cancel")} onClick={() => setGitNotice(null)}>
+        <X className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }

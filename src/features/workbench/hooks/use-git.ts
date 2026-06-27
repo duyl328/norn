@@ -32,16 +32,18 @@ export const refreshGit = async (): Promise<void> => {
 
   try {
     await invoke("git_fetch", { path }).catch(() => undefined);
-    const [status, branches, ignoredFiles, commits] = await Promise.all([
+    const [status, branches, ignoredFiles, commits, pendingOp] = await Promise.all([
       invoke<GitStatus>("git_status", { path }),
       invoke<GitBranches>("git_branches", { path }),
       invoke<string[]>("git_ignored_files", { path }),
       invoke<GitCommit[]>("git_recent_commits", { path, limit: RECENT_COMMIT_LIMIT }),
+      invoke<string>("git_pending_op", { path }).catch(() => ""),
     ]);
     store.setGitStatus(status);
     store.setGitBranches(branches);
     store.setGitIgnoredFiles(ignoredFiles);
     store.setGitRecentCommits(commits);
+    store.setGitPendingOp(pendingOp || null);
     store.bumpGitRefreshVersion();
     store.setGitError(null);
   } catch (error) {
@@ -50,8 +52,8 @@ export const refreshGit = async (): Promise<void> => {
   }
 };
 
-/** 执行一次写操作 + 自动刷新，统一管理 gitBusy / gitError。返回是否成功。 */
-const withBusy = async (run: (path: string) => Promise<unknown>): Promise<boolean> => {
+/** 执行一次写操作 + 自动刷新，统一管理 gitBusy / gitError / gitNotice。返回是否成功。 */
+const withBusy = async (run: (path: string) => Promise<unknown>, okMessage?: string): Promise<boolean> => {
   const path = repoPath();
   if (!path) {
     return false;
@@ -63,9 +65,14 @@ const withBusy = async (run: (path: string) => Promise<unknown>): Promise<boolea
   try {
     await run(path);
     await refreshGit();
+    if (okMessage) {
+      useWorkbenchStore.getState().setGitNotice({ tone: "ok", text: okMessage });
+    }
     return true;
   } catch (error) {
-    store.setGitError(getGitError(error));
+    const gitError = getGitError(error);
+    store.setGitError(gitError);
+    store.setGitNotice({ tone: "err", error: gitError });
     return false;
   } finally {
     useWorkbenchStore.getState().setGitBusy(false);
@@ -94,7 +101,17 @@ export const gitActions = {
   },
   pull: () => withBusy((path) => invoke("git_pull", { path })),
   checkout: (branch: string) => withBusy((path) => invoke("git_checkout", { path, branch })),
+  checkoutCommit: (hash: string, okMessage?: string) =>
+    withBusy((path) => invoke("git_checkout_commit", { path, hash }), okMessage),
+  resetTo: (hash: string, mode: "soft" | "mixed" | "hard", okMessage?: string) =>
+    withBusy((path) => invoke("git_reset", { path, hash, mode }), okMessage),
+  revertCommit: (hash: string, okMessage?: string) =>
+    withBusy((path) => invoke("git_revert", { path, hash }), okMessage),
   createBranch: (name: string) => withBusy((path) => invoke("git_create_branch", { path, name })),
+  createBranchAt: (name: string, hash: string, okMessage?: string) =>
+    withBusy((path) => invoke("git_create_branch_at", { path, name, hash }), okMessage),
+  abortOp: (op: string, okMessage?: string) =>
+    withBusy((path) => invoke("git_abort_op", { path, op }), okMessage),
   initRepo: () =>
     withBusy(async (path) => {
       await invoke("git_init", { path });

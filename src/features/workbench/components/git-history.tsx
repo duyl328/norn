@@ -1,6 +1,16 @@
-import { ChevronDown, ChevronRight, Search } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, Copy, GitBranchPlus, RotateCcw, Search, Undo2 } from "lucide-react";
+import { type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 import { buildFileTree, type FileTreeNode } from "../change-tree";
@@ -10,8 +20,11 @@ import { useI18n } from "../i18n";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type { GitCommitFile, GitGraphCommit } from "../types";
 import { getPathDisplayIcon } from "../workbench-utils";
+import { ContextMenu, type ContextMenuItem } from "./context-menu";
 import { getChangeStatusLabel } from "./git-panel";
 import { useRailRowInset } from "./use-rail-row-inset";
+
+const copyToClipboard = (text: string) => void globalThis.navigator?.clipboard?.writeText(text);
 
 // 历史模式里会被右上角竖排标签盖住的元素:搜索框(常驻顶部)+ 提交行 + 空态。
 const HISTORY_ROW_SELECTOR = ".git-branch-search, .git-graph-row, .git-branch-empty";
@@ -29,11 +42,16 @@ function formatRefs(refs: string[]): RefBadge[] {
   const out: RefBadge[] = [];
   for (const raw of refs) {
     const ref = raw.trim();
-    if (!ref || ref === "HEAD" || ref === "origin/HEAD") {
+    if (!ref || ref === "origin/HEAD") {
       continue;
     }
-    if (ref.startsWith("HEAD -> ")) {
-      out.push({ label: ref.slice(8), kind: "head" });
+    if (ref === "HEAD") {
+      // 分离 HEAD(签出某条提交后):明确标出「当前就在这条」。
+      out.push({ label: "HEAD", kind: "head" });
+    } else if (ref.startsWith("HEAD -> ")) {
+      // 在某分支上:HEAD 徽章 + 分支名,一眼看出当前提交和所在分支。
+      out.push({ label: "HEAD", kind: "head" });
+      out.push({ label: ref.slice(8), kind: "local" });
     } else if (ref.startsWith("tag: ")) {
       out.push({ label: ref.slice(5), kind: "tag" });
     } else if (ref.startsWith("origin/")) {
@@ -154,6 +172,64 @@ export function GitHistoryPane({ onOpenCommitDiff }: { onOpenCommitDiff: (hash: 
   const filtering = query.trim().length > 0;
   const selected = filtered.find((commit) => commit.hash === selectedHash) ?? null;
 
+  const [menu, setMenu] = useState<{ x: number; y: number; commit: GitGraphCommit } | null>(null);
+  // 硬重置会丢弃改动,window.confirm 在 WKWebView 是 no-op,改用应用内确认框。
+  const [confirmHardReset, setConfirmHardReset] = useState<GitGraphCommit | null>(null);
+  // 从某提交新建分支(把「分离 HEAD」固化成分支)。
+  const [branchFrom, setBranchFrom] = useState<GitGraphCommit | null>(null);
+  const [branchName, setBranchName] = useState("");
+  const confirmCreateBranch = () => {
+    const name = branchName.trim();
+    if (!name || !branchFrom) return;
+    void gitActions.createBranchAt(name, branchFrom.hash, t("git.toastBranchCreated", { name }));
+    setBranchFrom(null);
+    setBranchName("");
+  };
+
+  const menuItems = (commit: GitGraphCommit): ContextMenuItem[] => [
+    { label: t("git.copyHash"), icon: <Copy className="h-3.5 w-3.5" />, onClick: () => copyToClipboard(commit.hash) },
+    {
+      label: t("git.copyShortHash"),
+      icon: <Copy className="h-3.5 w-3.5" />,
+      onClick: () => copyToClipboard(commit.hash.slice(0, 8)),
+    },
+    {
+      label: t("git.checkoutCommit"),
+      icon: <GitBranchPlus className="h-3.5 w-3.5" />,
+      onClick: () => void gitActions.checkoutCommit(commit.hash, t("git.toastCheckedOut", { hash: commit.hash.slice(0, 7) })),
+    },
+    {
+      label: t("git.newBranchFromCommit"),
+      icon: <GitBranchPlus className="h-3.5 w-3.5" />,
+      onClick: () => {
+        setBranchName("");
+        setBranchFrom(commit);
+      },
+    },
+    {
+      label: t("git.revertCommit"),
+      icon: <Undo2 className="h-3.5 w-3.5" />,
+      onClick: () => void gitActions.revertCommit(commit.hash, t("git.toastReverted", { hash: commit.hash.slice(0, 7) })),
+    },
+    {
+      label: t("git.resetMixed"),
+      icon: <RotateCcw className="h-3.5 w-3.5" />,
+      onClick: () => void gitActions.resetTo(commit.hash, "mixed", t("git.toastResetMixed", { hash: commit.hash.slice(0, 7) })),
+    },
+    {
+      label: t("git.resetHard"),
+      icon: <RotateCcw className="h-3.5 w-3.5" />,
+      danger: true,
+      onClick: () => setConfirmHardReset(commit),
+    },
+  ];
+
+  const onRowContextMenu = (event: ReactMouseEvent, commit: GitGraphCommit) => {
+    event.preventDefault();
+    setSelectedHash(commit.hash);
+    setMenu({ x: event.clientX, y: event.clientY, commit });
+  };
+
   return (
     <div className="git-graph-pane" ref={paneRef}>
       <div className="git-branch-search">
@@ -167,11 +243,79 @@ export function GitHistoryPane({ onOpenCommitDiff }: { onOpenCommitDiff: (hash: 
       </div>
 
       <div className="git-graph-scroll">
-        <GitGraph commits={filtered} drawEdges={!filtering} selectedHash={selectedHash} onSelect={setSelectedHash} />
+        <GitGraph
+          commits={filtered}
+          drawEdges={!filtering}
+          selectedHash={selectedHash}
+          onSelect={setSelectedHash}
+          onContextMenu={onRowContextMenu}
+        />
         {filtered.length === 0 ? <div className="git-branch-empty">{t("git.noCommits")}</div> : null}
       </div>
 
       <CommitDetail commit={selected} files={files} onOpenCommitDiff={onOpenCommitDiff} />
+
+      {menu ? (
+        <ContextMenu x={menu.x} y={menu.y} items={menuItems(menu.commit)} onClose={() => setMenu(null)} />
+      ) : null}
+
+      <Dialog open={confirmHardReset !== null} onOpenChange={(open) => (!open ? setConfirmHardReset(null) : undefined)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("git.resetHardConfirmTitle")}</DialogTitle>
+            <DialogDescription>
+              {confirmHardReset ? t("git.resetHardConfirmBody", { subject: confirmHardReset.subject }) : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmHardReset(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (confirmHardReset) {
+                  void gitActions.resetTo(
+                    confirmHardReset.hash,
+                    "hard",
+                    t("git.toastResetHard", { hash: confirmHardReset.hash.slice(0, 7) }),
+                  );
+                }
+                setConfirmHardReset(null);
+              }}
+            >
+              {t("git.resetHard")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={branchFrom !== null} onOpenChange={(open) => (!open ? setBranchFrom(null) : undefined)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("git.newBranchFromCommit")}</DialogTitle>
+            <DialogDescription>
+              {branchFrom ? t("git.createBranchAtPrompt", { hash: branchFrom.hash.slice(0, 7) }) : ""}
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            autoFocus
+            value={branchName}
+            onChange={(event) => setBranchName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") confirmCreateBranch();
+            }}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setBranchFrom(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={confirmCreateBranch} disabled={!branchName.trim()}>
+              {t("common.create")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -180,11 +324,13 @@ function GitGraph({
   commits,
   drawEdges,
   onSelect,
+  onContextMenu,
   selectedHash,
 }: {
   commits: GitGraphCommit[];
   drawEdges: boolean;
   onSelect: (hash: string) => void;
+  onContextMenu: (event: ReactMouseEvent, commit: GitGraphCommit) => void;
   selectedHash: string;
 }) {
   const position = new Map(commits.map((commit, index) => [commit.hash, { column: commit.column, index }]));
@@ -255,6 +401,7 @@ function GitGraph({
             className={cn("git-graph-row", commit.hash === selectedHash && "git-graph-row-selected")}
             style={{ height: ROW_H, paddingLeft: drawEdges ? graphWidth + 4 : PAD_X }}
             onClick={() => onSelect(commit.hash)}
+            onContextMenu={(event) => onContextMenu(event, commit)}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
