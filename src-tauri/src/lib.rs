@@ -222,6 +222,26 @@ fn app_version() -> &'static str {
 }
 
 #[tauri::command]
+fn debug_log(message: String, payload: serde_json::Value) {
+    eprintln!("[norn] {message}: {payload}");
+}
+
+#[tauri::command]
+fn destroy_current_window(window: tauri::WebviewWindow) -> Result<(), String> {
+    let label = window.label().to_string();
+    match window.destroy() {
+        Ok(()) => {
+            eprintln!("[norn] destroyed window: {label}");
+            Ok(())
+        }
+        Err(error) => {
+            eprintln!("[norn] failed to destroy window {label}: {error}");
+            Err(error.to_string())
+        }
+    }
+}
+
+#[tauri::command]
 fn take_initial_open_files(state: tauri::State<'_, PendingOpenFilesState>) -> Vec<String> {
     std::mem::take(&mut *state.0.lock().unwrap())
 }
@@ -2640,6 +2660,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_version,
+            debug_log,
+            destroy_current_window,
             take_initial_open_files,
             detect_git_cli,
             inspect_git_workspace,

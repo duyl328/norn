@@ -881,7 +881,22 @@ export const getTabBorderAccent = (name: string) => {
   return "#94a3b8";
 };
 
-export const isDocumentDirty = (document: WorkbenchDocument) => document.content !== document.savedContent;
+const getDocumentText = (value: string | null | undefined) => value ?? "";
+
+export const isDocumentDirty = (document: WorkbenchDocument) =>
+  getDocumentText(document.content) !== getDocumentText(document.savedContent);
+
+export const requiresDocumentCloseConfirmation = (document: WorkbenchDocument) => {
+  if (
+    document.isUntitled &&
+    getDocumentText(document.content).length === 0 &&
+    getDocumentText(document.savedContent).length === 0
+  ) {
+    return false;
+  }
+
+  return isDocumentDirty(document) || Boolean(document.isUntitled);
+};
 
 export const upsertOpenDocument = (documents: WorkbenchDocument[], nextDocument: WorkbenchDocument) => {
   const existingIndex = documents.findIndex((document) => document.id === nextDocument.id);

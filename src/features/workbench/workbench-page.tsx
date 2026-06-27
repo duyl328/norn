@@ -37,11 +37,12 @@ import { useWorkspaceTree } from "./hooks/use-workspace-tree";
 import { isMac, isWindows } from "./platform";
 import { loadSettings } from "./settings";
 import { useWorkbenchStore } from "./store/workbench-store";
-import type { WorkbenchDocument } from "./types";
-import { isDocumentDirty, isTauriRuntime, loadKeymapOverrides } from "./workbench-utils";
-
-const requiresCloseConfirmation = (targetDocument: WorkbenchDocument) =>
-  isDocumentDirty(targetDocument) || (targetDocument.isUntitled && targetDocument.content.length > 0);
+import {
+  isDocumentDirty,
+  isTauriRuntime,
+  loadKeymapOverrides,
+  requiresDocumentCloseConfirmation,
+} from "./workbench-utils";
 
 export function WorkbenchPage() {
   const document = useWorkbenchStore((state) => state.document);
@@ -165,15 +166,43 @@ export function WorkbenchPage() {
     let disposed = false;
     let unlisten: UnlistenFn | undefined;
 
-    getCurrentWindow()
+    const appWindow = getCurrentWindow();
+
+    appWindow
       .onCloseRequested((event) => {
-        const targetDocument = useWorkbenchStore.getState().openDocuments.find(requiresCloseConfirmation);
+        const state = useWorkbenchStore.getState();
+        const closeDiagnostics = state.openDocuments.map((openDocument) => ({
+          id: openDocument.id,
+          name: openDocument.name,
+          isUntitled: Boolean(openDocument.isUntitled),
+          contentLength: (openDocument.content ?? "").length,
+          savedContentLength: (openDocument.savedContent ?? "").length,
+          dirty: isDocumentDirty(openDocument),
+          needsConfirmation: requiresDocumentCloseConfirmation(openDocument),
+        }));
+        const targetDocument = state.openDocuments.find(requiresDocumentCloseConfirmation);
+
+        const diagnosticPayload = {
+          documents: closeDiagnostics,
+          pendingCloseDocumentId: state.pendingCloseDocument?.id ?? null,
+          targetDocumentId: targetDocument?.id ?? null,
+        };
+
+        console.info("[norn] window close requested", diagnosticPayload);
+        void invoke("debug_log", { message: "window close requested", payload: diagnosticPayload }).catch(() => undefined);
+
+        event.preventDefault();
 
         if (!targetDocument) {
+          void invoke("debug_log", { message: "destroy current window requested", payload: {} }).catch(() => undefined);
+          void invoke("destroy_current_window").catch((error) =>
+            invoke("debug_log", { message: "destroy current window failed", payload: { error: String(error) } }).catch(
+              () => undefined,
+            ),
+          );
           return;
         }
 
-        event.preventDefault();
         requestCloseDocumentRef.current(targetDocument);
       })
       .then((cleanup) => {
@@ -288,6 +317,12 @@ export function WorkbenchPage() {
   // action 系统的回调来源:全部复用上面的 hook 输出,不重写业务逻辑。
   const actionDeps: ActionDeps = {
     createFile,
+    activateDocument: (documentId) => {
+      const targetDocument = useWorkbenchStore.getState().openDocuments.find((item) => item.id === documentId);
+      if (targetDocument) {
+        activateDocument(targetDocument);
+      }
+    },
     openFilePicker,
     openFolderPicker,
     saveDocument: () => saveDocument(),

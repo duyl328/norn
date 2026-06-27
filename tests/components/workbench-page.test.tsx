@@ -2,7 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { act, render, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WorkbenchPage } from "@/features/workbench/workbench-page";
@@ -109,8 +109,10 @@ describe("WorkbenchPage close protection", () => {
 
     const state = useWorkbenchStore.getState();
     expect(event.preventDefault).toHaveBeenCalled();
+    expect(invokeMock).not.toHaveBeenCalledWith("destroy_current_window");
     expect(state.document.id).toBe("dirty");
     expect(state.pendingCloseDocument?.id).toBe("dirty");
+    expect(screen.getByRole("dialog")).toHaveTextContent("未保存的更改");
   });
 
   it("allows native window close when no document needs confirmation", async () => {
@@ -125,7 +127,63 @@ describe("WorkbenchPage close protection", () => {
 
     act(() => handler(event));
 
-    expect(event.preventDefault).not.toHaveBeenCalled();
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(invokeMock).toHaveBeenCalledWith("destroy_current_window");
+    expect(useWorkbenchStore.getState().pendingCloseDocument).toBeNull();
+  });
+
+  it("allows native window close with multiple empty untitled documents", async () => {
+    const first = makeDoc({
+      id: "untitled-1",
+      name: "Untitled.txt",
+      path: "Untitled.txt",
+      content: "",
+      savedContent: "",
+      isUntitled: true,
+    });
+    const second = makeDoc({
+      id: "untitled-2",
+      name: "Untitled.txt",
+      path: "Untitled.txt",
+      content: "",
+      savedContent: "",
+      isUntitled: true,
+    });
+    resetStore(first, [first, second]);
+
+    renderWorkbenchPage();
+
+    await waitFor(() => expect(onCloseRequestedMock).toHaveBeenCalled());
+    const handler = onCloseRequestedMock.mock.calls[0]?.[0] as (event: { preventDefault: () => void }) => void;
+    const event = { preventDefault: vi.fn() };
+
+    act(() => handler(event));
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(invokeMock).toHaveBeenCalledWith("destroy_current_window");
+    expect(useWorkbenchStore.getState().pendingCloseDocument).toBeNull();
+  });
+
+  it("allows native window close when an empty untitled document has incomplete persisted state", async () => {
+    const untitled = makeDoc({
+      id: "untitled",
+      name: "Untitled.txt",
+      path: "Untitled.txt",
+      content: "",
+      savedContent: undefined as never,
+      isUntitled: true,
+    });
+    resetStore(untitled, [untitled]);
+
+    renderWorkbenchPage();
+
+    await waitFor(() => expect(onCloseRequestedMock).toHaveBeenCalled());
+    const handler = onCloseRequestedMock.mock.calls[0]?.[0] as (event: { preventDefault: () => void }) => void;
+    const event = { preventDefault: vi.fn() };
+
+    expect(() => act(() => handler(event))).not.toThrow();
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(invokeMock).toHaveBeenCalledWith("destroy_current_window");
     expect(useWorkbenchStore.getState().pendingCloseDocument).toBeNull();
   });
 

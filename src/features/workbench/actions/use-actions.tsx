@@ -10,6 +10,7 @@ import type { Action, ActionContext } from "./types";
 /** useActions 需要的回调:全部复用 workbench-page 已有的 hook 输出,这里不重写业务逻辑。 */
 export interface ActionDeps {
   createFile: () => void;
+  activateDocument: (documentId: string) => void;
   openFilePicker: () => void;
   openFolderPicker: () => void;
   saveDocument: () => void | Promise<unknown>;
@@ -23,6 +24,17 @@ export interface ActionDeps {
 export const buildActions = (deps: ActionDeps): Action[] => {
   const store = () => useWorkbenchStore.getState();
   const closeSettings = () => store().setSettingsOpen(false);
+  const switchOpenDocument = (direction: -1 | 1) => {
+    const s = store();
+    const currentIndex = s.openDocuments.findIndex((openDocument) => openDocument.id === s.document.id);
+
+    if (s.openDocuments.length < 2 || currentIndex < 0) {
+      return;
+    }
+
+    const nextIndex = (currentIndex + direction + s.openDocuments.length) % s.openDocuments.length;
+    deps.activateDocument(s.openDocuments[nextIndex].id);
+  };
 
   return [
     {
@@ -82,6 +94,24 @@ export const buildActions = (deps: ActionDeps): Action[] => {
       category: "action.category.navigate",
       keys: ["Mod+P"],
       run: () => deps.openSearchTool(),
+    },
+    {
+      id: "navigate.previousFile",
+      title: "Select Previous File",
+      category: "Navigate",
+      keys: ["Alt+ArrowLeft"],
+      capture: true,
+      when: (ctx) => ctx.store.openDocuments.length > 1,
+      run: () => switchOpenDocument(-1),
+    },
+    {
+      id: "navigate.nextFile",
+      title: "Select Next File",
+      category: "Navigate",
+      keys: ["Alt+ArrowRight"],
+      capture: true,
+      when: (ctx) => ctx.store.openDocuments.length > 1,
+      run: () => switchOpenDocument(1),
     },
     {
       id: "navigate.focusFileTree",

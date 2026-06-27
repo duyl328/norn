@@ -36,6 +36,7 @@ import {
   isAbsolutePath,
   isDocumentDirty,
   isTauriRuntime,
+  requiresDocumentCloseConfirmation,
   upsertOpenDocument,
 } from "../workbench-utils";
 
@@ -148,11 +149,8 @@ export function useDocumentSession() {
     }
   };
 
-  const requiresCloseConfirmation = (targetDocument: WorkbenchDocument) =>
-    isDocumentDirty(targetDocument) || (targetDocument.isUntitled && targetDocument.content.length > 0);
-
   const requestCloseDocument = (targetDocument: WorkbenchDocument) => {
-    if (requiresCloseConfirmation(targetDocument)) {
+    if (requiresDocumentCloseConfirmation(targetDocument)) {
       activateDocument(targetDocument);
       setPendingCloseDocument(targetDocument);
       return;

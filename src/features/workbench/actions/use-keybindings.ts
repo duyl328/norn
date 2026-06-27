@@ -15,7 +15,7 @@ export function useKeybindings() {
   const { actions, dispatch } = useActions();
 
   useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
+    const runMatchedAction = (event: KeyboardEvent, capture: boolean) => {
       if (event.defaultPrevented) return;
 
       // 在输入框/编辑器里,无修饰键的「裸键」(用户可能自定义绑定)不应触发应用命令;
@@ -28,6 +28,7 @@ export function useKeybindings() {
       }
 
       for (const action of actions) {
+        if (Boolean(action.capture) !== capture) continue;
         // 编辑器命令归 CodeMirror keymap(聚焦时它先吃并 preventDefault),全局分发器不处理。
         if (action.scope === "editor") continue;
         if (!action.keys?.some((spec) => matchKey(event, spec))) continue;
@@ -40,8 +41,14 @@ export function useKeybindings() {
         return;
       }
     };
+    const captureHandler = (event: KeyboardEvent) => runMatchedAction(event, true);
+    const bubbleHandler = (event: KeyboardEvent) => runMatchedAction(event, false);
 
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    window.addEventListener("keydown", captureHandler, { capture: true });
+    window.addEventListener("keydown", bubbleHandler);
+    return () => {
+      window.removeEventListener("keydown", captureHandler, { capture: true });
+      window.removeEventListener("keydown", bubbleHandler);
+    };
   }, [actions, dispatch]);
 }

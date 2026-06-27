@@ -33,5 +33,7 @@ export interface Action {
   keys?: string[];
   /** 不满足时:命令面板置灰、键位不触发。缺省视为始终可用。 */
   when?: (ctx: ActionContext) => boolean;
+  /** 少数需要抢在编辑器默认 keymap 前执行的全局命令。 */
+  capture?: boolean;
   run: (ctx: ActionContext) => void | Promise<void>;
 }

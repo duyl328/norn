@@ -42,6 +42,7 @@ import {
   mergeTreeNodeState,
   normalizeEditorSearchHistory,
   normalizeQuickSearchHistory,
+  requiresDocumentCloseConfirmation,
   saveEditorSearchHistory,
   saveQuickSearchHistory,
   toFileTreeNode,
@@ -148,6 +149,22 @@ describe("document helpers", () => {
   it("isDocumentDirty compares content with savedContent", () => {
     expect(isDocumentDirty(doc({ content: "a", savedContent: "a" }))).toBe(false);
     expect(isDocumentDirty(doc({ content: "a", savedContent: "b" }))).toBe(true);
+  });
+
+  it("requiresDocumentCloseConfirmation ignores blank untitled documents", () => {
+    expect(
+      requiresDocumentCloseConfirmation(doc({ content: "", savedContent: "", isUntitled: true })),
+    ).toBe(false);
+    expect(
+      requiresDocumentCloseConfirmation(doc({ content: "", savedContent: undefined as never, isUntitled: true })),
+    ).toBe(false);
+  });
+
+  it("requiresDocumentCloseConfirmation protects unsaved documents", () => {
+    expect(requiresDocumentCloseConfirmation(doc({ content: "draft", savedContent: "", isUntitled: true }))).toBe(
+      true,
+    );
+    expect(requiresDocumentCloseConfirmation(doc({ content: "a", savedContent: "b" }))).toBe(true);
   });
 
   it("getDocumentLines splits all newline forms and always returns at least one line", () => {

@@ -529,7 +529,7 @@ export function EditorSurface({
                             event.preventDefault();
                             event.stopPropagation();
 
-                            if (!isStacked && tabDocument) {
+                            if (tabDocument) {
                               onCloseDocument(tabDocument);
                             }
                           }}
