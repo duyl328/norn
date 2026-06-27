@@ -248,7 +248,7 @@ fn take_initial_open_files(state: tauri::State<'_, PendingOpenFilesState>) -> Ve
 
 /// 快捷检测:仅运行 `git --version`,不依赖任何打开的文件夹。供设置页「检测 Git」按钮用。
 #[tauri::command]
-fn detect_git_cli() -> GitCliDetection {
+async fn detect_git_cli() -> GitCliDetection {
     match Command::new("git").arg("--version").output() {
         Ok(output) if output.status.success() => {
             let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -277,7 +277,7 @@ fn detect_git_cli() -> GitCliDetection {
 }
 
 #[tauri::command]
-fn inspect_git_workspace(path: String) -> Result<GitWorkspaceInspection, String> {
+async fn inspect_git_workspace(path: String) -> Result<GitWorkspaceInspection, String> {
     let workspace = PathBuf::from(path);
     let metadata = fs::metadata(&workspace).map_err(|error| {
         format_file_error("Unable to read workspace metadata", &workspace, error)
@@ -422,7 +422,7 @@ async fn open_save_dialog(app: tauri::AppHandle, default_name: Option<String>) -
 }
 
 #[tauri::command]
-fn read_text_file(path: String, encoding: Option<String>) -> Result<TextFile, String> {
+async fn read_text_file(path: String, encoding: Option<String>) -> Result<TextFile, String> {
     let path = PathBuf::from(path);
     let metadata = fs::metadata(&path)
         .map_err(|error| format_file_error("Unable to read file metadata", &path, error))?;
@@ -465,7 +465,7 @@ fn read_text_file(path: String, encoding: Option<String>) -> Result<TextFile, St
 }
 
 #[tauri::command]
-fn save_text_file(
+async fn save_text_file(
     path: String,
     content: String,
     expected_last_modified: Option<u64>,
@@ -525,7 +525,7 @@ fn save_text_file(
 }
 
 #[tauri::command]
-fn save_text_file_as(
+async fn save_text_file_as(
     path: String,
     content: String,
     encoding: Option<String>,
@@ -565,7 +565,7 @@ fn save_text_file_as(
 }
 
 #[tauri::command]
-fn inspect_text_file(path: String) -> Result<TextFileInspection, String> {
+async fn inspect_text_file(path: String) -> Result<TextFileInspection, String> {
     const SAMPLE_BYTES: usize = 16 * 1024;
 
     let path = PathBuf::from(path);
@@ -630,7 +630,7 @@ fn inspect_text_file(path: String) -> Result<TextFileInspection, String> {
 }
 
 #[tauri::command]
-fn read_text_file_range(
+async fn read_text_file_range(
     path: String,
     offset: u64,
     length: u64,
@@ -891,7 +891,7 @@ fn reveal_in_file_manager(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String> {
+async fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String> {
     let root = PathBuf::from(path);
     let metadata = fs::metadata(&root)
         .map_err(|error| format_file_error("Unable to read directory metadata", &root, error))?;
@@ -976,7 +976,7 @@ fn build_search_regex(
 
 /// 文件名搜索:列出工作区内全部文件的绝对路径,前端做模糊过滤。
 #[tauri::command]
-fn search_file_names(
+async fn search_file_names(
     root: String,
     exclude_hidden: bool,
     respect_ignore_files: bool,
@@ -1000,7 +1000,7 @@ fn search_file_names(
 /// 内容搜索:并行遍历(`threads(0)` = 全部 CPU 核),每个文件复用 decode_text_bytes
 /// 跳过二进制并按编码解码,逐行匹配。命中总数封顶后提前退出,结果按 path+line 排序。
 #[tauri::command]
-fn search_in_files(
+async fn search_in_files(
     root: String,
     query: String,
     case_sensitive: bool,
@@ -2179,7 +2179,9 @@ fn set_window_theme(app: tauri::AppHandle, theme: Option<String>) -> Result<(), 
     };
     app.set_theme(resolved);
     if let Some(window) = app.get_webview_window("main") {
-        window.set_theme(resolved).map_err(|error| error.to_string())?;
+        window
+            .set_theme(resolved)
+            .map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -2466,7 +2468,13 @@ fn build_macos_menu<R: tauri::Runtime>(
         language.text("help"),
         true,
         &[
-            &MenuItem::with_id(app, MENU_WELCOME, language.text("welcome"), true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                MENU_WELCOME,
+                language.text("welcome"),
+                true,
+                None::<&str>,
+            )?,
             &MenuItem::with_id(
                 app,
                 MENU_DOCUMENTATION,
@@ -2495,7 +2503,13 @@ fn build_macos_menu<R: tauri::Runtime>(
                 true,
                 None::<&str>,
             )?,
-            &MenuItem::with_id(app, MENU_VIEW_LOGS, language.text("view_logs"), true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                MENU_VIEW_LOGS,
+                language.text("view_logs"),
+                true,
+                None::<&str>,
+            )?,
             &MenuItem::with_id(
                 app,
                 MENU_CHECK_FOR_UPDATES,
@@ -2503,7 +2517,13 @@ fn build_macos_menu<R: tauri::Runtime>(
                 true,
                 None::<&str>,
             )?,
-            &MenuItem::with_id(app, MENU_COMMUNITY, language.text("community"), true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                MENU_COMMUNITY,
+                language.text("community"),
+                true,
+                None::<&str>,
+            )?,
             &MenuItem::with_id(
                 app,
                 MENU_PRIVACY_STATEMENT,
@@ -2511,7 +2531,13 @@ fn build_macos_menu<R: tauri::Runtime>(
                 true,
                 None::<&str>,
             )?,
-            &MenuItem::with_id(app, MENU_ABOUT_NORN, language.text("about_norn"), true, None::<&str>)?,
+            &MenuItem::with_id(
+                app,
+                MENU_ABOUT_NORN,
+                language.text("about_norn"),
+                true,
+                None::<&str>,
+            )?,
         ],
     )?;
 
@@ -2531,8 +2557,11 @@ fn build_macos_menu<R: tauri::Runtime>(
 #[cfg(target_os = "macos")]
 #[tauri::command]
 fn set_app_language(app: tauri::AppHandle, language: String) -> Result<(), String> {
-    let menu = build_macos_menu(&app, MenuLanguage::from_code(&language)).map_err(|error| error.to_string())?;
-    app.set_menu(menu).map(|_| ()).map_err(|error| error.to_string())
+    let menu = build_macos_menu(&app, MenuLanguage::from_code(&language))
+        .map_err(|error| error.to_string())?;
+    app.set_menu(menu)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -2810,7 +2839,7 @@ mod tests {
         )
         .unwrap();
 
-        let hits = search_in_files(
+        let hits = tauri::async_runtime::block_on(search_in_files(
             workspace.root_string(),
             "hello".to_string(),
             false,
@@ -2818,7 +2847,7 @@ mod tests {
             false,
             true,
             true,
-        )
+        ))
         .unwrap();
 
         assert_eq!(hits.len(), 1, "binary + gitignored files excluded");
@@ -2874,8 +2903,9 @@ mod tests {
         let file_path = workspace.root.join("notes.txt");
         fs::write(&file_path, "hello\nworld\n").expect("text file should be written");
 
-        let file = read_text_file(workspace.path_string(&file_path), None)
-            .expect("utf-8 file should be read");
+        let file =
+            tauri::async_runtime::block_on(read_text_file(workspace.path_string(&file_path), None))
+                .expect("utf-8 file should be read");
 
         assert_eq!(file.name, "notes.txt");
         assert_eq!(file.content, "hello\nworld\n");
@@ -2889,7 +2919,10 @@ mod tests {
         let file_path = workspace.root.join("binary.bin");
         fs::write(&file_path, [b'a', 0, b'b']).expect("binary file should be written");
 
-        let error = match read_text_file(workspace.path_string(&file_path), None) {
+        let error = match tauri::async_runtime::block_on(read_text_file(
+            workspace.path_string(&file_path),
+            None,
+        )) {
             Ok(_) => panic!("binary file should be rejected"),
             Err(error) => error,
         };
@@ -2903,8 +2936,9 @@ mod tests {
         let file_path = workspace.root.join("gbk.txt");
         fs::write(&file_path, [0xc4, 0xe3, 0xba, 0xc3]).expect("gbk file should be written");
 
-        let inspection = inspect_text_file(workspace.path_string(&file_path))
-            .expect("inspection should decode supported legacy encodings");
+        let inspection =
+            tauri::async_runtime::block_on(inspect_text_file(workspace.path_string(&file_path)))
+                .expect("inspection should decode supported legacy encodings");
 
         assert!(!inspection.is_binary);
         assert!(!inspection.is_utf8);
@@ -2925,8 +2959,11 @@ mod tests {
         )
         .expect("big5 file should be written");
 
-        let file = read_text_file(workspace.path_string(&file_path), Some("big5".to_string()))
-            .expect("big5 file should be decoded with the requested encoding");
+        let file = tauri::async_runtime::block_on(read_text_file(
+            workspace.path_string(&file_path),
+            Some("big5".to_string()),
+        ))
+        .expect("big5 file should be decoded with the requested encoding");
 
         assert_eq!(file.encoding, "big5");
         assert_eq!(file.content, "繁體中文：你好");
@@ -2945,14 +2982,14 @@ mod tests {
             .ok()
             .and_then(|metadata| modified_time_millis(&metadata));
 
-        let saved = save_text_file(
+        let saved = tauri::async_runtime::block_on(save_text_file(
             workspace.path_string(&file_path),
             "你好".to_string(),
             before,
             Some(false),
             Some("gb18030".to_string()),
             Some(false),
-        )
+        ))
         .expect("gbk-compatible content should save");
 
         assert_eq!(saved.encoding, "gb18030");
@@ -2968,8 +3005,13 @@ mod tests {
         let file_path = workspace.root.join("range.txt");
         fs::write(&file_path, "first\nsecond\nthird\n").expect("range file should be written");
 
-        let range = read_text_file_range(workspace.path_string(&file_path), 2, 4, None)
-            .expect("range should be read");
+        let range = tauri::async_runtime::block_on(read_text_file_range(
+            workspace.path_string(&file_path),
+            2,
+            4,
+            None,
+        ))
+        .expect("range should be read");
 
         assert_eq!(range.content, "first\nsecond\n");
         assert_eq!(range.requested_offset, 2);
@@ -2985,8 +3027,13 @@ mod tests {
         let file_path = workspace.root.join("small.txt");
         fs::write(&file_path, "abc").expect("small file should be written");
 
-        let range = read_text_file_range(workspace.path_string(&file_path), 99, 10, None)
-            .expect("out-of-range offset should be clamped");
+        let range = tauri::async_runtime::block_on(read_text_file_range(
+            workspace.path_string(&file_path),
+            99,
+            10,
+            None,
+        ))
+        .expect("out-of-range offset should be clamped");
 
         assert_eq!(range.content, "abc");
         assert_eq!(range.requested_offset, 3);
@@ -3002,8 +3049,13 @@ mod tests {
         let file_path = workspace.root.join("utf8.txt");
         fs::write(&file_path, "a你b").expect("utf-8 file should be written");
 
-        let range = read_text_file_range(workspace.path_string(&file_path), 2, 1, None)
-            .expect("range should align to utf-8 character boundaries");
+        let range = tauri::async_runtime::block_on(read_text_file_range(
+            workspace.path_string(&file_path),
+            2,
+            1,
+            None,
+        ))
+        .expect("range should align to utf-8 character boundaries");
 
         assert_eq!(range.content, "a你b");
         assert_eq!(range.start_offset, 0);
@@ -3016,7 +3068,12 @@ mod tests {
         let file_path = workspace.root.join("binary-range.bin");
         fs::write(&file_path, [b'a', 0, b'b']).expect("binary file should be written");
 
-        let error = match read_text_file_range(workspace.path_string(&file_path), 0, 3, None) {
+        let error = match tauri::async_runtime::block_on(read_text_file_range(
+            workspace.path_string(&file_path),
+            0,
+            3,
+            None,
+        )) {
             Ok(_) => panic!("binary range should be rejected"),
             Err(error) => error,
         };

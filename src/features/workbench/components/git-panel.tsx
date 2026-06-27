@@ -53,6 +53,7 @@ const PANEL_MODES: {
 
 const RefreshButton = ({ busy }: { busy: boolean }) => {
   const { t } = useI18n();
+  const refreshing = useWorkbenchStore((state) => state.gitRefreshing);
 
   return (
     <Button
@@ -62,7 +63,7 @@ const RefreshButton = ({ busy }: { busy: boolean }) => {
       onClick={() => void gitActions.refresh()}
       disabled={busy}
     >
-      <RefreshCw className={cn("h-3.5 w-3.5", busy && "animate-spin")} />
+      <RefreshCw className={cn("h-3.5 w-3.5", (busy || refreshing) && "animate-spin")} />
       {t("git.refresh")}
     </Button>
   );

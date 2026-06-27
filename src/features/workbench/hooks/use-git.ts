@@ -18,7 +18,16 @@ const RECENT_COMMIT_LIMIT = 20;
 const repoPath = (): string | null => useWorkbenchStore.getState().folderView?.rootPath ?? null;
 
 /** 拉取 status / branches / recent commits 写入 store。不抛错，错误进 gitError。 */
-export const refreshGit = async (): Promise<void> => {
+// 用计数器维护 gitRefreshing:本地刷新与后台 fetch 可能重叠,首进置 true、全部结束才置 false,避免闪烁。
+let refreshInFlight = 0;
+const beginRefresh = () => {
+  if (refreshInFlight++ === 0) useWorkbenchStore.getState().setGitRefreshing(true);
+};
+const endRefresh = () => {
+  if (--refreshInFlight === 0) useWorkbenchStore.getState().setGitRefreshing(false);
+};
+
+export const refreshGit = async (options?: { fetch?: boolean }): Promise<void> => {
   const store = useWorkbenchStore.getState();
   const path = repoPath();
 
@@ -30,8 +39,16 @@ export const refreshGit = async (): Promise<void> => {
     return;
   }
 
+  beginRefresh();
   try {
-    await invoke("git_fetch", { path }).catch(() => undefined);
+    // git fetch 走网络(~2s),不能挡住本地状态读取。仅在显式请求时后台跑,完成后再刷新一次本地视图。
+    if (options?.fetch) {
+      beginRefresh(); // 持有到 fetch + 其后续刷新结束,刷新图标在整个同步期间保持转动
+      void invoke("git_fetch", { path })
+        .then(() => refreshGit())
+        .catch(() => undefined)
+        .finally(endRefresh);
+    }
     const [status, branches, ignoredFiles, commits, pendingOp] = await Promise.all([
       invoke<GitStatus>("git_status", { path }),
       invoke<GitBranches>("git_branches", { path }),
@@ -49,6 +66,8 @@ export const refreshGit = async (): Promise<void> => {
   } catch (error) {
     store.setGitIgnoredFiles([]);
     store.setGitError(getGitError(error));
+  } finally {
+    endRefresh();
   }
 };
 
@@ -80,7 +99,7 @@ const withBusy = async (run: (path: string) => Promise<unknown>, okMessage?: str
 };
 
 export const gitActions = {
-  refresh: refreshGit,
+  refresh: () => refreshGit({ fetch: true }),
   commit: (message: string, push: boolean, files: string[] = [], amend = false) =>
     withBusy((path) => invoke("git_commit", { path, message, push, amend, files })),
   push: () => withBusy((path) => invoke("git_push", { path })),

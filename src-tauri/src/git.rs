@@ -361,7 +361,7 @@ fn parse_track(track: &str) -> (u32, u32) {
 // --- 命令 -----------------------------------------------------------------
 
 #[tauri::command]
-pub fn git_status(path: String) -> Result<GitStatusResult, GitError> {
+pub async fn git_status(path: String) -> Result<GitStatusResult, GitError> {
     let workspace = PathBuf::from(path);
     let output = run_git(&workspace, &["status", "--porcelain=v2", "--branch", "-z"])?;
     if !output.status.success() {
@@ -383,7 +383,7 @@ pub fn git_status(path: String) -> Result<GitStatusResult, GitError> {
 }
 
 #[tauri::command]
-pub fn git_file_diff(path: String, file: String) -> Result<String, GitError> {
+pub async fn git_file_diff(path: String, file: String) -> Result<String, GitError> {
     let workspace = PathBuf::from(path);
     let diff = git_text(&workspace, &["diff", "HEAD", "--", &file])?;
     if !diff.trim().is_empty() {
@@ -391,7 +391,10 @@ pub fn git_file_diff(path: String, file: String) -> Result<String, GitError> {
     }
     // HEAD 中没有（多为未跟踪文件）→ 用 --no-index 兜底，退出码 1 表示有差异，不算错误。
     let null_device = if cfg!(windows) { "NUL" } else { "/dev/null" };
-    let output = run_git(&workspace, &["diff", "--no-index", "--", null_device, &file])?;
+    let output = run_git(
+        &workspace,
+        &["diff", "--no-index", "--", null_device, &file],
+    )?;
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
@@ -406,7 +409,7 @@ pub struct GitFileVersions {
 /// original = HEAD 中的内容(新文件 / HEAD 无此文件时为空),
 /// modified = 工作区当前文件内容(已删除时为空)。
 #[tauri::command]
-pub fn git_file_versions(path: String, file: String) -> Result<GitFileVersions, GitError> {
+pub async fn git_file_versions(path: String, file: String) -> Result<GitFileVersions, GitError> {
     let workspace = PathBuf::from(path);
     let original = run_git(&workspace, &["show", &format!("HEAD:{file}")])
         .ok()
@@ -420,7 +423,7 @@ pub fn git_file_versions(path: String, file: String) -> Result<GitFileVersions, 
 /// 取某历史提交里某文件的两个版本:original = 父提交版本(新增 / 根提交时为空),
 /// modified = 该提交版本(删除时为空)。供历史页点击文件查看该次改动。
 #[tauri::command]
-pub fn git_commit_file_versions(
+pub async fn git_commit_file_versions(
     path: String,
     hash: String,
     file: String,
@@ -501,19 +504,30 @@ pub fn git_ignore_path(path: String, entry: String) -> Result<(), GitError> {
     }
     content.push_str(rule);
     content.push('\n');
-    std::fs::write(&gitignore, content).map_err(|error| GitError::new(GitErrorKind::Io, error.to_string()))?;
+    std::fs::write(&gitignore, content)
+        .map_err(|error| GitError::new(GitErrorKind::Io, error.to_string()))?;
     Ok(())
 }
 
 /// 列出被忽略的条目(目录折叠为 dir/,避免 node_modules 之类铺出上千文件)。
 #[tauri::command]
-pub fn git_ignored_files(path: String) -> Result<Vec<String>, GitError> {
+pub async fn git_ignored_files(path: String) -> Result<Vec<String>, GitError> {
     let workspace = PathBuf::from(path);
     let text = git_text(
         &workspace,
-        &["ls-files", "--others", "--ignored", "--exclude-standard", "--directory"],
+        &[
+            "ls-files",
+            "--others",
+            "--ignored",
+            "--exclude-standard",
+            "--directory",
+        ],
     )?;
-    Ok(text.lines().filter(|line| !line.is_empty()).map(|line| line.to_string()).collect())
+    Ok(text
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| line.to_string())
+        .collect())
 }
 
 /// 写入解决冲突后的文件内容,并 git add 标记为已解决。
@@ -572,7 +586,7 @@ pub fn git_create_branch_at(path: String, name: String, hash: String) -> Result<
 
 /// 检测当前是否有进行中的 revert / merge / cherry-pick(冲突卡住时用)。
 #[tauri::command]
-pub fn git_pending_op(path: String) -> Result<String, GitError> {
+pub async fn git_pending_op(path: String) -> Result<String, GitError> {
     let workspace = PathBuf::from(path);
     for (marker, op) in [
         ("REVERT_HEAD", "revert"),
@@ -634,7 +648,7 @@ pub fn git_init(path: String) -> Result<(), GitError> {
 }
 
 #[tauri::command]
-pub fn git_fetch(path: String) -> Result<(), GitError> {
+pub async fn git_fetch(path: String) -> Result<(), GitError> {
     git_text(&PathBuf::from(path), &["fetch", "--all", "--prune"])?;
     Ok(())
 }
@@ -646,7 +660,7 @@ fn current_branch(workspace: &Path) -> Result<String, GitError> {
 }
 
 #[tauri::command]
-pub fn git_branches(path: String) -> Result<GitBranchesResult, GitError> {
+pub async fn git_branches(path: String) -> Result<GitBranchesResult, GitError> {
     let workspace = PathBuf::from(path);
     let current = current_branch(&workspace).ok().filter(|b| !b.is_empty());
 
@@ -664,10 +678,16 @@ pub fn git_branches(path: String) -> Result<GitBranchesResult, GitError> {
         if fields.is_empty() || fields[0].is_empty() {
             continue;
         }
-        let upstream = fields.get(1).filter(|v| !v.is_empty()).map(|v| v.to_string());
+        let upstream = fields
+            .get(1)
+            .filter(|v| !v.is_empty())
+            .map(|v| v.to_string());
         let (ahead, behind) = parse_track(fields.get(2).copied().unwrap_or(""));
         let current_flag = fields.get(3).copied().unwrap_or("") == "*";
-        let last_commit = fields.get(4).filter(|v| !v.is_empty()).map(|v| v.to_string());
+        let last_commit = fields
+            .get(4)
+            .filter(|v| !v.is_empty())
+            .map(|v| v.to_string());
         local.push(GitBranch {
             name: fields[0].to_string(),
             upstream,
@@ -693,7 +713,10 @@ pub fn git_branches(path: String) -> Result<GitBranchesResult, GitError> {
         if fields.is_empty() || fields[0].is_empty() || fields[0].ends_with("/HEAD") {
             continue;
         }
-        let last_commit = fields.get(1).filter(|v| !v.is_empty()).map(|v| v.to_string());
+        let last_commit = fields
+            .get(1)
+            .filter(|v| !v.is_empty())
+            .map(|v| v.to_string());
         remote.push(GitBranch {
             name: fields[0].to_string(),
             upstream: None,
@@ -713,7 +736,7 @@ pub fn git_branches(path: String) -> Result<GitBranchesResult, GitError> {
 }
 
 #[tauri::command]
-pub fn git_recent_commits(path: String, limit: u32) -> Result<Vec<GitCommit>, GitError> {
+pub async fn git_recent_commits(path: String, limit: u32) -> Result<Vec<GitCommit>, GitError> {
     let workspace = PathBuf::from(path);
     let limit_arg = format!("-n{limit}");
     // 空仓库 / 无提交时 git log 会失败，这里视为空血缘而非错误。
@@ -756,7 +779,7 @@ pub fn git_recent_commits(path: String, limit: u32) -> Result<Vec<GitCommit>, Gi
 }
 
 #[tauri::command]
-pub fn git_log(path: String, limit: u32) -> Result<Vec<GitLogCommit>, GitError> {
+pub async fn git_log(path: String, limit: u32) -> Result<Vec<GitLogCommit>, GitError> {
     let workspace = PathBuf::from(path);
     let n = format!("-n{limit}");
     // 空仓库无提交时 git log 失败，视为空图谱。\x1f 分隔字段、\x1e 分隔提交（body 可含换行）。
@@ -783,7 +806,10 @@ pub fn git_log(path: String, limit: u32) -> Result<Vec<GitLogCommit>, GitError> 
         if fields.len() < 8 {
             continue;
         }
-        let parents: Vec<String> = fields[1].split_whitespace().map(|s| s.to_string()).collect();
+        let parents: Vec<String> = fields[1]
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
         let refs = fields[7]
             .split(", ")
             .filter(|r| !r.is_empty())
@@ -805,10 +831,13 @@ pub fn git_log(path: String, limit: u32) -> Result<Vec<GitLogCommit>, GitError> 
 }
 
 #[tauri::command]
-pub fn git_commit_files(path: String, hash: String) -> Result<Vec<GitCommitFile>, GitError> {
+pub async fn git_commit_files(path: String, hash: String) -> Result<Vec<GitCommitFile>, GitError> {
     let workspace = PathBuf::from(path);
     let stats = git_commit_file_stats(&workspace, &hash)?;
-    let text = git_text(&workspace, &["show", &hash, "--name-status", "--format=", "-M"])?;
+    let text = git_text(
+        &workspace,
+        &["show", &hash, "--name-status", "--format=", "-M"],
+    )?;
     let mut files = Vec::new();
     for line in text.lines() {
         if line.trim().is_empty() {
@@ -834,7 +863,10 @@ pub fn git_commit_files(path: String, hash: String) -> Result<Vec<GitCommitFile>
     Ok(files)
 }
 
-fn git_commit_file_stats(workspace: &Path, hash: &str) -> Result<HashMap<String, (u32, u32)>, GitError> {
+fn git_commit_file_stats(
+    workspace: &Path,
+    hash: &str,
+) -> Result<HashMap<String, (u32, u32)>, GitError> {
     let text = git_text(workspace, &["show", hash, "--numstat", "--format=", "-M"])?;
     Ok(parse_commit_numstat(&text))
 }
@@ -874,7 +906,7 @@ fn status_letter(raw: &str) -> &'static str {
 }
 
 #[tauri::command]
-pub fn git_branch_divergence(
+pub async fn git_branch_divergence(
     path: String,
     branch: String,
     base: Option<String>,
@@ -924,7 +956,10 @@ fn default_base(workspace: &Path) -> String {
 }
 
 fn log_refs(workspace: &Path, range: &str) -> Vec<GitCommitRef> {
-    let Ok(text) = git_text(workspace, &["log", range, "--pretty=format:%h%x1f%s%x1f%cr"]) else {
+    let Ok(text) = git_text(
+        workspace,
+        &["log", range, "--pretty=format:%h%x1f%s%x1f%cr"],
+    ) else {
         return Vec::new();
     };
     text.lines()
@@ -940,11 +975,18 @@ fn log_refs(workspace: &Path, range: &str) -> Vec<GitCommitRef> {
 }
 
 fn merge_base_ref(workspace: &Path, a: &str, b: &str) -> Option<GitCommitRef> {
-    let hash = git_text(workspace, &["merge-base", a, b]).ok()?.trim().to_string();
+    let hash = git_text(workspace, &["merge-base", a, b])
+        .ok()?
+        .trim()
+        .to_string();
     if hash.is_empty() {
         return None;
     }
-    let text = git_text(workspace, &["show", "-s", "--pretty=format:%h%x1f%s%x1f%cr", &hash]).ok()?;
+    let text = git_text(
+        workspace,
+        &["show", "-s", "--pretty=format:%h%x1f%s%x1f%cr", &hash],
+    )
+    .ok()?;
     let fields: Vec<&str> = text.split('\u{1f}').collect();
     (fields.len() >= 3).then(|| GitCommitRef {
         hash: fields[0].to_string(),
@@ -1013,7 +1055,8 @@ mod tests {
     #[test]
     fn status_command_errors_on_non_repository() {
         let temp = tempfile::tempdir().expect("temp dir");
-        let result = git_status(temp.path().to_string_lossy().into_owned());
+        let result =
+            tauri::async_runtime::block_on(git_status(temp.path().to_string_lossy().into_owned()));
         assert!(result.is_err());
     }
 }

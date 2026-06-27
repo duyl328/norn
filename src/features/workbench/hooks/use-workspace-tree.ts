@@ -118,7 +118,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
       const inspection = await invoke<GitWorkspaceInspection>("inspect_git_workspace", { path });
       setGitWorkspace({ kind: "ready", inspection });
       if (inspection.isRepository) {
-        void refreshGit();
+        void refreshGit({ fetch: true });
       }
     } catch (error) {
       setGitWorkspace({

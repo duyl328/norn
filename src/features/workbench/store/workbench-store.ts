@@ -117,6 +117,7 @@ export interface WorkbenchState {
   gitIgnoredFiles: string[];
   gitRecentCommits: GitCommit[];
   gitBusy: boolean;
+  gitRefreshing: boolean;
   gitError: GitError | null;
   gitNotice: GitNotice | null;
   gitPendingOp: string | null;
@@ -133,6 +134,7 @@ export interface WorkbenchState {
   setGitIgnoredFiles: (setter: StateSetter<string[]>) => void;
   setGitRecentCommits: (setter: StateSetter<GitCommit[]>) => void;
   setGitBusy: (setter: StateSetter<boolean>) => void;
+  setGitRefreshing: (setter: StateSetter<boolean>) => void;
   setGitError: (setter: StateSetter<GitError | null>) => void;
   setGitNotice: (setter: StateSetter<GitNotice | null>) => void;
   setGitPendingOp: (setter: StateSetter<string | null>) => void;
@@ -263,6 +265,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   gitIgnoredFiles: [],
   gitRecentCommits: [],
   gitBusy: false,
+  gitRefreshing: false,
   gitError: null,
   gitNotice: null,
   gitPendingOp: null,
@@ -286,6 +289,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({ gitIgnoredFiles: resolveSetter(setter, state.gitIgnoredFiles) })),
   setGitRecentCommits: (setter) => set((state) => ({ gitRecentCommits: resolveSetter(setter, state.gitRecentCommits) })),
   setGitBusy: (setter) => set((state) => ({ gitBusy: resolveSetter(setter, state.gitBusy) })),
+  setGitRefreshing: (setter) =>
+    set((state) => ({ gitRefreshing: resolveSetter(setter, state.gitRefreshing) })),
   setGitError: (setter) => set((state) => ({ gitError: resolveSetter(setter, state.gitError) })),
   setGitNotice: (setter) => set((state) => ({ gitNotice: resolveSetter(setter, state.gitNotice) })),
   setGitPendingOp: (setter) => set((state) => ({ gitPendingOp: resolveSetter(setter, state.gitPendingOp) })),
