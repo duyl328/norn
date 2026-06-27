@@ -2,6 +2,7 @@ import { createContext, type ReactNode, useContext, useMemo } from "react";
 
 import { translate, type TranslationKey } from "../i18n-dictionaries";
 import { useWorkbenchStore } from "../store/workbench-store";
+import { startWelcomeTour } from "../welcome-tour";
 import { saveKeymapOverrides } from "../workbench-utils";
 import { buildEditorActions } from "./editor-actions";
 import { focusZone, isZoneFocused } from "./focus-zones";
@@ -176,6 +177,12 @@ export const buildActions = (deps: ActionDeps): Action[] => {
       title: "action.view.settings",
       category: "action.category.view",
       run: () => deps.openSettingsTool(),
+    },
+    {
+      id: "help.welcome",
+      title: "action.help.welcome",
+      category: "action.category.help",
+      run: () => startWelcomeTour(store().language),
     },
   ];
 };

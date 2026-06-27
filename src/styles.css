@@ -4401,3 +4401,67 @@
 .mac-titlebar-side-right-passthrough > * {
   pointer-events: auto;
 }
+
+/* ---------------------------------------------------------------------------
+ * driver.js 引导漫游:套用应用主题 token,适配明暗主题。
+ * 默认皮肤是浅色,这里覆盖为 popover/accent/primary 等变量。
+ * ------------------------------------------------------------------------- */
+.driver-popover {
+  background-color: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  box-shadow: 0 12px 32px hsl(0 0% 0% / 0.4);
+}
+.driver-popover-title {
+  color: hsl(var(--popover-foreground));
+  font-size: 15px;
+  font-weight: 600;
+}
+.driver-popover-description {
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+  line-height: 1.55;
+}
+.driver-popover-progress-text {
+  color: hsl(var(--muted-foreground));
+}
+.driver-popover-close-btn {
+  color: hsl(var(--muted-foreground));
+}
+.driver-popover-close-btn:hover,
+.driver-popover-close-btn:focus {
+  color: hsl(var(--popover-foreground));
+}
+.driver-popover-footer-btn {
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  text-shadow: none;
+}
+.driver-popover-footer-btn:hover,
+.driver-popover-footer-btn:focus {
+  background-color: hsl(var(--accent) / 0.75);
+}
+.driver-popover-next-btn {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-color: hsl(var(--primary));
+}
+.driver-popover-next-btn:hover,
+.driver-popover-next-btn:focus {
+  background-color: hsl(var(--primary) / 0.9);
+}
+.driver-popover-arrow-side-left {
+  border-left-color: hsl(var(--popover));
+}
+.driver-popover-arrow-side-right {
+  border-right-color: hsl(var(--popover));
+}
+.driver-popover-arrow-side-top {
+  border-top-color: hsl(var(--popover));
+}
+.driver-popover-arrow-side-bottom {
+  border-bottom-color: hsl(var(--popover));
+}

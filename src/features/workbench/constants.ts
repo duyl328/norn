@@ -101,7 +101,7 @@ export const windowsTitlebarMenus: ReadonlyArray<{
     id: "help",
     label: "Help",
     children: [
-      { label: "Welcome" },
+      { label: "Welcome", actionId: "help.welcome" },
       { label: "Documentation" },
       { label: "Keyboard Shortcuts", actionId: "view.settings" },
       { label: "About Norn" },
