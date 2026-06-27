@@ -8,7 +8,7 @@ import { assignGraphColumns } from "../git-graph";
 import { gitActions } from "../hooks/use-git";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type { GitCommitFile, GitGraphCommit } from "../types";
-import { getPathIcon } from "../workbench-utils";
+import { getPathDisplayIcon } from "../workbench-utils";
 import { getChangeStatusLabel } from "./git-panel";
 
 const LANE_COLORS = ["hsl(var(--primary))", "#10b981", "#f59e0b", "#a855f7", "#ec4899", "#06b6d4"];
@@ -39,6 +39,41 @@ function formatRefs(refs: string[]): RefBadge[] {
   }
   return out;
 }
+
+const REF_MAX = 2; // ref 超过此数折叠成角标,点击展开(IDEA 式)
+
+/** 提交上的分支/标签:多了就只显示前几个 + 「+N」角标,点击展开全部。 */
+function RefBadges({ refs }: { refs: RefBadge[] }) {
+  const [open, setOpen] = useState(false);
+  if (refs.length === 0) {
+    return null;
+  }
+  const shown = open ? refs : refs.slice(0, REF_MAX);
+  return (
+    <>
+      {shown.map((ref) => (
+        <span key={`${ref.kind}:${ref.label}`} className={cn("git-ref-badge", `git-ref-badge-${ref.kind}`)}>
+          {ref.label}
+        </span>
+      ))}
+      {refs.length > REF_MAX ? (
+        <button
+          type="button"
+          className="git-ref-more"
+          title={open ? "收起" : refs.map((r) => r.label).join(", ")}
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpen((value) => !value);
+          }}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          {open ? "−" : `+${refs.length - REF_MAX}`}
+        </button>
+      ) : null}
+    </>
+  );
+}
+
 const ROW_H = 30;
 const LANE_W = 14;
 const PAD_X = 12;
@@ -124,12 +159,7 @@ export function GitHistoryPane({ onOpenCommitDiff }: { onOpenCommitDiff: (hash: 
       </div>
 
       <div className="git-graph-scroll">
-        <GitGraph
-          commits={filtered}
-          drawEdges={!filtering}
-          selectedHash={selectedHash}
-          onSelect={setSelectedHash}
-        />
+        <GitGraph commits={filtered} drawEdges={!filtering} selectedHash={selectedHash} onSelect={setSelectedHash} />
         {filtered.length === 0 ? <div className="git-branch-empty">无提交记录</div> : null}
       </div>
 
@@ -210,22 +240,25 @@ function GitGraph({
 
       <div className="git-graph-rows">
         {commits.map((commit) => (
-          <button
-            type="button"
+          <div
+            role="button"
+            tabIndex={0}
             key={commit.hash}
             className={cn("git-graph-row", commit.hash === selectedHash && "git-graph-row-selected")}
             style={{ height: ROW_H, paddingLeft: drawEdges ? graphWidth + 4 : PAD_X }}
             onClick={() => onSelect(commit.hash)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect(commit.hash);
+              }
+            }}
             title={commit.subject}
           >
-            {formatRefs(commit.refs).map((ref) => (
-              <span key={`${ref.kind}:${ref.label}`} className={cn("git-ref-badge", `git-ref-badge-${ref.kind}`)}>
-                {ref.label}
-              </span>
-            ))}
+            <RefBadges refs={formatRefs(commit.refs)} />
             <span className="git-graph-subject">{commit.subject}</span>
             <span className="git-graph-time">{commit.relativeTime}</span>
-          </button>
+          </div>
         ))}
       </div>
     </div>
@@ -278,7 +311,6 @@ function CommitFileTree({
         if (node.kind === "folder") {
           return <CommitFileFolder key={`folder:${node.path}`} node={node} depth={depth} onOpen={onOpen} />;
         }
-        const fileIcon = getPathIcon(node.item.path, "file");
         return (
           <button
             key={`file:${node.item.path}`}
@@ -288,7 +320,7 @@ function CommitFileTree({
             title={`${node.item.path}（点击查看该提交的改动）`}
             onClick={() => onOpen(node.item.path)}
           >
-            <PathIconImage icon={fileIcon} />
+            <TreeIcon name={node.name} kind="file" />
             <span className="min-w-0 flex-1 truncate text-ui-md">{node.name}</span>
             <span className={cn("git-change-status", `git-change-status-${node.item.status}`)}>
               {getChangeStatusLabel(node.item.status)}
@@ -310,7 +342,6 @@ function CommitFileFolder({
   onOpen: (file: string) => void;
 }) {
   const [open, setOpen] = useState(true);
-  const folderIcon = getPathIcon(node.name, "directory", open);
   return (
     <>
       <button
@@ -320,7 +351,7 @@ function CommitFileFolder({
         onClick={() => setOpen((value) => !value)}
       >
         {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
-        <PathIconImage icon={folderIcon} />
+        <TreeIcon name={node.name} kind="directory" expanded={open} />
         <span className="truncate">{node.name}</span>
       </button>
       {open ? <CommitFileTree nodes={node.children} depth={depth + 1} onOpen={onOpen} /> : null}
@@ -328,6 +359,7 @@ function CommitFileFolder({
   );
 }
 
-function PathIconImage({ icon }: { icon: ReturnType<typeof getPathIcon> }) {
-  return <img alt="" aria-hidden="true" className="tree-row-icon" draggable={false} src={icon.src} />;
+function TreeIcon({ expanded, kind, name }: { expanded?: boolean; kind: "file" | "directory"; name: string }) {
+  const { Icon, className } = getPathDisplayIcon(name, kind, expanded);
+  return <Icon className={cn("tree-row-icon shrink-0", className)} />;
 }

@@ -10,7 +10,6 @@ import {
 } from "lucide-react";
 import { type ComponentType, type CSSProperties, type ReactNode, useEffect, useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -18,7 +17,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -38,7 +36,13 @@ const PANEL_MODES: { key: GitPanelMode; icon: ComponentType<{ className?: string
 ];
 
 const RefreshButton = ({ busy }: { busy: boolean }) => (
-  <Button size="toolbar" variant="ghost" onClick={() => void gitActions.refresh()} disabled={busy}>
+  <Button
+    size="toolbar"
+    variant="ghost"
+    className="git-toolbar-button"
+    onClick={() => void gitActions.refresh()}
+    disabled={busy}
+  >
     <RefreshCw className={cn("h-3.5 w-3.5", busy && "animate-spin")} />
     刷新
   </Button>
@@ -61,7 +65,10 @@ export function GitPanel({
   const setMode = useWorkbenchStore((state) => state.setGitPanelMode);
 
   const count = PANEL_MODES.length;
-  const index = Math.max(0, PANEL_MODES.findIndex((item) => item.key === mode));
+  const index = Math.max(
+    0,
+    PANEL_MODES.findIndex((item) => item.key === mode),
+  );
   const paneHeight = `${100 / count}%`;
 
   return (
@@ -180,9 +187,6 @@ function GitCommitMode({
 
   return (
     <RightTaskPanel
-      eyebrow="Git"
-      title="变更"
-      badge={<Badge tone={hasChanges ? "info" : "muted"}>{changeCount}</Badge>}
       toolbar={<RefreshButton busy={gitBusy} />}
       footer={isNonRepository ? null : <GitCommitBox disabled={!hasChanges} busy={gitBusy} files={selectedFiles} />}
     >
@@ -265,7 +269,7 @@ function GitUntrackedSection({
   onTogglePaths: (paths: string[], value: boolean) => void;
   selectedPath: string | null;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   return (
     <div className="git-ignored-section">
       <button type="button" className="git-ignored-head" onClick={() => setOpen((value) => !value)}>
@@ -291,15 +295,8 @@ function GitUntrackedSection({
 
 function GitBranchMode() {
   const gitBusy = useWorkbenchStore((state) => state.gitBusy);
-  const branches = useWorkbenchStore((state) => state.gitBranches);
-  const total = (branches?.local.length ?? 0) + (branches?.remote.length ?? 0);
   return (
-    <RightTaskPanel
-      eyebrow="Git"
-      title="分支"
-      badge={<Badge tone={total ? "info" : "muted"}>{total}</Badge>}
-      toolbar={<RefreshButton busy={gitBusy} />}
-    >
+    <RightTaskPanel toolbar={<RefreshButton busy={gitBusy} />}>
       <div className="git-panel-body git-panel-body-flush">
         <GitBranchesPane />
       </div>
@@ -310,52 +307,34 @@ function GitBranchMode() {
 function GitHistoryMode({ onOpenCommitDiff }: { onOpenCommitDiff: (hash: string, file: string) => void }) {
   const gitBusy = useWorkbenchStore((state) => state.gitBusy);
   return (
-    <RightTaskPanel eyebrow="Git" title="历史" toolbar={<RefreshButton busy={gitBusy} />} scroll={false}>
+    <RightTaskPanel toolbar={<RefreshButton busy={gitBusy} />} scroll={false}>
       <GitHistoryPane onOpenCommitDiff={onOpenCommitDiff} />
     </RightTaskPanel>
   );
 }
 
-export function GitCommitBox({
-  busy,
-  disabled,
-  files,
-}: {
-  busy: boolean;
-  disabled: boolean;
-  files: string[];
-}) {
+export function GitCommitBox({ busy, disabled, files }: { busy: boolean; disabled: boolean; files: string[] }) {
   const [summary, setSummary] = useState("");
-  const [body, setBody] = useState("");
   const fileCount = files.length;
   const canCommit = !disabled && !busy && summary.trim().length > 0 && fileCount > 0;
   // amend 可不填摘要(保留上一条说明)。
   const canAmend = !disabled && !busy && fileCount > 0;
 
   const submit = async (push: boolean, amend: boolean) => {
-    const message = body.trim() ? `${summary.trim()}\n\n${body.trim()}` : summary.trim();
-    const ok = await gitActions.commit(message, push, files, amend);
+    const ok = await gitActions.commit(summary.trim(), push, files, amend);
     if (ok) {
       setSummary("");
-      setBody("");
     }
   };
 
   return (
     <div className="git-commit-box">
-      <Input
+      <Textarea
         className="git-commit-summary"
         placeholder="提交摘要"
         disabled={disabled || busy}
         value={summary}
         onChange={(event) => setSummary(event.target.value)}
-      />
-      <Textarea
-        className="git-commit-body"
-        placeholder="详细说明（可选）"
-        disabled={disabled || busy}
-        value={body}
-        onChange={(event) => setBody(event.target.value)}
       />
       <div className="git-commit-actions">
         <span className="git-commit-hint">
@@ -363,9 +342,9 @@ export function GitCommitBox({
         </span>
         <div className="git-commit-split">
           <Button
-            className="git-commit-split-main"
+            className="git-action-button git-commit-split-main"
             size="sm"
-            variant="primary"
+            variant="ghost"
             disabled={!canCommit}
             onClick={() => void submit(false, false)}
           >
@@ -373,7 +352,12 @@ export function GitCommitBox({
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button className="git-commit-split-caret" size="sm" variant="primary" disabled={disabled || busy}>
+              <Button
+                className="git-action-button git-commit-split-caret"
+                size="sm"
+                variant="ghost"
+                disabled={disabled || busy}
+              >
                 <ChevronDown className="h-3.5 w-3.5" />
               </Button>
             </DropdownMenuTrigger>
@@ -425,8 +409,9 @@ export function GitWorkspaceNotice({
       <div className="git-workspace-notice-title">{title}</div>
       <div className="git-workspace-notice-description">{description}</div>
       <Button
+        className="git-action-button"
         size="sm"
-        variant="default"
+        variant="ghost"
         disabled={!hasWorkspace || busy || gitWorkspace.kind === "loading"}
         onClick={() => void gitActions.initRepo()}
       >
@@ -475,23 +460,31 @@ export function RightTaskPanel({
 }: {
   badge?: ReactNode;
   children: ReactNode;
-  eyebrow: string;
+  eyebrow?: string;
   footer?: ReactNode;
   // 内容是否套外层滚动区。历史模式自管内部滚动(图谱滚动 + 详情固定),关掉外层。
   scroll?: boolean;
-  title: string;
+  title?: string;
   toolbar?: ReactNode;
 }) {
+  const showHeader = Boolean(eyebrow || title);
   return (
     <aside className="right-task-panel">
-      <div className="right-task-panel-header">
-        <div className="min-w-0">
-          <div className="right-task-panel-eyebrow">{eyebrow}</div>
-          <div className="right-task-panel-title">{title}</div>
+      {showHeader ? (
+        <div className="right-task-panel-header">
+          <div className="min-w-0">
+            {eyebrow ? <div className="right-task-panel-eyebrow">{eyebrow}</div> : null}
+            {title ? <div className="right-task-panel-title">{title}</div> : null}
+          </div>
+          {badge ? <div className="right-task-panel-badge">{badge}</div> : null}
         </div>
-        {badge ? <div className="right-task-panel-badge">{badge}</div> : null}
-      </div>
-      {toolbar ? <div className="right-task-panel-toolbar">{toolbar}</div> : null}
+      ) : null}
+      {toolbar || (!showHeader && badge) ? (
+        <div className="right-task-panel-toolbar">
+          {!showHeader && badge ? <div className="mr-auto">{badge}</div> : null}
+          {toolbar}
+        </div>
+      ) : null}
       {scroll ? (
         <ScrollArea className="right-task-panel-content">{children}</ScrollArea>
       ) : (
