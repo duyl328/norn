@@ -440,6 +440,10 @@ export const getFileTreeDisplayIcon = (node: FileTreeNode) => {
 export const getPathIcon = (name: string, kind: "file" | "directory", expanded = false) =>
   getFileTreeIcon({ name, path: name, relativePath: name, kind, expanded });
 
+/** 与左侧文件树相同的彩色 lucide 图标(供 Git 文件树复用),不需要完整 FileTreeNode。 */
+export const getPathDisplayIcon = (name: string, kind: "file" | "directory", expanded = false) =>
+  getFileTreeDisplayIcon({ name, path: name, relativePath: name, kind, expanded });
+
 export const getParentPath = (path: string) => {
   const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
 

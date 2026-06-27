@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 import { buildFileTree, type FileTreeNode } from "../change-tree";
 import type { GitChange } from "../types";
-import { getPathIcon } from "../workbench-utils";
+import { getPathDisplayIcon } from "../workbench-utils";
 import { ContextMenu } from "./context-menu";
 import { getChangeStatusLabel } from "./git-panel";
 
@@ -63,9 +63,7 @@ export function GitChangesTree({
 }
 
 function collectFiles(nodes: ChangeNode[]): string[] {
-  return nodes.flatMap((node) =>
-    node.kind === "file" ? [node.item.path] : collectFiles(node.children),
-  );
+  return nodes.flatMap((node) => (node.kind === "file" ? [node.item.path] : collectFiles(node.children)));
 }
 
 type SharedProps = {
@@ -100,7 +98,6 @@ function ChangeFolder({
   const files = collectFiles(node.children);
   const checkedCount = files.filter((path) => shared.isChecked(path)).length;
   const state: CheckState = checkedCount === 0 ? "off" : checkedCount === files.length ? "on" : "mix";
-  const folderIcon = getPathIcon(node.name, "directory", open);
 
   return (
     <>
@@ -112,7 +109,7 @@ function ChangeFolder({
         <GitCheckbox state={state} onToggle={() => shared.onTogglePaths(files, state !== "on")} />
         <button type="button" className="git-tree-folder-label" onClick={() => setOpen((value) => !value)}>
           {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
-          <PathIconImage icon={folderIcon} />
+          <TreeIcon name={node.name} kind="directory" expanded={open} />
           <span className="truncate">{node.name}</span>
         </button>
       </div>
@@ -128,7 +125,6 @@ function ChangeFile({
 }: { depth: number; node: Extract<ChangeNode, { kind: "file" }> } & SharedProps) {
   const change = node.item;
   const checked = shared.isChecked(change.path);
-  const fileIcon = getPathIcon(change.path, "file");
 
   return (
     <div
@@ -144,7 +140,7 @@ function ChangeFile({
         onDoubleClick={() => shared.onOpen(change.path)}
         title={`${change.path}（双击并排对照）`}
       >
-        <PathIconImage icon={fileIcon} />
+        <TreeIcon name={node.name} kind="file" />
         <span className="min-w-0 flex-1 truncate text-ui-md">{node.name}</span>
         <span className="git-tree-file-trailing">
           {change.additions ? <span className="status-additions">+{change.additions}</span> : null}
@@ -158,8 +154,9 @@ function ChangeFile({
   );
 }
 
-function PathIconImage({ icon }: { icon: ReturnType<typeof getPathIcon> }) {
-  return <img alt="" aria-hidden="true" className="tree-row-icon" draggable={false} src={icon.src} />;
+function TreeIcon({ expanded, kind, name }: { expanded?: boolean; kind: "file" | "directory"; name: string }) {
+  const { Icon, className } = getPathDisplayIcon(name, kind, expanded);
+  return <Icon className={cn("tree-row-icon shrink-0", className)} />;
 }
 
 function GitCheckbox({ onToggle, state }: { onToggle: () => void; state: CheckState }) {
