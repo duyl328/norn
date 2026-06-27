@@ -2215,6 +2215,14 @@
     @apply text-ui-sm font-medium leading-none;
   }
 
+  .git-rail-tab-meta {
+    @apply max-w-full truncate px-0.5 text-center font-mono text-ui-sm leading-none text-muted-foreground;
+  }
+
+  .git-rail-tab-active .git-rail-tab-meta {
+    color: hsl(var(--foreground) / 0.72);
+  }
+
   .git-toolbar-button,
   .git-action-button {
     @apply rounded-[8px] border-0 bg-transparent text-foreground/80 shadow-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0;

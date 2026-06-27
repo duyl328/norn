@@ -31,6 +31,7 @@ export const refreshGit = async (): Promise<void> => {
   }
 
   try {
+    await invoke("git_fetch", { path }).catch(() => undefined);
     const [status, branches, ignoredFiles, commits] = await Promise.all([
       invoke<GitStatus>("git_status", { path }),
       invoke<GitBranches>("git_branches", { path }),
@@ -41,6 +42,7 @@ export const refreshGit = async (): Promise<void> => {
     store.setGitBranches(branches);
     store.setGitIgnoredFiles(ignoredFiles);
     store.setGitRecentCommits(commits);
+    store.bumpGitRefreshVersion();
     store.setGitError(null);
   } catch (error) {
     store.setGitIgnoredFiles([]);

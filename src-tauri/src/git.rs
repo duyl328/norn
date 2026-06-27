@@ -563,6 +563,12 @@ pub fn git_init(path: String) -> Result<(), GitError> {
     Ok(())
 }
 
+#[tauri::command]
+pub fn git_fetch(path: String) -> Result<(), GitError> {
+    git_text(&PathBuf::from(path), &["fetch", "--all", "--prune"])?;
+    Ok(())
+}
+
 fn current_branch(workspace: &Path) -> Result<String, GitError> {
     Ok(git_text(workspace, &["branch", "--show-current"])?
         .trim()

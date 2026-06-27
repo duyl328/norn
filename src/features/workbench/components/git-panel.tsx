@@ -24,14 +24,27 @@ import { cn } from "@/lib/utils";
 import { gitActions } from "../hooks/use-git";
 import { useI18n } from "../i18n";
 import { useWorkbenchStore } from "../store/workbench-store";
-import type { FolderView, GitChange, GitChangeStatus, GitError, GitPanelMode, GitWorkspaceState } from "../types";
+import type {
+  FolderView,
+  GitBranches,
+  GitChange,
+  GitChangeStatus,
+  GitError,
+  GitPanelMode,
+  GitStatus,
+  GitWorkspaceState,
+} from "../types";
 import { GitBranchesPane } from "./git-branches-pane";
 import { GitChangesTree } from "./git-changes-tree";
 import { GitHistoryPane } from "./git-history";
 import { GitIgnoredTree } from "./git-ignored-tree";
 import { useRailRowInset } from "./use-rail-row-inset";
 
-const PANEL_MODES: { key: GitPanelMode; icon: ComponentType<{ className?: string }>; labelKey: "git.mode.commit" | "git.mode.branch" | "git.mode.history" }[] = [
+const PANEL_MODES: {
+  key: GitPanelMode;
+  icon: ComponentType<{ className?: string }>;
+  labelKey: "git.mode.commit" | "git.mode.branch" | "git.mode.history";
+}[] = [
   { key: "commit", icon: GitCommitVertical, labelKey: "git.mode.commit" },
   { key: "branch", icon: GitFork, labelKey: "git.mode.branch" },
   { key: "history", icon: History, labelKey: "git.mode.history" },
@@ -75,6 +88,8 @@ export function GitPanel({
   const { t } = useI18n();
   const mode = useWorkbenchStore((state) => state.gitPanelMode);
   const setMode = useWorkbenchStore((state) => state.setGitPanelMode);
+  const gitStatus = useWorkbenchStore((state) => state.gitStatus);
+  const gitBranches = useWorkbenchStore((state) => state.gitBranches);
 
   const count = PANEL_MODES.length;
   const index = Math.max(
@@ -116,6 +131,7 @@ export function GitPanel({
               key={item.key}
               icon={item.icon}
               label={t(item.labelKey)}
+              meta={getRailTabMeta(item.key, gitStatus, gitBranches)}
               active={mode === item.key}
               onClick={() => setMode(item.key)}
             />
@@ -130,11 +146,13 @@ function RailTab({
   active,
   icon: Icon,
   label,
+  meta,
   onClick,
 }: {
   active: boolean;
   icon: ComponentType<{ className?: string }>;
   label: string;
+  meta?: string;
   onClick: () => void;
 }) {
   return (
@@ -147,8 +165,26 @@ function RailTab({
     >
       <Icon className="h-4 w-4" />
       <span className="git-rail-tab-label">{label}</span>
+      {meta ? <span className="git-rail-tab-meta">{meta}</span> : null}
     </button>
   );
+}
+
+function getRailTabMeta(
+  mode: GitPanelMode,
+  gitStatus: GitStatus | null,
+  gitBranches: GitBranches | null,
+): string | undefined {
+  if (mode === "commit") {
+    const count = gitStatus?.changes.length ?? 0;
+    return count > 0 ? String(count) : undefined;
+  }
+  if (mode === "branch") {
+    const count = (gitBranches?.local.length ?? 0) + (gitBranches?.remote.length ?? 0);
+    const behind = gitStatus?.behind ?? 0;
+    return behind > 0 ? `${count} ↓${behind}` : count > 0 ? String(count) : undefined;
+  }
+  return undefined;
 }
 
 function GitCommitMode({

@@ -2687,6 +2687,7 @@ pub fn run() {
             git::git_checkout,
             git::git_create_branch,
             git::git_init,
+            git::git_fetch,
             git::git_branches,
             git::git_recent_commits,
             git::git_log,
