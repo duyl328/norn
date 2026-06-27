@@ -208,6 +208,13 @@ export type GitDivergence = {
   behindBase: number;
 };
 
+export type GitWorktree = {
+  path: string;
+  branch?: string | null;
+  detached: boolean;
+  isCurrent: boolean;
+};
+
 /** 右侧 Git 面板的三个模式:提交（变更+提交）/ 分支（分支树+关系）/ 历史（提交列表）。竖向 tab 纵向滑动切换。 */
 export type GitPanelMode = "commit" | "branch" | "history";
 

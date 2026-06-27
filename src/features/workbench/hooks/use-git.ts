@@ -10,6 +10,7 @@ import type {
   GitLogCommit,
   GitStatus,
   GitWorkspaceInspection,
+  GitWorktree,
 } from "../types";
 import { getGitError, isTauriRuntime } from "../workbench-utils";
 
@@ -126,6 +127,8 @@ export const gitActions = {
     withBusy((path) => invoke("git_reset", { path, hash, mode }), okMessage),
   revertCommit: (hash: string, okMessage?: string) =>
     withBusy((path) => invoke("git_revert", { path, hash }), okMessage),
+  merge: (branch: string, okMessage?: string) =>
+    withBusy((path) => invoke("git_merge", { path, branch }), okMessage),
   createBranch: (name: string) => withBusy((path) => invoke("git_create_branch", { path, name })),
   createBranchAt: (name: string, hash: string, okMessage?: string) =>
     withBusy((path) => invoke("git_create_branch_at", { path, name, hash }), okMessage),
@@ -196,6 +199,51 @@ export const gitActions = {
     } catch (error) {
       useWorkbenchStore.getState().setGitError(getGitError(error));
       return [];
+    }
+  },
+  loadWorktrees: async (): Promise<GitWorktree[]> => {
+    const path = repoPath();
+    if (!path) {
+      return [];
+    }
+    try {
+      return await invoke<GitWorktree[]>("git_worktrees", { path });
+    } catch (error) {
+      useWorkbenchStore.getState().setGitError(getGitError(error));
+      return [];
+    }
+  },
+  /** 新建 worktree,成功返回新工作区绝对路径(供调用方打开),失败返回 null。 */
+  addWorktree: async (
+    worktreePath: string,
+    branch: string,
+    newBranch: boolean,
+    base?: string,
+  ): Promise<string | null> => {
+    const path = repoPath();
+    if (!path) {
+      return null;
+    }
+    const store = useWorkbenchStore.getState();
+    store.setGitBusy(true);
+    store.setGitError(null);
+    try {
+      const created = await invoke<string>("git_worktree_add", {
+        path,
+        worktreePath,
+        branch,
+        newBranch,
+        base: base ?? null,
+      });
+      await refreshGit();
+      return created;
+    } catch (error) {
+      const gitError = getGitError(error);
+      store.setGitError(gitError);
+      store.setGitNotice({ tone: "err", error: gitError });
+      return null;
+    } finally {
+      useWorkbenchStore.getState().setGitBusy(false);
     }
   },
   loadDivergence: async (branch: string, base?: string): Promise<GitDivergence | null> => {

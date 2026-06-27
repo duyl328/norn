@@ -4,8 +4,11 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  FolderGit2,
+  FolderOpen,
   GitBranch as GitBranchIcon,
   GitBranchPlus,
+  GitMerge,
   Loader2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -26,21 +29,32 @@ import { type BranchTreeNode, buildBranchTree } from "../branch-tree";
 import { gitActions } from "../hooks/use-git";
 import { useI18n } from "../i18n";
 import { useWorkbenchStore } from "../store/workbench-store";
-import type { GitBranch, GitDivergence } from "../types";
+import type { GitBranch, GitDivergence, GitWorktree } from "../types";
 
 /** 分支模式:本地/远程分支树（按 "/" 折叠）+ 选中分支的关系（上游、领先落后、独有提交）。 */
-export function GitBranchesPane() {
+export function GitBranchesPane({ onOpenWorktree }: { onOpenWorktree: (path: string) => void }) {
   const { t } = useI18n();
   const branches = useWorkbenchStore((state) => state.gitBranches);
   const gitRefreshVersion = useWorkbenchStore((state) => state.gitRefreshVersion);
   const gitBusy = useWorkbenchStore((state) => state.gitBusy);
   const detached = useWorkbenchStore((state) => state.gitStatus?.detached ?? false);
+  const currentBranch = useWorkbenchStore((state) => state.gitStatus?.branch ?? null);
   const [selected, setSelected] = useState<string | null>(null);
   // 记录正在切换的分支名,在对应行上显示 spinner —— checkout 要 fetch/切工作区,有可感知延迟。
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
   const handleCheckout = (branch: GitBranch, localName?: string) => {
     setCheckingOut(branch.name);
     void gitActions.checkout(localName ?? branch.name).finally(() => setCheckingOut(null));
+  };
+
+  // 合并:点按钮→确认对话框→把目标分支合并进当前分支。冲突由「合并进行中」横幅接管。
+  const [mergeTarget, setMergeTarget] = useState<string | null>(null);
+  const confirmMerge = () => {
+    const source = mergeTarget;
+    setMergeTarget(null);
+    if (source) {
+      void gitActions.merge(source, t("git.merged", { source }));
+    }
   };
 
   const local = branches?.local ?? [];
@@ -138,6 +152,7 @@ export function GitBranchesPane() {
         divergences={divergences}
         onSelect={setSelected}
         onCheckout={(branch) => handleCheckout(branch)}
+        onMerge={(branch) => setMergeTarget(branch.name)}
         checkingOut={checkingOut}
       />
       {local.length === 0 ? <div className="git-branch-empty">{t("git.noLocalBranches")}</div> : null}
@@ -151,10 +166,30 @@ export function GitBranchesPane() {
             divergences={divergences}
             onSelect={setSelected}
             onCheckout={(branch) => handleCheckout(branch, branch.name.replace(/^[^/]+\//, ""))}
+            onMerge={(branch) => setMergeTarget(branch.name)}
             checkingOut={checkingOut}
           />
         </>
       ) : null}
+
+      <WorktreeSection onOpenWorktree={onOpenWorktree} currentBranch={currentBranch} />
+
+      <Dialog open={mergeTarget !== null} onOpenChange={(open) => !open && setMergeTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("git.mergeTitle", { source: mergeTarget ?? "" })}</DialogTitle>
+            <DialogDescription>
+              {t("git.mergeConfirm", { source: mergeTarget ?? "", current: currentBranch ?? "—" })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setMergeTarget(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={confirmMerge}>{t("git.merge")}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
@@ -231,6 +266,7 @@ function BranchSummary() {
 type BranchTreeShared = {
   divergences: Record<string, GitDivergence>;
   onCheckout: (branch: GitBranch) => void;
+  onMerge: (branch: GitBranch) => void;
   onSelect: (name: string | null) => void;
   selected: string | null;
   checkingOut: string | null;
@@ -277,6 +313,7 @@ function BranchLeaf({
   divergences,
   node,
   onCheckout,
+  onMerge,
   onSelect,
   selected,
   checkingOut,
@@ -336,14 +373,27 @@ function BranchLeaf({
           ) : null}
         </button>
         {!branch.current ? (
-          <button
-            type="button"
-            className="git-branch-leaf-checkout"
-            disabled={checkingOut !== null}
-            onClick={() => onCheckout(branch)}
-          >
-            {isCheckingOut ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t("git.checkout")}
-          </button>
+          <>
+            {branch.kind === "local" ? (
+              <button
+                type="button"
+                className="git-branch-leaf-merge"
+                disabled={checkingOut !== null}
+                title={t("git.mergeButtonTitle", { source: branch.name })}
+                onClick={() => onMerge(branch)}
+              >
+                <GitMerge className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="git-branch-leaf-checkout"
+              disabled={checkingOut !== null}
+              onClick={() => onCheckout(branch)}
+            >
+              {isCheckingOut ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t("git.checkout")}
+            </button>
+          </>
         ) : null}
       </div>
       {isSelected ? <BranchRelationship branch={branch} /> : null}
@@ -406,5 +456,163 @@ function BranchRelationship({ branch }: { branch: GitBranch }) {
         <div className="git-branch-empty">{t("git.noCommits")}</div>
       )}
     </div>
+  );
+}
+
+/** 工作树:列出本仓库所有 worktree(点「打开」即切换工作区),并提供「新建工作树」。 */
+function WorktreeSection({
+  onOpenWorktree,
+  currentBranch,
+}: {
+  onOpenWorktree: (path: string) => void;
+  currentBranch: string | null;
+}) {
+  const { t } = useI18n();
+  const gitBusy = useWorkbenchStore((state) => state.gitBusy);
+  const gitRefreshVersion = useWorkbenchStore((state) => state.gitRefreshVersion);
+  const rootPath = useWorkbenchStore((state) => state.folderView?.rootPath ?? null);
+  const [worktrees, setWorktrees] = useState<GitWorktree[]>([]);
+  const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    void gitActions.loadWorktrees().then((result) => {
+      if (alive) setWorktrees(result);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [gitRefreshVersion]);
+
+  // 新建工作树表单。父目录默认取仓库根的同级,路径建议 ../<仓库名>-<分支名>。
+  const repoName = rootPath ? rootPath.replace(/[/\\]+$/, "").replace(/^.*[/\\]/, "") : "project";
+  const parentDir = rootPath ? rootPath.replace(/[/\\]+$/, "").replace(/[/\\][^/\\]+$/, "") : "..";
+  const [createOpen, setCreateOpen] = useState(false);
+  const [path, setPath] = useState("");
+  const [branch, setBranch] = useState("");
+  const [newBranch, setNewBranch] = useState(true);
+
+  const openCreate = () => {
+    setBranch("");
+    setNewBranch(true);
+    setPath("");
+    setCreateOpen(true);
+  };
+  // 分支名变化时,若用户没改过路径就同步建议路径。
+  const suggestedPath = (branchName: string) =>
+    `${parentDir}/${repoName}-${branchName.replace(/[/\\]/g, "-") || "worktree"}`;
+  const onBranchChange = (value: string) => {
+    const wasSuggested = path === "" || path === suggestedPath(branch);
+    setBranch(value);
+    if (wasSuggested) setPath(suggestedPath(value));
+  };
+
+  const confirmCreate = async () => {
+    const wtPath = path.trim();
+    const branchName = branch.trim();
+    if (!wtPath || !branchName) return;
+    setCreateOpen(false);
+    const created = await gitActions.addWorktree(
+      wtPath,
+      branchName,
+      newBranch,
+      newBranch ? (currentBranch ?? undefined) : undefined,
+    );
+    if (created) {
+      useWorkbenchStore.getState().setGitNotice({ tone: "ok", text: t("git.worktreeCreated", { path: created }) });
+      onOpenWorktree(created);
+    }
+  };
+
+  return (
+    <>
+      <button type="button" className="git-branches-group-label git-worktree-header" onClick={() => setOpen((v) => !v)}>
+        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+        <FolderGit2 className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{t("git.worktrees")}</span>
+        <span className="git-branches-toolbar-spacer" aria-hidden="true" />
+        <span
+          role="button"
+          tabIndex={0}
+          className="git-worktree-add"
+          title={t("git.newWorktree")}
+          onClick={(event) => {
+            event.stopPropagation();
+            openCreate();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.stopPropagation();
+              openCreate();
+            }
+          }}
+        >
+          <GitBranchPlus className="h-3.5 w-3.5" />
+        </span>
+      </button>
+
+      {open
+        ? worktrees.map((worktree) => {
+            const label = worktree.branch ?? (worktree.detached ? "(detached)" : worktree.path.replace(/^.*[/\\]/, ""));
+            return (
+              <div
+                key={worktree.path}
+                className={cn("git-branch-leaf", worktree.isCurrent && "git-branch-leaf-current")}
+              >
+                <div className="git-branch-leaf-main git-worktree-leaf" title={worktree.path}>
+                  <span className="git-branch-leaf-check">
+                    <FolderGit2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  </span>
+                  <span className="truncate">{label}</span>
+                  {worktree.isCurrent ? <span className="git-branch-base-chip">{t("git.currentWorktree")}</span> : null}
+                </div>
+                {!worktree.isCurrent ? (
+                  <button
+                    type="button"
+                    className="git-branch-leaf-checkout"
+                    disabled={gitBusy}
+                    onClick={() => onOpenWorktree(worktree.path)}
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    {t("git.openWorktree")}
+                  </button>
+                ) : null}
+              </div>
+            );
+          })
+        : null}
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("git.newWorktree")}</DialogTitle>
+            <DialogDescription>{t("git.worktreeCreatePrompt")}</DialogDescription>
+          </DialogHeader>
+          <label className="git-worktree-field-label">{t("git.worktreeBranch")}</label>
+          <Input autoFocus value={branch} onChange={(event) => onBranchChange(event.target.value)} />
+          <label className="git-worktree-checkbox">
+            <input type="checkbox" checked={newBranch} onChange={(event) => setNewBranch(event.target.checked)} />
+            {t("git.worktreeNewBranch")}
+          </label>
+          <label className="git-worktree-field-label">{t("git.worktreePath")}</label>
+          <Input
+            value={path}
+            placeholder={t("git.worktreePathPlaceholder")}
+            onChange={(event) => setPath(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void confirmCreate();
+            }}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={() => void confirmCreate()} disabled={!path.trim() || !branch.trim()}>
+              {t("common.create")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

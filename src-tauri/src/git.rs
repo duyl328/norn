@@ -133,6 +133,16 @@ pub struct GitDivergence {
     behind_base: u32,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitWorktree {
+    path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    branch: Option<String>,
+    detached: bool,
+    is_current: bool,
+}
+
 // --- 进程执行 -------------------------------------------------------------
 
 fn run_git(workspace: &Path, args: &[&str]) -> Result<std::process::Output, GitError> {
@@ -584,6 +594,14 @@ pub fn git_create_branch_at(path: String, name: String, hash: String) -> Result<
     Ok(())
 }
 
+/// 把指定分支合并进当前分支。冲突时 git 返回非零 → classify 归为 Conflict,
+/// 前端「合并进行中」横幅 + 中止按钮接管后续(已有逻辑)。能快进时即快进。
+#[tauri::command]
+pub fn git_merge(path: String, branch: String) -> Result<(), GitError> {
+    git_text(&PathBuf::from(path), &["merge", "--no-edit", &branch])?;
+    Ok(())
+}
+
 /// 检测当前是否有进行中的 revert / merge / cherry-pick(冲突卡住时用)。
 #[tauri::command]
 pub async fn git_pending_op(path: String) -> Result<String, GitError> {
@@ -651,6 +669,106 @@ pub fn git_init(path: String) -> Result<(), GitError> {
 pub async fn git_fetch(path: String) -> Result<(), GitError> {
     git_text(&PathBuf::from(path), &["fetch", "--all", "--prune"])?;
     Ok(())
+}
+
+/// 列出本仓库的所有 worktree(含主工作区)。解析 `git worktree list --porcelain`:
+/// 每条记录以空行分隔,字段行 `worktree <path>` / `branch refs/heads/<name>` / `detached`。
+#[tauri::command]
+pub async fn git_worktrees(path: String) -> Result<Vec<GitWorktree>, GitError> {
+    let workspace = PathBuf::from(path);
+    let here = workspace.canonicalize().ok();
+    let text = git_text(&workspace, &["worktree", "list", "--porcelain"])?;
+
+    let mut worktrees = Vec::new();
+    let mut wt_path: Option<String> = None;
+    let mut branch: Option<String> = None;
+    let mut detached = false;
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("worktree ") {
+            push_worktree(
+                &mut worktrees,
+                &here,
+                &mut wt_path,
+                &mut branch,
+                &mut detached,
+            );
+            wt_path = Some(rest.to_string());
+        } else if let Some(rest) = line.strip_prefix("branch ") {
+            branch = Some(rest.trim_start_matches("refs/heads/").to_string());
+        } else if line == "detached" {
+            detached = true;
+        }
+    }
+    push_worktree(
+        &mut worktrees,
+        &here,
+        &mut wt_path,
+        &mut branch,
+        &mut detached,
+    );
+    Ok(worktrees)
+}
+
+fn push_worktree(
+    out: &mut Vec<GitWorktree>,
+    here: &Option<PathBuf>,
+    wt_path: &mut Option<String>,
+    branch: &mut Option<String>,
+    detached: &mut bool,
+) {
+    if let Some(p) = wt_path.take() {
+        let is_current = here
+            .as_ref()
+            .and_then(|h| PathBuf::from(&p).canonicalize().ok().map(|c| &c == h))
+            .unwrap_or(false);
+        out.push(GitWorktree {
+            path: p,
+            branch: branch.take(),
+            detached: *detached,
+            is_current,
+        });
+    }
+    *detached = false;
+}
+
+/// 新建 worktree,返回新工作区的绝对路径(供前端直接打开)。
+/// new_branch=true → 用 `-b <branch>` 从 base(默认当前 HEAD)建新分支;否则签出已有分支。
+#[tauri::command]
+pub fn git_worktree_add(
+    path: String,
+    worktree_path: String,
+    branch: String,
+    new_branch: bool,
+    base: Option<String>,
+) -> Result<String, GitError> {
+    let workspace = PathBuf::from(path);
+    let base = base.unwrap_or_default();
+    let mut args: Vec<&str> = vec!["worktree", "add"];
+    if new_branch {
+        args.push("-b");
+        args.push(&branch);
+        args.push(&worktree_path);
+        if !base.is_empty() {
+            args.push(&base);
+        }
+    } else {
+        args.push(&worktree_path);
+        args.push(&branch);
+    }
+    git_text(&workspace, &args)?;
+
+    // 解析出绝对路径:相对路径按 git 的行为基于仓库根目录解析。
+    let target = PathBuf::from(&worktree_path);
+    let abs = if target.is_absolute() {
+        target
+    } else {
+        workspace.join(&target)
+    };
+    Ok(abs
+        .canonicalize()
+        .unwrap_or(abs)
+        .to_string_lossy()
+        .into_owned())
 }
 
 fn current_branch(workspace: &Path) -> Result<String, GitError> {

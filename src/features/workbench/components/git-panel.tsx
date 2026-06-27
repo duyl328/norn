@@ -80,12 +80,14 @@ export function GitPanel({
   onOpenCommitDiff,
   onOpenDiff,
   onOpenFile,
+  onOpenFolder,
 }: {
   folderView: FolderView | null;
   gitWorkspace: GitWorkspaceState;
   onOpenCommitDiff: (hash: string, file: string) => void;
   onOpenDiff: (file: string) => void;
   onOpenFile: (path: string, size?: number) => void;
+  onOpenFolder: (path: string) => void;
 }) {
   const { t } = useI18n();
   const mode = useWorkbenchStore((state) => state.gitPanelMode);
@@ -118,7 +120,7 @@ export function GitPanel({
               <GitCommitMode onOpenDiff={onOpenDiff} onOpenFile={onOpenFile} />
             </div>
             <div className="git-panel-pane" style={{ height: paneHeight }} aria-hidden={mode !== "branch"}>
-              <GitBranchMode />
+              <GitBranchMode onOpenFolder={onOpenFolder} />
             </div>
             <div className="git-panel-pane" style={{ height: paneHeight }} aria-hidden={mode !== "history"}>
               <GitHistoryMode onOpenCommitDiff={onOpenCommitDiff} />
@@ -383,14 +385,14 @@ function GitUntrackedSection({
   );
 }
 
-function GitBranchMode() {
+function GitBranchMode({ onOpenFolder }: { onOpenFolder: (path: string) => void }) {
   const gitBusy = useWorkbenchStore((state) => state.gitBusy);
   const branchRef = useRef<HTMLDivElement>(null);
   useRailRowInset(branchRef, BRANCH_ROW_SELECTOR);
   return (
     <RightTaskPanel toolbar={<RefreshButton busy={gitBusy} />}>
       <div className="git-panel-body git-panel-body-flush" ref={branchRef}>
-        <GitBranchesPane />
+        <GitBranchesPane onOpenWorktree={onOpenFolder} />
       </div>
     </RightTaskPanel>
   );

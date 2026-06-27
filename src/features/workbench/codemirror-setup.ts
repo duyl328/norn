@@ -5,6 +5,7 @@ import {
   codeFolding,
   defaultHighlightStyle,
   foldGutter,
+  HighlightStyle,
   indentOnInput,
   indentUnit,
   syntaxHighlighting,
@@ -90,6 +91,38 @@ export const codeMirrorTheme = EditorView.theme({
   },
 });
 
+// 流解析器(config/log/text-cue)的 token 颜色原本走内置 defaultHighlightStyle——
+// 它是固定的「亮色」配色,暗色模式下偏暗、看不清。这里复用其 tag→样式映射,把颜色
+// 改成语义 CSS 变量(见 styles.css 的 --cm-*),由应用的 .dark 类切换亮/暗。
+// 不引入 @lezer/highlight:直接复用 defaultHighlightStyle.specs 里的 Tag 实例。
+const ORIGINAL_COLOR_TO_VAR: Record<string, string> = {
+  "#404740": "var(--cm-meta)", // meta
+  "#708": "var(--cm-keyword)", // keyword
+  "#219": "var(--cm-property)", // atom/bool/url/labelName
+  "#164": "var(--cm-string)", // literal/inserted
+  "#a11": "var(--cm-string)", // string/deleted
+  "#e40": "var(--cm-special)", // regexp/escape/special(string)
+  "#00f": "var(--cm-function)", // definition(variableName)
+  "#30a": "var(--cm-property)", // local(variableName)
+  "#085": "var(--cm-special)", // typeName/namespace
+  "#167": "var(--cm-function)", // className
+  "#256": "var(--cm-function)", // special(variableName)/macroName
+  "#00c": "var(--cm-property)", // definition(propertyName)
+  "#940": "var(--cm-comment)", // comment
+  "#f00": "var(--cm-invalid)", // invalid
+};
+
+const themedHighlightStyle = HighlightStyle.define(
+  defaultHighlightStyle.specs.map((spec) => {
+    const mapped = spec.color ? ORIGINAL_COLOR_TO_VAR[spec.color] : undefined;
+    // 升级 CodeMirror 后若出现未映射的新配色,它会保留亮色、暗色下看不清——开发期告警提醒补映射。
+    if (import.meta.env.DEV && spec.color && !mapped) {
+      console.warn(`[codemirror] 未映射的高亮颜色 ${spec.color},请在 ORIGINAL_COLOR_TO_VAR 补充`);
+    }
+    return mapped ? { ...spec, color: mapped } : spec;
+  }),
+);
+
 /**
  * 编辑器快捷键不再在此写死。统一 keymap 的单一真相源是 action 注册表:
  * - 编辑器命令(查找/注释/行操作…)= scope:"editor" 的 action,由
@@ -136,7 +169,7 @@ export const createCodeMirrorExtensions = (
   indentFoldService,
   foldGutter(),
   foldHoverHighlight,
-  syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+  syntaxHighlighting(themedHighlightStyle, { fallback: true }),
   highlightActiveLine(),
   highlightSelectionMatches(),
   search({ top: true, createPanel: createEditorSearchPanel }),

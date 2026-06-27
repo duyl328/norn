@@ -526,6 +526,7 @@ export function WorkbenchPage() {
                         .then((versions) => openCommitDiff(hash, file, versions))
                     }
                     onOpenFile={(path, size) => requestFileOpen({ kind: "path", path, size })}
+                    onOpenFolder={(path) => void openFolderView(path, "open-folder")}
                   />
                 </div>
               </main>

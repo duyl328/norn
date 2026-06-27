@@ -28,6 +28,17 @@
     --editor-gutter: 220 14% 94%;
     --diff-add: 146 45% 91%;
     --diff-delete: 0 58% 93%;
+    /* 语法着色:亮/暗各一套,供智能叠层(cm-smart-*)与高亮样式(HighlightStyle)共用。 */
+    --cm-keyword: #9333ea;
+    --cm-string: #047857;
+    --cm-number: #7c3aed;
+    --cm-comment: #64748b;
+    --cm-function: #2563eb;
+    --cm-property: #1d4ed8;
+    --cm-heading: #be123c;
+    --cm-invalid: #dc2626;
+    --cm-meta: #0369a1;
+    --cm-special: #0f766e;
   }
 
   .dark {
@@ -54,6 +65,17 @@
     --editor-gutter: 220 11% 16%;
     --diff-add: 145 27% 19%;
     --diff-delete: 0 31% 18%;
+    /* 暗色:提亮、降饱和,保证在深色编辑器背景上的可读性。 */
+    --cm-keyword: #d8b4fe;
+    --cm-string: #86efac;
+    --cm-number: #c4b5fd;
+    --cm-comment: #94a3b8;
+    --cm-function: #93c5fd;
+    --cm-property: #93c5fd;
+    --cm-heading: #fda4af;
+    --cm-invalid: #fca5a5;
+    --cm-meta: #7dd3fc;
+    --cm-special: #5eead4;
   }
 
   * {
@@ -3495,17 +3517,76 @@
   }
 
   .git-branch-leaf-checkout {
-    @apply hidden shrink-0 rounded-[8px] border-0 bg-transparent px-1.5 py-0.5 text-ui-sm text-muted-foreground transition-colors;
+    @apply hidden shrink-0 items-center gap-1 rounded-[8px] border-0 bg-transparent px-1.5 py-0.5 text-ui-sm text-muted-foreground transition-colors;
+  }
+
+  .git-branch-leaf-merge {
+    @apply hidden h-6 w-6 shrink-0 place-items-center rounded-[8px] border-0 bg-transparent text-muted-foreground transition-colors;
+  }
+
+  .git-branch-leaf:hover .git-branch-leaf-merge {
+    @apply grid;
   }
 
   .git-branch-leaf:hover .git-branch-leaf-checkout {
-    @apply block;
+    @apply inline-flex;
+  }
+
+  .git-branch-leaf-merge:hover,
+  .git-branch-leaf-merge:focus-visible {
+    @apply grid text-foreground outline-none;
+    background: hsl(var(--foreground) / 0.07);
   }
 
   .git-branch-leaf-checkout:hover,
   .git-branch-leaf-checkout:focus-visible {
-    @apply block border-border text-foreground outline-none;
+    @apply inline-flex border-border text-foreground outline-none;
     background: hsl(var(--foreground) / 0.07);
+  }
+
+  .git-worktree-header {
+    @apply flex w-full items-center gap-1.5 border-0 bg-transparent text-left;
+  }
+
+  .git-worktree-add {
+    @apply grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded-[6px] text-muted-foreground transition-colors;
+  }
+
+  .git-worktree-add:hover {
+    @apply text-foreground;
+    background: hsl(var(--foreground) / 0.07);
+  }
+
+  .git-worktree-leaf {
+    @apply cursor-default;
+  }
+
+  .git-worktree-field-label {
+    @apply mt-1 text-ui-sm text-muted-foreground;
+  }
+
+  .git-worktree-checkbox {
+    @apply flex items-center gap-2 text-ui-sm text-muted-foreground;
+  }
+
+  .git-worktrees-section {
+    @apply mt-2 grid gap-1 border-t border-border pt-1.5;
+  }
+
+  .git-worktrees-list {
+    @apply grid gap-0.5;
+  }
+
+  .git-worktree-row {
+    @apply flex min-h-8 min-w-0 items-center gap-1.5 rounded-[8px] px-1.5 py-1 text-ui-md;
+  }
+
+  .git-worktree-row-current {
+    background: hsl(var(--foreground) / 0.06);
+  }
+
+  .git-worktree-current {
+    @apply text-ui-sm text-primary;
   }
 
   .git-branch-relationship {
