@@ -1,7 +1,6 @@
-import { GitBranch, Settings, Terminal } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { GitBranch } from "lucide-react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,28 +13,61 @@ import {
 
 import { useI18n } from "../i18n";
 import { useWorkbenchStore } from "../store/workbench-store";
-import type { GitWorkspaceState, SaveState, TextEncodingOption, WorkbenchDocument } from "../types";
-import { formatFileSize, getDocumentLines, getTailPath, textEncodingOptions } from "../workbench-utils";
+import type { GitWorkspaceState, TextEncodingOption, WorkbenchDocument } from "../types";
+import { getDocumentLines, getTailPath, textEncodingOptions } from "../workbench-utils";
 import { GitBranchMenu } from "./git-branch-menu";
 
+type LineEnding = "crlf" | "lf";
+
+const getLineEnding = (content: string): LineEnding => (content.includes("\r\n") ? "crlf" : "lf");
+const lineEndingLabel = (lineEnding: LineEnding) => lineEnding.toUpperCase();
+
+const parseGoToLocation = (raw: string): { column?: number; line: number } | null => {
+  const value = raw.trim();
+  if (!value) return null;
+
+  const labeled = value.match(/(?:ln|line)\s*(\d+)(?:\D+(?:col|column)?\s*(\d+))?/i);
+  if (labeled) {
+    return {
+      line: Number.parseInt(labeled[1], 10),
+      column: labeled[2] ? Number.parseInt(labeled[2], 10) : undefined,
+    };
+  }
+
+  const numbers = value.match(/\d+/g);
+  if (!numbers?.length) return null;
+
+  return {
+    line: Number.parseInt(numbers[0], 10),
+    column: numbers[1] ? Number.parseInt(numbers[1], 10) : undefined,
+  };
+};
+
 export function StatusBar({
+  cursorPosition,
   document,
   gitWorkspace,
+  goToLineRequestId,
   isDirty,
+  onCancelGoToLine,
   onChangeEncoding,
-  onOpenSettings,
-  saveState,
+  onChangeLineEnding,
+  onGoToLine,
 }: {
+  cursorPosition: { column: number; line: number };
   document: WorkbenchDocument;
   gitWorkspace: GitWorkspaceState;
+  goToLineRequestId: number;
   isDirty: boolean;
+  onCancelGoToLine: () => void;
   onChangeEncoding: (option: TextEncodingOption) => void;
-  onOpenSettings: () => void;
-  saveState: SaveState;
+  onChangeLineEnding: (lineEnding: LineEnding) => void;
+  onGoToLine: (line: number, column?: number) => void;
 }) {
   const { t } = useI18n();
-  const lineCount = getDocumentLines(document).length;
+  const totalLines = getDocumentLines(document).length;
   const documentPathLabel = getTailPath(document.path, 34);
+  const lineEnding = getLineEnding(document.content);
   const encodingLabel = document.encodingLabel ?? "UTF-8";
   const encodingCandidates = document.encodingCandidates ?? [];
   const candidateEncodingSet = new Set(encodingCandidates.map((candidate) => candidate.encoding));
@@ -46,7 +78,11 @@ export function StatusBar({
     encodingCandidates.some((candidate) => candidate.valid && !candidate.recommended && candidate.confidence >= 0.55);
   const triggerEncodingLabel = isEncodingAmbiguous ? `${encodingLabel} ?` : encodingLabel;
   const [pathCopied, setPathCopied] = useState(false);
+  const [goToLineOpen, setGoToLineOpen] = useState(false);
+  const [goToLineMode, setGoToLineMode] = useState<"inline" | "popover">("inline");
+  const [goToLineValue, setGoToLineValue] = useState("");
   const pathCopiedTimeoutRef = useRef<number | null>(null);
+  const handledGoToLineRequestRef = useRef(goToLineRequestId);
   const gitStatus = useWorkbenchStore((state) => state.gitStatus);
   const gitBranches = useWorkbenchStore((state) => state.gitBranches);
   const hasGit = gitWorkspace.kind === "ready" && gitWorkspace.inspection.isRepository;
@@ -60,16 +96,6 @@ export function StatusBar({
   const deletions = gitStatus?.changes.reduce((total, change) => total + change.deletions, 0) ?? 0;
   const ahead = gitStatus?.ahead ?? 0;
   const behind = gitStatus?.behind ?? 0;
-  const saveLabel =
-    document.mode === "large-readonly"
-      ? t("status.save.readonly")
-      : saveState === "saving"
-        ? t("status.save.saving")
-        : saveState === "error"
-          ? t("status.save.error")
-          : isDirty || document.isUntitled
-            ? t("status.save.unsaved")
-            : t("status.save.saved");
 
   const copyDocumentPath = () => {
     const done = () => {
@@ -103,6 +129,31 @@ export function StatusBar({
     [],
   );
 
+  const openGoToLineInput = useCallback((mode: "inline" | "popover") => {
+    setGoToLineMode(mode);
+    setGoToLineValue(`${cursorPosition.line},${cursorPosition.column}`);
+    setGoToLineOpen(true);
+  }, [cursorPosition.column, cursorPosition.line]);
+
+  const submitGoToLine = (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+    const location = parseGoToLocation(goToLineValue);
+    if (!location) {
+      return;
+    }
+
+    onGoToLine(location.line, location.column);
+    setGoToLineOpen(false);
+  };
+
+  useEffect(() => {
+    if (goToLineRequestId <= 0) return;
+    if (handledGoToLineRequestRef.current === goToLineRequestId) return;
+    handledGoToLineRequestRef.current = goToLineRequestId;
+
+    openGoToLineInput("popover");
+  }, [goToLineRequestId, openGoToLineInput]);
+
   return (
     <footer className="status-bar">
       <div className="status-left-tokens">
@@ -117,22 +168,55 @@ export function StatusBar({
         >
           <span className="status-path-token-text">{documentPathLabel}</span>
         </button>
-        <span className="status-token">{t("status.lines", { count: lineCount })}</span>
-        {document.size ? <span className="status-token">{formatFileSize(document.size)}</span> : null}
+        {goToLineOpen && goToLineMode === "inline" ? null : (
+          <button
+            className="status-token status-token-button status-cursor-position"
+            type="button"
+            title={t("status.gotoLine.title", { count: totalLines })}
+            onClick={() => openGoToLineInput("inline")}
+          >
+            Ln {Math.min(cursorPosition.line, totalLines)}, Col {Math.max(cursorPosition.column, 1)}
+          </button>
+        )}
+        {goToLineOpen ? (
+          <form
+            className={goToLineMode === "popover" ? "status-goto-line-popover" : "status-goto-line-form"}
+            onSubmit={submitGoToLine}
+          >
+            {goToLineMode === "popover" ? <label htmlFor="status-goto-line-input">{t("status.gotoLine.label")}</label> : null}
+            <input
+              id="status-goto-line-input"
+              aria-label={t("status.gotoLine.label")}
+              autoFocus
+              className={goToLineMode === "popover" ? "status-goto-line-popover-input" : "status-goto-line-input"}
+              inputMode="text"
+              title={t("status.gotoLine.inputTitle", { count: totalLines })}
+              value={goToLineValue}
+              onBlur={() => setGoToLineOpen(false)}
+              onChange={(event) => setGoToLineValue(event.target.value)}
+              onFocus={(event) => event.currentTarget.select()}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setGoToLineOpen(false);
+                  onCancelGoToLine();
+                }
+              }}
+            />
+          </form>
+        ) : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="status-token status-token-button"
+              className="status-token status-token-button status-encoding-trigger"
               type="button"
               title={isDirty ? t("status.encoding.changeSave") : t("status.encoding.reopen")}
             >
               {triggerEncodingLabel}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" side="top" className="w-64">
-            <DropdownMenuLabel>
-              {isDirty ? t("status.encoding.save") : t("status.encoding.reopen")}
-            </DropdownMenuLabel>
+          <DropdownMenuContent align="start" side="top" className="status-encoding-menu w-64" sideOffset={8}>
+            <DropdownMenuLabel>{isDirty ? t("status.encoding.save") : t("status.encoding.reopen")}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             {encodingCandidates.length > 0 ? (
               <>
@@ -181,9 +265,31 @@ export function StatusBar({
             ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
-        <span className="status-token">LF</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="status-token status-token-button status-line-ending-trigger"
+              type="button"
+              title={t("status.lineEnding.change")}
+              disabled={document.mode === "large-readonly" || document.mode === "diff"}
+            >
+              {lineEndingLabel(lineEnding)}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" side="top" className="status-glass-menu w-36" sideOffset={8}>
+            <DropdownMenuLabel>{t("status.lineEnding.label")}</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuRadioGroup value={lineEnding}>
+              <DropdownMenuRadioItem value="lf" onSelect={() => onChangeLineEnding("lf")}>
+                LF
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="crlf" onSelect={() => onChangeLineEnding("crlf")}>
+                CRLF
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {document.mode === "large-readonly" ? <span className="status-token">{t("status.readonlyRange")}</span> : null}
-        <span className="status-token">{saveLabel}</span>
       </div>
       <div className="status-right-tokens">
         {hasGit ? (
@@ -205,13 +311,6 @@ export function StatusBar({
             ) : null}
           </>
         ) : null}
-        <span className="status-token">
-          <Terminal className="h-3 w-3" />
-          Tauri 2
-        </span>
-        <Button size="icon" variant="ghost" className="status-settings-button h-5 w-5" onClick={onOpenSettings}>
-          <Settings className="h-3.5 w-3.5" />
-        </Button>
       </div>
     </footer>
   );

@@ -197,4 +197,18 @@ describe("FileTreePanel", () => {
     expect(screen.getByRole("treeitem", { name: /changed\.ts/ })).toHaveClass("tree-row-git-modified");
     expect(screen.getByRole("treeitem", { name: /dist/ })).toHaveClass("tree-row-git-ignored");
   });
+
+  it("keeps the tree scroll position when focusing the tree on click", () => {
+    const focusSpy = vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(() => {});
+
+    try {
+      renderPanel();
+
+      fireEvent.mouseDown(screen.getByRole("tree"));
+
+      expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true });
+    } finally {
+      focusSpy.mockRestore();
+    }
+  });
 });

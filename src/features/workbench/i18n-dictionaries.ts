@@ -368,6 +368,11 @@ const zh = {
   "status.encoding.detected": "检测到的候选编码",
   "status.encoding.all": "所有编码",
   "status.encoding.invalid": "无效",
+  "status.gotoLine.label": "转到行",
+  "status.gotoLine.title": ({ count }) => `转到行，1-${count}`,
+  "status.gotoLine.inputTitle": ({ count }) => `转到行，1-${count}。示例：42、42:8、42,8`,
+  "status.lineEnding.change": "切换换行符",
+  "status.lineEnding.label": "换行符",
   "status.readonlyRange": "只读范围",
 } satisfies Record<string, TranslationValue>;
 
@@ -744,6 +749,11 @@ const en: Record<keyof typeof zh, TranslationValue> = {
   "status.encoding.detected": "Detected candidates",
   "status.encoding.all": "All encodings",
   "status.encoding.invalid": "invalid",
+  "status.gotoLine.label": "Go to line",
+  "status.gotoLine.title": ({ count }) => `Go to line, 1-${count}`,
+  "status.gotoLine.inputTitle": ({ count }) => `Go to line, 1-${count}. Examples: 42, 42:8, 42,8`,
+  "status.lineEnding.change": "Change line ending",
+  "status.lineEnding.label": "Line ending",
   "status.readonlyRange": "Read-only range",
 };
 

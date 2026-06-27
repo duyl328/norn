@@ -258,7 +258,7 @@ export function FileTreePanel({
           // 整棵树共享一个键盘焦点(roving 焦点会与虚拟滚动冲突):点击任意行把焦点拉到容器,
           // 之后方向键/快捷键都在这里处理,行被虚拟化卸载也不会丢失焦点。
           onKeyDown={(event) => onTreeKeyDown(scope, event)}
-          onMouseDown={(event) => event.currentTarget.focus()}
+          onMouseDown={(event) => event.currentTarget.focus({ preventScroll: true })}
           // 焦点离开文件树即退出搜索(类 IDEA speed search)。行不可聚焦,blur 即代表焦点真正离开本树。
           onBlur={onTreeBlur}
         >

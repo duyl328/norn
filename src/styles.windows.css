@@ -109,18 +109,12 @@
 }
 
 /* ───────────────────────── 底部状态栏 ─────────────────────────
-   灰底,去掉顶部分隔线,并降低高度(原 22px → 更矮,底部更省空间)。
-   设置按钮同步缩小,避免比状态栏还高。 */
+   灰底,去掉顶部分隔线,并降低高度(原 22px → 更矮,底部更省空间)。 */
 .platform-windows .status-bar {
   /* 与左侧文件树同色(editor-background),底部与左侧连成一体。 */
   background: hsl(var(--editor-background));
   border-top: 0;
   height: 17px;
-}
-
-.platform-windows .status-settings-button {
-  height: 16px;
-  width: 16px;
 }
 
 /* ───────────────────────── 设置页侧边栏 ─────────────────────────
