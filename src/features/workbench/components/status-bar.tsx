@@ -1,5 +1,5 @@
-import { GitBranch } from "lucide-react";
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, GitBranch } from "lucide-react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   DropdownMenu,
@@ -11,16 +11,27 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+import { buildFileTree, type FileTreeNode } from "../change-tree";
 import { useI18n } from "../i18n";
 import { useWorkbenchStore } from "../store/workbench-store";
-import type { GitWorkspaceState, TextEncodingOption, WorkbenchDocument } from "../types";
-import { getDocumentLines, getTailPath, textEncodingOptions } from "../workbench-utils";
+import type { GitChange, GitWorkspaceState, TextEncodingOption, WorkbenchDocument } from "../types";
+import { getDocumentLines, getPathDisplayIcon, getTailPath, textEncodingOptions } from "../workbench-utils";
 import { GitBranchMenu } from "./git-branch-menu";
 
 type LineEnding = "crlf" | "lf";
+type StatusChangeNode = FileTreeNode<GitChange>;
 
 const getLineEnding = (content: string): LineEnding => (content.includes("\r\n") ? "crlf" : "lf");
 const lineEndingLabel = (lineEnding: LineEnding) => lineEnding.toUpperCase();
+const getStatusLabel = (status: GitChange["status"]) =>
+  ({
+    added: "A",
+    conflict: "!",
+    deleted: "D",
+    modified: "M",
+    renamed: "R",
+    untracked: "?",
+  })[status];
 
 const parseGoToLocation = (raw: string): { column?: number; line: number } | null => {
   const value = raw.trim();
@@ -53,6 +64,7 @@ export function StatusBar({
   onChangeEncoding,
   onChangeLineEnding,
   onGoToLine,
+  onOpenDiff = () => {},
 }: {
   cursorPosition: { column: number; line: number };
   document: WorkbenchDocument;
@@ -63,6 +75,7 @@ export function StatusBar({
   onChangeEncoding: (option: TextEncodingOption) => void;
   onChangeLineEnding: (lineEnding: LineEnding) => void;
   onGoToLine: (line: number, column?: number) => void;
+  onOpenDiff?: (file: string) => void;
 }) {
   const { t } = useI18n();
   const totalLines = getDocumentLines(document).length;
@@ -91,9 +104,10 @@ export function StatusBar({
     gitBranches?.current ??
     (gitWorkspace.kind === "ready" ? gitWorkspace.inspection.branch : null) ??
     "-";
-  const changeFiles = gitStatus?.changes.length ?? 0;
-  const additions = gitStatus?.changes.reduce((total, change) => total + change.additions, 0) ?? 0;
-  const deletions = gitStatus?.changes.reduce((total, change) => total + change.deletions, 0) ?? 0;
+  const changes = gitStatus?.changes ?? [];
+  const changeFiles = changes.length;
+  const additions = changes.reduce((total, change) => total + change.additions, 0);
+  const deletions = changes.reduce((total, change) => total + change.deletions, 0);
   const ahead = gitStatus?.ahead ?? 0;
   const behind = gitStatus?.behind ?? 0;
 
@@ -215,12 +229,14 @@ export function StatusBar({
               {triggerEncodingLabel}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" side="top" className="status-encoding-menu w-64" sideOffset={8}>
-            <DropdownMenuLabel>{isDirty ? t("status.encoding.save") : t("status.encoding.reopen")}</DropdownMenuLabel>
+          <DropdownMenuContent align="start" side="top" className="status-encoding-menu w-56" sideOffset={6}>
+            <DropdownMenuLabel className="status-menu-label">
+              {isDirty ? t("status.encoding.save") : t("status.encoding.reopen")}
+            </DropdownMenuLabel>
             <DropdownMenuSeparator />
             {encodingCandidates.length > 0 ? (
               <>
-                <DropdownMenuLabel className="font-normal text-muted-foreground">
+                <DropdownMenuLabel className="status-menu-label font-normal text-muted-foreground">
                   {t("status.encoding.detected")}
                 </DropdownMenuLabel>
                 {encodingCandidates.slice(0, 5).map((candidate) => (
@@ -237,7 +253,7 @@ export function StatusBar({
                     }}
                   >
                     <span className="min-w-0 flex-1 truncate">{candidate.label}</span>
-                    <span className="ml-3 font-mono text-ui-sm text-muted-foreground">
+                    <span className="status-encoding-confidence font-mono text-muted-foreground">
                       {candidate.valid ? candidate.confidence.toFixed(2) : t("status.encoding.invalid")}
                     </span>
                   </DropdownMenuRadioItem>
@@ -247,7 +263,7 @@ export function StatusBar({
             ) : null}
             {remainingEncodingOptions.length > 0 ? (
               <>
-                <DropdownMenuLabel className="font-normal text-muted-foreground">
+                <DropdownMenuLabel className="status-menu-label font-normal text-muted-foreground">
                   {t("status.encoding.all")}
                 </DropdownMenuLabel>
                 <DropdownMenuRadioGroup value={document.encoding ?? "utf-8"}>
@@ -276,8 +292,8 @@ export function StatusBar({
               {lineEndingLabel(lineEnding)}
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" side="top" className="status-glass-menu w-36" sideOffset={8}>
-            <DropdownMenuLabel>{t("status.lineEnding.label")}</DropdownMenuLabel>
+          <DropdownMenuContent align="start" side="top" className="status-glass-menu" sideOffset={6}>
+            <DropdownMenuLabel className="status-menu-label">{t("status.lineEnding.label")}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuRadioGroup value={lineEnding}>
               <DropdownMenuRadioItem value="lf" onSelect={() => onChangeLineEnding("lf")}>
@@ -303,15 +319,147 @@ export function StatusBar({
               </button>
             </GitBranchMenu>
             {changeFiles > 0 ? (
-              <span className="status-token">
-                {t("status.files", { count: changeFiles })}
-                <span className="status-additions">+{additions}</span>
-                <span className="status-deletions">-{deletions}</span>
-              </span>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="status-token status-token-button status-changes-trigger"
+                    title={t("status.changes.title", { count: changeFiles })}
+                  >
+                    {t("status.files", { count: changeFiles })}
+                    <span className="status-additions">+{additions}</span>
+                    <span className="status-deletions">-{deletions}</span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" side="top" className="status-changes-menu status-glass-menu" sideOffset={6}>
+                  <DropdownMenuLabel className="status-menu-label">
+                    {t("status.changes.title", { count: changeFiles })}
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <StatusChangesTree changes={changes} onOpenDiff={onOpenDiff} />
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : null}
           </>
         ) : null}
       </div>
     </footer>
   );
+}
+
+function StatusChangesTree({ changes, onOpenDiff }: { changes: GitChange[]; onOpenDiff: (file: string) => void }) {
+  const tree = useMemo(() => buildFileTree(changes), [changes]);
+
+  return (
+    <div className="status-changes-tree">
+      <StatusChangeNodes depth={0} nodes={tree} onOpenDiff={onOpenDiff} />
+    </div>
+  );
+}
+
+function StatusChangeNodes({
+  depth,
+  nodes,
+  onOpenDiff,
+}: {
+  depth: number;
+  nodes: StatusChangeNode[];
+  onOpenDiff: (file: string) => void;
+}) {
+  return (
+    <>
+      {nodes.map((node) =>
+        node.kind === "folder" ? (
+          <StatusChangeFolder key={`folder:${node.path}`} depth={depth} node={node} onOpenDiff={onOpenDiff} />
+        ) : (
+          <StatusChangeFile key={`file:${node.item.path}`} change={node.item} depth={depth} name={node.name} onOpenDiff={onOpenDiff} />
+        ),
+      )}
+    </>
+  );
+}
+
+function StatusChangeFolder({
+  depth,
+  node,
+  onOpenDiff,
+}: {
+  depth: number;
+  node: Extract<StatusChangeNode, { kind: "folder" }>;
+  onOpenDiff: (file: string) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const count = countChangeFiles(node.children);
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={`${node.name} ${count}`}
+        className="status-change-folder"
+        style={{ paddingLeft: `${depth * 14 + 8}px` }}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {open ? <ChevronDown className="status-change-chevron" /> : <ChevronRight className="status-change-chevron" />}
+        <StatusChangeIcon expanded={open} kind="directory" name={node.name} />
+        <span className="status-change-folder-name">{node.name}</span>
+        <span className="status-change-folder-count">{count}</span>
+      </button>
+      {open ? <StatusChangeNodes depth={depth + 1} nodes={node.children} onOpenDiff={onOpenDiff} /> : null}
+    </>
+  );
+}
+
+function StatusChangeFile({
+  change,
+  depth,
+  name,
+  onOpenDiff,
+}: {
+  change: GitChange;
+  depth: number;
+  name: string;
+  onOpenDiff: (file: string) => void;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <button
+      type="button"
+      className="status-change-row"
+      style={{ paddingLeft: `${depth * 14 + 10}px` }}
+      title={t("git.openDiffTitle", { path: change.path })}
+      onClick={() => onOpenDiff(change.path)}
+    >
+      <StatusChangeIcon kind="file" name={name} />
+      <span className="status-change-main">
+        <span className="status-change-path">{name}</span>
+        {change.previousPath ? <span className="status-change-previous">{getTailPath(change.previousPath, 42)}</span> : null}
+      </span>
+      <span className="status-change-stats">
+        {change.additions ? <span className="status-additions">+{change.additions}</span> : null}
+        {change.deletions ? <span className="status-deletions">-{change.deletions}</span> : null}
+        <span className={`git-change-status git-change-status-${change.status}`}>{getStatusLabel(change.status)}</span>
+      </span>
+    </button>
+  );
+}
+
+function StatusChangeIcon({
+  expanded,
+  kind,
+  name,
+}: {
+  expanded?: boolean;
+  kind: "directory" | "file";
+  name: string;
+}) {
+  const { Icon, className } = getPathDisplayIcon(name, kind, expanded);
+
+  return <Icon className={`status-change-icon ${className}`} />;
+}
+
+function countChangeFiles(nodes: StatusChangeNode[]): number {
+  return nodes.reduce((count, node) => count + (node.kind === "file" ? 1 : countChangeFiles(node.children)), 0);
 }

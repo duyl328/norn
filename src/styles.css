@@ -1968,7 +1968,7 @@
 
   .status-bar {
     /* 底部与左侧文件树同色(同 --background),连成一体的边框色;mac 下两者都透出 vibrancy。 */
-    @apply grid h-[22px] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 overflow-hidden border-t border-border bg-background px-2;
+    @apply grid h-[22px] shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 overflow-hidden border-t border-border bg-background px-2;
   }
 
   /* �?macOS:底部状态栏作为「窗口底座」——透出与透明 titlebar 同源的原�?vibrancy,
@@ -2149,11 +2149,11 @@
   }
 
   .status-left-tokens {
-    @apply flex min-w-0 items-center gap-3 overflow-hidden;
+    @apply flex min-w-0 items-center gap-1.5 overflow-hidden;
   }
 
   .status-right-tokens {
-    @apply flex min-w-0 shrink-0 items-center gap-3 overflow-hidden;
+    @apply flex min-w-0 shrink-0 items-center gap-1.5 overflow-hidden;
   }
 
   .git-panel-shell {
@@ -2857,7 +2857,7 @@
 
   /* ── 状态栏底部:分支显示 + 改动�?── */
   .status-token-button {
-    @apply rounded-[4px] border border-transparent px-1 py-0.5 transition-colors;
+    @apply rounded-[3px] border border-transparent px-1 transition-colors;
   }
 
   .status-token-button:hover {
@@ -2866,28 +2866,85 @@
 
   .status-encoding-trigger,
   .status-line-ending-trigger,
-  .status-cursor-position {
-    @apply rounded-[7px] px-1.5;
+  .status-cursor-position,
+  .status-changes-trigger {
+    @apply min-w-[3.25rem] justify-center rounded-[3px] px-1;
   }
 
   .status-encoding-trigger[data-state="open"],
-  .status-line-ending-trigger[data-state="open"] {
+  .status-line-ending-trigger[data-state="open"],
+  .status-changes-trigger[data-state="open"] {
     @apply border-border/70 text-foreground;
     background: hsl(var(--foreground) / 0.08);
   }
 
   .status-glass-menu.status-glass-menu,
   .status-encoding-menu.status-encoding-menu {
-    @apply rounded-2xl border border-border/60 p-2 text-popover-foreground shadow-2xl;
-    background: hsl(var(--popover) / 0.6);
-    -webkit-backdrop-filter: saturate(1.4) blur(28px);
-    backdrop-filter: saturate(1.4) blur(28px);
+    @apply rounded-[8px] border border-border/70 p-1 text-popover-foreground shadow-xl;
+    background: hsl(var(--popover) / 0.94);
+    -webkit-backdrop-filter: saturate(1.2) blur(18px);
+    backdrop-filter: saturate(1.2) blur(18px);
     animation: qs-pop 160ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .status-glass-menu.status-glass-menu {
+    @apply w-28;
+  }
+
+  .status-menu-label {
+    @apply px-1 py-px text-ui-lg font-medium leading-4;
+  }
+
+  .status-glass-menu.status-glass-menu [role="menuitemradio"] > span:first-child,
+  .status-encoding-menu.status-encoding-menu [role="menuitemradio"] > span:first-child {
+    @apply left-2 h-3 w-3;
+  }
+
+  .status-glass-menu.status-glass-menu [role="menuitemradio"] svg,
+  .status-encoding-menu.status-encoding-menu [role="menuitemradio"] svg {
+    @apply h-1.5 w-1.5;
+  }
+
+  .status-glass-menu.status-glass-menu [role="menuitemradio"],
+  .status-encoding-menu.status-encoding-menu [role="menuitemradio"],
+  .status-glass-menu.status-glass-menu [role="menuitem"],
+  .status-encoding-menu.status-encoding-menu [role="menuitem"] {
+    @apply pl-6;
+  }
+
+  .status-glass-menu.status-glass-menu [role="menuitemradio"] span,
+  .status-encoding-menu.status-encoding-menu [role="menuitemradio"] span {
+    @apply text-ui-sm;
+  }
+
+  .status-encoding-confidence {
+    @apply ml-2 text-ui-xs;
+  }
+
+  .status-glass-menu.status-glass-menu [role="menuitemradio"] + [role="menuitemradio"],
+  .status-encoding-menu.status-encoding-menu [role="menuitemradio"] + [role="menuitemradio"] {
+    @apply mt-0.5;
+  }
+
+  .status-glass-menu.status-glass-menu [role="menuitemradio"],
+  .status-encoding-menu.status-encoding-menu [role="menuitemradio"],
+  .status-glass-menu.status-glass-menu [role="menuitem"],
+  .status-encoding-menu.status-encoding-menu [role="menuitem"],
+  .status-glass-menu.status-glass-menu [role="menu"] > div,
+  .status-encoding-menu.status-encoding-menu [role="menu"] > div {
+    @apply text-ui-sm;
+  }
+
+  .status-glass-menu.status-glass-menu [role="menu"] > div,
+  .status-encoding-menu.status-encoding-menu [role="menu"] > div,
+  .status-glass-menu.status-glass-menu [data-radix-collection-item] + div,
+  .status-encoding-menu.status-encoding-menu [data-radix-collection-item] + div {
+    @apply text-ui-xs;
   }
 
   .status-glass-menu.status-glass-menu [role="menuitemradio"],
   .status-encoding-menu.status-encoding-menu [role="menuitemradio"] {
-    @apply rounded-lg py-1.5 text-ui-md;
+    @apply rounded-[5px] py-1 text-ui-sm;
   }
 
   .status-glass-menu.status-glass-menu [role="menuitemradio"]:focus,
@@ -2897,7 +2954,7 @@
 
   .status-glass-menu.status-glass-menu [role="separator"],
   .status-encoding-menu.status-encoding-menu [role="separator"] {
-    @apply my-1.5 bg-border/70;
+    @apply mx-1 my-[3px] bg-border/70;
   }
 
   .status-goto-line-form {
@@ -2905,7 +2962,7 @@
   }
 
   .status-goto-line-input {
-    @apply h-5 w-[6.5rem] rounded-[7px] border border-border/70 bg-background/55 px-1.5 font-mono text-ui-sm text-foreground outline-none;
+    @apply h-5 w-[6rem] rounded-[3px] border border-border/70 bg-background/55 px-1.5 font-mono text-ui-sm text-foreground outline-none;
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
   }
@@ -2981,29 +3038,77 @@
     @apply ml-1 text-red-600 dark:text-red-400;
   }
 
+  .status-changes-menu.status-changes-menu {
+    @apply max-h-[min(460px,calc(100vh-80px))] w-[460px] overflow-hidden;
+  }
+
+  .status-changes-tree {
+    @apply grid max-h-[390px] overflow-y-auto pr-0.5;
+  }
+
+  .status-change-folder {
+    @apply grid min-w-0 grid-cols-[14px_16px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-[5px] py-1 pr-1.5 text-left outline-none transition-colors;
+  }
+
+  .status-change-folder:hover,
+  .status-change-folder:focus-visible {
+    background: hsl(var(--foreground) / 0.08);
+  }
+
+  .status-change-chevron {
+    @apply h-3.5 w-3.5 text-muted-foreground;
+  }
+
+  .status-change-row {
+    @apply grid min-w-0 grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-1.5 rounded-[5px] py-1 pr-1.5 text-left outline-none transition-colors;
+  }
+
+  .status-change-row:hover,
+  .status-change-row:focus-visible {
+    background: hsl(var(--foreground) / 0.08);
+  }
+
+  .status-change-icon {
+    @apply h-4 w-4 shrink-0 text-muted-foreground;
+  }
+
+  .status-change-folder-name {
+    @apply truncate text-ui-sm font-medium leading-4 text-foreground;
+  }
+
+  .status-change-folder-count {
+    @apply rounded-[3px] px-1 font-mono text-ui-xs text-muted-foreground;
+    background: hsl(var(--muted) / 0.72);
+  }
+
+  .status-change-main {
+    @apply grid min-w-0 gap-0.5;
+  }
+
+  .status-change-path {
+    @apply truncate text-ui-sm leading-4 text-foreground;
+  }
+
+  .status-change-previous {
+    @apply truncate font-mono text-ui-xs leading-3 text-muted-foreground;
+  }
+
+  .status-change-stats {
+    @apply flex shrink-0 items-center gap-1 font-mono text-ui-xs;
+  }
+
+  .status-change-stats .status-additions,
+  .status-change-stats .status-deletions {
+    @apply ml-0;
+  }
+
   /* ── 分支查看 / 管理菜单 ── */
   .git-branch-menu {
-    @apply w-[300px] p-1.5;
-  }
-
-  .git-branch-current {
-    @apply grid gap-0.5 rounded-[8px] border border-border bg-background px-2 py-1.5;
-  }
-
-  .git-branch-current-label {
-    @apply text-ui-sm uppercase tracking-wide text-muted-foreground;
-  }
-
-  .git-branch-current-name {
-    @apply truncate text-ui-lg font-semibold leading-4;
-  }
-
-  .git-branch-current-meta {
-    @apply flex items-center justify-between gap-2 font-mono text-ui-sm text-muted-foreground;
+    @apply max-h-[min(320px,calc(100vh-80px))] w-[288px] overflow-y-auto;
   }
 
   .git-branch-track {
-    @apply flex shrink-0 items-center gap-1.5 font-mono text-ui-sm;
+    @apply flex shrink-0 items-center gap-1 font-mono text-ui-xs;
   }
 
   .git-branch-ahead {
@@ -3015,105 +3120,35 @@
   }
 
   .git-branch-search {
-    @apply my-1 flex items-center gap-1.5 rounded-[8px] border border-border bg-background px-2;
+    @apply my-1 flex items-center gap-1 rounded-[6px] border border-border/70 bg-background/80 px-1.5;
   }
 
   .git-branch-search-input {
-    @apply h-7 w-full border-0 bg-transparent text-ui outline-none placeholder:text-muted-foreground;
+    @apply h-5 w-full border-0 bg-transparent text-ui-sm outline-none placeholder:text-muted-foreground;
+  }
+
+  .git-branch-section-label {
+    @apply text-muted-foreground;
   }
 
   .git-branch-item {
-    @apply grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-1.5;
+    @apply grid grid-cols-[14px_minmax(0,1fr)_auto] items-center gap-1 rounded-[5px] px-1.5 py-0.5;
   }
 
   .git-branch-check {
-    @apply grid h-3.5 w-3.5 place-items-center text-primary;
+    @apply grid h-3 w-3 place-items-center text-primary;
   }
 
   .git-branch-name {
-    @apply truncate text-ui;
+    @apply truncate text-ui-sm;
   }
 
   .git-branch-remote-prefix {
     @apply text-muted-foreground;
   }
 
-  .git-branch-action {
-    @apply gap-1.5 rounded-[8px] text-primary;
-  }
-
-  .git-branch-action:hover,
-  .git-branch-action:focus-visible {
-    @apply outline-none;
-    background: hsl(var(--foreground) / 0.07);
-  }
-
-  .git-branch-actions-row {
-    @apply grid grid-cols-2 gap-1 px-1 py-1;
-  }
-
-  .git-branch-actions-row .git-branch-action {
-    @apply justify-center;
-  }
-
-  .git-branch-actions-row-single {
-    @apply grid-cols-1;
-  }
-
   .git-branch-empty {
-    @apply px-2 py-1.5 text-ui-md text-muted-foreground;
-  }
-
-  /* ── 轻量血�?最近提�?+ ref 徽章表达分支关系 ── */
-  .git-lineage {
-    @apply grid min-w-0;
-  }
-
-  .git-lineage-row {
-    @apply flex min-w-0 items-stretch gap-2 px-2 py-1;
-  }
-
-  .git-lineage-rail {
-    @apply relative flex w-3 shrink-0 justify-center;
-  }
-
-  .git-lineage-dot {
-    @apply z-10 mt-1 grid h-2.5 w-2.5 place-items-center rounded-full;
-    background: hsl(var(--primary));
-    color: hsl(var(--primary-foreground));
-  }
-
-  .git-lineage-dot-merge {
-    @apply h-3.5 w-3.5;
-    background: hsl(var(--muted-foreground));
-  }
-
-  .git-lineage-line {
-    @apply absolute left-1/2 top-1 h-full w-px -translate-x-1/2;
-    background: hsl(var(--border));
-  }
-
-  .git-lineage-main {
-    @apply grid min-w-0 flex-1 gap-0.5;
-  }
-
-  .git-lineage-subject {
-    @apply truncate text-ui-md leading-4;
-  }
-
-  .git-lineage-meta {
-    @apply truncate font-mono text-ui-sm leading-3 text-muted-foreground;
-  }
-
-  .git-lineage-refs {
-    @apply flex shrink-0 flex-wrap items-start gap-1;
-  }
-
-  .git-ref-badge {
-    @apply inline-flex h-4 shrink-0 items-center whitespace-nowrap rounded-[3px] border px-1 font-mono text-ui-sm leading-none;
-    border-color: hsl(var(--primary) / 0.4);
-    background: hsl(var(--primary) / 0.12);
-    color: hsl(var(--primary));
+    @apply px-1.5 py-1 text-ui-xs text-muted-foreground;
   }
 
   /* ── 历史模式:面板内拓扑图(�? + 选中提交改动(�? ── */
@@ -3446,6 +3481,13 @@
 
   .git-branch-relationship-meta {
     @apply shrink-0 font-mono text-ui-sm text-muted-foreground;
+  }
+
+  .git-ref-badge {
+    @apply inline-flex h-4 shrink-0 items-center whitespace-nowrap rounded-[3px] border px-1 font-mono text-ui-sm leading-none;
+    border-color: hsl(var(--primary) / 0.4);
+    background: hsl(var(--primary) / 0.12);
+    color: hsl(var(--primary));
   }
 
   .git-ref-badge-remote {
