@@ -356,6 +356,46 @@ describe("StatusBar", () => {
     expect(screen.getByText("1 个文件")).toBeInTheDocument();
   });
 
+  it("点击变更统计显示文件树并可打开 diff", async () => {
+    const onOpenDiff = vi.fn();
+    useWorkbenchStore.setState({
+      gitStatus: {
+        ahead: 0,
+        behind: 0,
+        branch: "main",
+        changes: [
+          { additions: 3, deletions: 1, path: "src/app.tsx", status: "modified" },
+          { additions: 8, deletions: 0, path: "src/new-file.ts", status: "untracked" },
+        ],
+        upstream: "origin/main",
+      },
+    });
+
+    renderWithI18n(
+      <StatusBar
+        cursorPosition={{ line: 1, column: 1 }}
+        document={document}
+        gitWorkspace={readyGit}
+        goToLineRequestId={0}
+        isDirty={false}
+        onCancelGoToLine={() => {}}
+        onChangeEncoding={() => {}}
+        onChangeLineEnding={() => {}}
+        onGoToLine={() => {}}
+        onOpenDiff={onOpenDiff}
+      />,
+    );
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: /2 个文件/ }), { button: 0, ctrlKey: false });
+
+    expect(await screen.findByText("工作区改动 (2)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /src\s+2/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /app\.tsx/ }));
+
+    expect(screen.getByText("new-file.ts")).toBeInTheDocument();
+    expect(onOpenDiff).toHaveBeenCalledWith("src/app.tsx");
+  });
+
   it("large-readonly 文档显示只读 range 状态", () => {
     renderWithI18n(
       <StatusBar
@@ -433,7 +473,7 @@ describe("StatusBar", () => {
 
     fireEvent.pointerDown(branchButton, { button: 0, ctrlKey: false });
 
-    expect(await screen.findByText("当前分支")).toBeInTheDocument();
+    expect(await screen.findByText("本地分支")).toBeInTheDocument();
     expect(screen.getByText("feature/status-branch")).toBeInTheDocument();
   });
 });
