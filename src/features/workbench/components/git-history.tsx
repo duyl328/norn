@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,10 @@ import { useWorkbenchStore } from "../store/workbench-store";
 import type { GitCommitFile, GitGraphCommit } from "../types";
 import { getPathDisplayIcon } from "../workbench-utils";
 import { getChangeStatusLabel } from "./git-panel";
+import { useRailRowInset } from "./use-rail-row-inset";
+
+// 历史模式里会被右上角竖排标签盖住的元素:搜索框(常驻顶部)+ 提交行 + 空态。
+const HISTORY_ROW_SELECTOR = ".git-branch-search, .git-graph-row, .git-branch-empty";
 
 const LANE_COLORS = ["hsl(var(--primary))", "#10b981", "#f59e0b", "#a855f7", "#ec4899", "#06b6d4"];
 
@@ -92,6 +96,8 @@ export function GitHistoryPane({ onOpenCommitDiff }: { onOpenCommitDiff: (hash: 
   // 等仓库可用、或每次 git 刷新(提交/切换/拉取)后重新加载图谱。
   const rootPath = useWorkbenchStore((state) => state.folderView?.rootPath ?? null);
   const gitStatus = useWorkbenchStore((state) => state.gitStatus);
+  const paneRef = useRef<HTMLDivElement>(null);
+  useRailRowInset(paneRef, HISTORY_ROW_SELECTOR);
 
   useEffect(() => {
     if (!rootPath) {
@@ -147,7 +153,7 @@ export function GitHistoryPane({ onOpenCommitDiff }: { onOpenCommitDiff: (hash: 
   const selected = filtered.find((commit) => commit.hash === selectedHash) ?? null;
 
   return (
-    <div className="git-graph-pane">
+    <div className="git-graph-pane" ref={paneRef}>
       <div className="git-branch-search">
         <Search className="h-3.5 w-3.5 text-muted-foreground" />
         <input

@@ -768,9 +768,15 @@
     padding-top: var(--mac-titlebar-left-offset);
   }
 
-  .mac-titlebar-overlay-layout .editor-surface-panel,
-  .mac-titlebar-overlay-layout .git-panel-shell {
+  .mac-titlebar-overlay-layout .editor-surface-panel {
     padding-top: var(--mac-titlebar-content-offset);
+  }
+
+  /* Git 面板让出顶部 titlebar-side-right 这片空白:内容上抬复用它。顶部 toolbar 兼作
+     透明拖拽区(git-panel.tsx 里 data-tauri-drag-region;刷新按钮作为交互子元素照常可点),
+     与背景一体、只占顶部一条。右侧 rail 的留白见文件末尾(需压过 utilities 的 padding)。 */
+  .mac-titlebar-overlay-layout .git-panel-shell {
+    padding-top: 4px;
   }
 
   .project-panel-start {
@@ -856,7 +862,7 @@
   }
 
   .project-panel-recent-item {
-    @apply grid min-w-0 rounded-sm border-0 bg-transparent px-1 py-1.5 text-left transition-colors;
+    @apply grid min-w-0 rounded-[6px] border-0 bg-transparent px-1 py-1.5 text-left transition-colors;
   }
 
   .project-panel-recent-item:hover,
@@ -884,7 +890,7 @@
   }
 
   .project-panel-recent-select {
-    @apply grid min-h-[46px] w-full min-w-0 grid-cols-[28px_minmax(0,1fr)_22px] items-center gap-2 overflow-hidden rounded-[5px] border-0 bg-transparent px-2 py-1.5 text-left outline-none transition-colors;
+    @apply grid min-h-[46px] w-full min-w-0 grid-cols-[28px_minmax(0,1fr)_22px] items-center gap-2 overflow-hidden rounded-[6px] border-0 bg-transparent px-2 py-1.5 text-left outline-none transition-colors;
     transition:
       min-height 140ms ease,
       background-color 140ms ease,
@@ -999,7 +1005,7 @@
   }
 
   .project-panel-action-button {
-    @apply flex h-8 w-full items-center gap-2 rounded-[4px] border-0 bg-transparent px-2 text-left text-ui font-medium text-muted-foreground transition-colors;
+    @apply flex h-8 w-full items-center gap-2 rounded-[6px] border-0 bg-transparent px-2 text-left text-ui font-medium text-muted-foreground transition-colors;
     background-clip: padding-box;
   }
 
@@ -1917,16 +1923,13 @@
   }
 
   .git-panel-shell {
-    @apply flex h-full w-full min-h-0 min-w-0 overflow-hidden; /* 与编辑区同色、同区域:背景�?.editor-surface-panel 一致�?*/
+    @apply flex h-full w-full min-h-0 min-w-0 overflow-hidden; /* 与编辑区同色、同区域 */
     background: hsl(var(--editor-background));
   }
 
   .git-panel-stack {
     @apply relative min-h-0 min-w-0 flex-1 overflow-hidden;
-    border-right: 0.5px solid hsl(var(--border) / 0.72);
-    border-top-right-radius: 18px;
-    border-bottom-right-radius: 18px;
-    background: #ffffff;
+    background: transparent;
   }
 
   /* N 个模式上下堆�?track �?N×100%,每个 pane 占一�?;切换时整�?track 上下滑动�?
@@ -1938,7 +1941,7 @@
 
   .git-panel-pane {
     @apply flex min-h-0 shrink-0 flex-col overflow-hidden;
-    background: #ffffff;
+    background: transparent;
   }
 
   .git-panel-rail {
@@ -1946,7 +1949,11 @@
        不画自己的左边框:编辑区↔Git 的分隔已由 git-panel-shell 的细边框提供,
        这里再画一条会变成更重的双线,反而割裂。去掉 → 一体。 */
     @apply flex w-[44px] shrink-0 flex-col gap-1 p-1.5;
-    background: transparent;
+    /* 与编辑区同色,加一道柔和阴影把「标签区」轻轻标注出来(内容从下方/左侧滚入它下面)。
+       左下角抹个圆角,贴合内容从这里绕过去的走向。 */
+    background: hsl(var(--editor-background));
+    box-shadow: -5px 5px 14px -8px hsl(var(--foreground) / 0.22);
+    border-bottom-left-radius: 12px;
   }
 
   .git-rail-tab {
@@ -1993,7 +2000,7 @@
 
   .right-task-panel {
     @apply flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden text-card-foreground;
-    background: #ffffff;
+    background: transparent;
   }
 
   /* �?macOS:Git 是「编�?Git」合成卡的右半�?
@@ -2026,7 +2033,9 @@
   }
 
   .right-task-panel-toolbar {
-    @apply flex h-10 shrink-0 items-center justify-end gap-1 border-b border-border px-3;
+    /* 背景已与编辑区统一,顶部栏压薄(刷新按钮上抬)、分隔线弱化为极淡发丝线,更一体。 */
+    @apply flex h-8 shrink-0 items-center justify-end gap-1 px-3;
+    border-bottom: 0.5px solid hsl(var(--border) / 0.4);
   }
 
   .right-task-panel-content {
@@ -2035,7 +2044,7 @@
 
   .right-task-panel-footer {
     @apply shrink-0 border-t border-border p-3;
-    background: #ffffff;
+    background: transparent;
   }
 
   .git-panel-body {
@@ -3885,4 +3894,80 @@
 .git-action-button:focus-visible {
   background: hsl(var(--foreground) / 0.07);
   color: hsl(var(--foreground));
+}
+
+/* === mac 顶栏叠加布局:Git 的 rail 只占右上角,内容铺满整宽 ===
+   rail(提交/分支/历史 标签)是右上角竖排浮层、高度随内容(不为整列预留 44px),
+   它下方那段右侧空间空出来,底部元素(如提交摘要框)就能用满整宽。
+   未分层规则:压过 rail 的 p-1.5 / toolbar 的 px-3 等 utilities。 */
+.mac-titlebar-overlay-layout .git-panel-shell {
+  position: relative;
+}
+
+.mac-titlebar-overlay-layout .git-panel-rail {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  padding-top: 40px; /* 让出顶部折叠按钮 */
+}
+
+/* 顶部 toolbar 让出右上角折叠按钮、内容列表让出右上角标签;
+   footer 不留右白 → 提交摘要框等底部元素铺满整宽(标签下方那段空间)。 */
+.mac-titlebar-overlay-layout .right-task-panel-toolbar {
+  padding-right: 44px;
+}
+
+/* mac 顶栏叠加布局:竖排标签是右上角固定浮层、列表会滚动。
+   会滚动的文件树行由 JS(useRailRowInset)在滚动/增删/切模式时判断是否正好被标签盖住,
+   盖住的打上 .git-row-under-tab → 这里向左缩、避开标签;没盖住的保持满宽 = 真 L 形,滚动也准。 */
+.mac-titlebar-overlay-layout .git-row-under-tab {
+  margin-right: 48px;
+  /* 覆盖个别行的 w-full(如「已忽略」分组头):定宽 100% 会让 margin 失效、缩不动。
+     行本来就是 grid/flex 撑满,auto 不改变常态宽度,只是让 margin 能把它缩进。 */
+  width: auto;
+}
+
+/* 提交/分支/历史三种模式的行,现在都由 useRailRowInset 逐行处理(同上)。
+   只剩这几个「整块提示卡」不是列表、不绕排,整块缩进避开标签即可。
+   用 margin 而非 padding:padding 只挪文字,卡片的边框/底色仍会被标签盖住。 */
+.mac-titlebar-overlay-layout .git-error-notice,
+.mac-titlebar-overlay-layout .git-panel-clean,
+.mac-titlebar-overlay-layout .git-workspace-notice {
+  margin-right: 48px;
+}
+
+/* 行进入/离开标签区时 margin 平滑过渡:打开时的「跳一下」变成缓动,不突兀。 */
+.mac-titlebar-overlay-layout
+  :is(
+    .git-tree-file,
+    .git-tree-folder,
+    .git-ignored-row,
+    .git-ignored-head,
+    .git-branch-summary,
+    .git-branches-toolbar,
+    .git-branches-group-label,
+    .git-branch-leaf,
+    .git-branch-folder,
+    .git-branch-empty,
+    .git-branch-relationship,
+    .git-branch-search,
+    .git-graph-row
+  ) {
+  transition:
+    margin-right 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
+}
+
+/* Git 打开并上抬占用顶栏右段时,这段 titlebar(z-30)会盖住下方 Git 的刷新按钮。
+   改为「漏」事件到下方 Git 内容:整段 pointer-events:none、只放行折叠按钮(子元素)。
+   未分层规则,压过 .mac-titlebar-side 的 utilities pointer-events:auto。 */
+.mac-titlebar-side-right-passthrough {
+  pointer-events: none;
+}
+
+.mac-titlebar-side-right-passthrough > * {
+  pointer-events: auto;
 }

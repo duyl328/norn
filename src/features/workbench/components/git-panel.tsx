@@ -8,7 +8,7 @@ import {
   History,
   RefreshCw,
 } from "lucide-react";
-import { type ComponentType, type CSSProperties, type ReactNode, useEffect, useState } from "react";
+import { type ComponentType, type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +28,7 @@ import { GitBranchesPane } from "./git-branches-pane";
 import { GitChangesTree } from "./git-changes-tree";
 import { GitHistoryPane } from "./git-history";
 import { GitIgnoredTree } from "./git-ignored-tree";
+import { useRailRowInset } from "./use-rail-row-inset";
 
 const PANEL_MODES: { key: GitPanelMode; icon: ComponentType<{ className?: string }>; label: string }[] = [
   { key: "commit", icon: GitCommitVertical, label: "提交" },
@@ -47,6 +48,11 @@ const RefreshButton = ({ busy }: { busy: boolean }) => (
     刷新
   </Button>
 );
+
+// 各模式里会被右上角竖排标签盖住的行/卡片,交给 useRailRowInset 逐个判断、缩进。
+const COMMIT_ROW_SELECTOR = ".git-tree-file, .git-tree-folder, .git-ignored-row, .git-ignored-head";
+const BRANCH_ROW_SELECTOR =
+  ".git-branch-summary, .git-branches-toolbar, .git-branches-group-label, .git-branch-leaf, .git-branch-folder, .git-branch-empty, .git-branch-relationship";
 
 export function GitPanel({
   folderView,
@@ -149,6 +155,8 @@ function GitCommitMode({
   const gitStatus = useWorkbenchStore((state) => state.gitStatus);
   const gitBusy = useWorkbenchStore((state) => state.gitBusy);
   const gitError = useWorkbenchStore((state) => state.gitError);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useRailRowInset(bodyRef, COMMIT_ROW_SELECTOR);
   const changes = gitStatus?.changes ?? [];
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   // 记录被取消勾选的文件;新文件默认勾选(选中=不在该集合中),刷新无需重新同步。
@@ -190,7 +198,7 @@ function GitCommitMode({
       toolbar={<RefreshButton busy={gitBusy} />}
       footer={isNonRepository ? null : <GitCommitBox disabled={!hasChanges} busy={gitBusy} files={selectedFiles} />}
     >
-      <div className="git-panel-body">
+      <div className="git-panel-body" ref={bodyRef}>
         {gitError ? <GitErrorNotice error={gitError} /> : null}
         {isNonRepository ? (
           <GitWorkspaceNotice gitWorkspace={gitWorkspace} hasWorkspace={hasWorkspace} busy={gitBusy} />
@@ -295,9 +303,11 @@ function GitUntrackedSection({
 
 function GitBranchMode() {
   const gitBusy = useWorkbenchStore((state) => state.gitBusy);
+  const branchRef = useRef<HTMLDivElement>(null);
+  useRailRowInset(branchRef, BRANCH_ROW_SELECTOR);
   return (
     <RightTaskPanel toolbar={<RefreshButton busy={gitBusy} />}>
-      <div className="git-panel-body git-panel-body-flush">
+      <div className="git-panel-body git-panel-body-flush" ref={branchRef}>
         <GitBranchesPane />
       </div>
     </RightTaskPanel>
@@ -480,7 +490,7 @@ export function RightTaskPanel({
         </div>
       ) : null}
       {toolbar || (!showHeader && badge) ? (
-        <div className="right-task-panel-toolbar">
+        <div className="right-task-panel-toolbar" data-tauri-drag-region>
           {!showHeader && badge ? <div className="mr-auto">{badge}</div> : null}
           {toolbar}
         </div>

@@ -324,7 +324,13 @@ export function MacTitlebar({
       <div className="mac-titlebar-search">
         <TopSearchButton className="mac-titlebar-search-button" onClick={onOpenSearch} />
       </div>
-      <div className="mac-titlebar-side mac-titlebar-side-right" data-tauri-drag-region>
+      <div
+        className={cn(
+          "mac-titlebar-side mac-titlebar-side-right",
+          rightPanelOpen && "mac-titlebar-side-right-passthrough",
+        )}
+        data-tauri-drag-region
+      >
         <PanelToggleButton
           className="titlebar-panel-button mac-panel-toggle-button"
           label={rightPanelOpen ? "Hide Git panel" : "Show Git panel"}
@@ -393,7 +399,16 @@ export function SidebarPanelIcon({ side }: { side: "left" | "right" }) {
     >
       {/* 颜色走 CSS(主题 token),否则 SVG 属性里的固定色不会随明暗切换。见 styles.css。 */}
       <rect className="sidebar-panel-svg-bg" x="1" y="1" width="22" height="22" rx="6" />
-      <rect className="sidebar-panel-svg-frame" x="4" y="4" width="16" height="16" rx="3.4" strokeWidth="1.4" fill="none" />
+      <rect
+        className="sidebar-panel-svg-frame"
+        x="4"
+        y="4"
+        width="16"
+        height="16"
+        rx="3.4"
+        strokeWidth="1.4"
+        fill="none"
+      />
       <rect className="sidebar-panel-svg-bar" x="6.75" y="7.4" width="2.05" height="9" rx="1.02" />
     </svg>
   );
@@ -549,9 +564,7 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
     }
 
     return candidates
-      .filter((candidate) =>
-        `${candidate.label}\n${candidate.detail}`.toLocaleLowerCase().includes(normalizedQuery),
-      )
+      .filter((candidate) => `${candidate.label}\n${candidate.detail}`.toLocaleLowerCase().includes(normalizedQuery))
       .slice(0, 8);
   }, [candidates, normalizedQuery]);
 
@@ -622,7 +635,10 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
 
                 return (
                   <button
-                    className={cn("windows-quick-search-history-item", selected && "windows-quick-search-item-selected")}
+                    className={cn(
+                      "windows-quick-search-history-item",
+                      selected && "windows-quick-search-item-selected",
+                    )}
                     type="button"
                     key={item}
                     aria-label={`Use ${item} from search history`}
