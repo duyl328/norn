@@ -30,6 +30,7 @@ import {
   getTreeDropTargetFromPoint,
   initialDocument,
   isDocumentDirty,
+  isEditorDropTargetFromPoint,
   isPathInsideOrEqual,
   isTauriRuntime,
   moveTreeLead,
@@ -1177,6 +1178,13 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
         const target = getTreeDropTargetFromPoint(payload.position);
 
         if (payload.type === "drop") {
+          if (!target && isEditorDropTargetFromPoint(payload.position) && payload.paths?.length) {
+            payload.paths.forEach((path) => requestFileOpen({ kind: "path", path }));
+            setDropTarget(null);
+            dropTargetRef.current = null;
+            return;
+          }
+
           const fallbackTarget = scratchFolder
             ? ({ path: scratchFolder.path, scope: "scratch" } satisfies TreeDropTarget)
             : folderView
@@ -1215,7 +1223,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
       disposed = true;
       unlisten?.();
     };
-  }, [folderView?.rootPath, scratchFolder?.path]);
+  }, [folderView?.rootPath, requestFileOpen, scratchFolder?.path]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {

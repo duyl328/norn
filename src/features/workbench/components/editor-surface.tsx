@@ -388,7 +388,10 @@ export function EditorSurface({
   };
 
   return (
-    <section className="editor-surface-panel flex min-h-0 min-w-0 flex-col overflow-hidden bg-[hsl(var(--editor-background))]">
+    <section
+      className="editor-surface-panel flex min-h-0 min-w-0 flex-col overflow-hidden bg-[hsl(var(--editor-background))]"
+      data-editor-drop-zone="true"
+    >
       <div
         className={cn(
           "editor-file-tabs",

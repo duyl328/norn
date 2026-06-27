@@ -9,9 +9,21 @@ import { useWorkbenchStore } from "@/features/workbench/store/workbench-store";
 import type { FileTreeNode, NativeDirectoryEntry } from "@/features/workbench/types";
 import { initialDocument } from "@/features/workbench/workbench-utils";
 
+const dragDropHandlers = vi.hoisted(() => [] as Array<(event: { payload: unknown }) => void>);
+
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => ({ onDragDropEvent: () => Promise.resolve(() => {}) }),
+  getCurrentWindow: () => ({
+    onDragDropEvent: (handler: (event: { payload: unknown }) => void) => {
+      dragDropHandlers.push(handler);
+      return Promise.resolve(() => {
+        const index = dragDropHandlers.indexOf(handler);
+        if (index >= 0) {
+          dragDropHandlers.splice(index, 1);
+        }
+      });
+    },
+  }),
 }));
 
 const invokeMock = vi.mocked(invoke);
@@ -60,6 +72,7 @@ const renderTree = (requestFileOpen = vi.fn()) => ({
 
 beforeEach(() => {
   invokeMock.mockReset();
+  dragDropHandlers.splice(0);
   setTauri(false);
   window.localStorage.clear();
   baseStore();
@@ -164,6 +177,52 @@ describe("文件夹打开(mock invoke)", () => {
       expect(state.folderView?.nodes).toHaveLength(1);
     });
     expect(useWorkbenchStore.getState().recentFolders[0]).toMatchObject({ name: "proj", path: "/proj" });
+  });
+});
+
+describe("外部文件拖入", () => {
+  it("落在编辑区时直接打开文件,不复制到文件树", async () => {
+    setTauri(true);
+    invokeMock.mockImplementation(async (cmd: string) =>
+      cmd === "scratch_folder" ? { name: "scratch", path: "/scratch" } : null,
+    );
+    useWorkbenchStore.setState({
+      folderView: {
+        rootPath: "/proj",
+        rootName: "proj",
+        origin: "open-folder",
+        nodes: [],
+        rootExpanded: true,
+        loadingPath: null,
+        error: null,
+      },
+    });
+    const editorDropZone = globalThis.document.createElement("div");
+    editorDropZone.dataset.editorDropZone = "true";
+    globalThis.document.body.append(editorDropZone);
+    Object.defineProperty(globalThis.document, "elementFromPoint", {
+      configurable: true,
+      value: vi.fn(() => editorDropZone),
+    });
+    const { requestFileOpen } = renderTree();
+
+    await waitFor(() => expect(dragDropHandlers).toHaveLength(1));
+    act(() => {
+      dragDropHandlers[0]({
+        payload: {
+          type: "drop",
+          paths: ["/external/a.ts", "/external/b.ts"],
+          position: { x: 10, y: 20 },
+        },
+      });
+    });
+
+    expect(requestFileOpen).toHaveBeenCalledWith({ kind: "path", path: "/external/a.ts" });
+    expect(requestFileOpen).toHaveBeenCalledWith({ kind: "path", path: "/external/b.ts" });
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "copy_external_paths",
+      expect.objectContaining({ sourcePaths: ["/external/a.ts", "/external/b.ts"] }),
+    );
   });
 });
 
