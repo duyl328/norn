@@ -490,15 +490,13 @@ export function EditorSurface({
                       src={tabIcon.src}
                     />
                     <span className="truncate">{tab.name}</span>
-                    <span
-                      className={cn("editor-file-tab-trailing", hideCloseButton && "editor-file-tab-trailing-hidden")}
-                    >
+                    <span className="editor-file-tab-trailing">
                       <span className="editor-file-tab-dirty" aria-hidden={!tab.dirty}>
                         {tab.dirty ? "•" : ""}
                       </span>
                       {tab.closable && (
                         <button
-                          className="editor-file-tab-close"
+                          className={cn("editor-file-tab-close", hideCloseButton && "editor-file-tab-close-hidden")}
                           aria-label={`Close ${tab.name}`}
                           title={`Close ${tab.name}`}
                           type="button"
@@ -507,7 +505,7 @@ export function EditorSurface({
                             event.preventDefault();
                             event.stopPropagation();
 
-                            if (!hideCloseButton && tabDocument) {
+                            if (!isStacked && tabDocument) {
                               onCloseDocument(tabDocument);
                             }
                           }}

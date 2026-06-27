@@ -183,6 +183,59 @@ describe("document store operations", () => {
     expect(state.openDocuments).toHaveLength(1);
   });
 
+  it("focuses dirty background documents before asking how to close them", () => {
+    const active = makeDoc({ id: "active", name: "active.ts", content: "x", savedContent: "x" });
+    const dirty = makeDoc({ id: "dirty", name: "dirty.ts", content: "changed", savedContent: "old" });
+    resetStore(active, [active, dirty]);
+    const { result } = renderHook(() => useDocumentSession());
+
+    act(() => result.current.requestCloseDocument(dirty));
+
+    const state = useWorkbenchStore.getState();
+    expect(state.document.id).toBe("dirty");
+    expect(state.pendingCloseDocument?.id).toBe("dirty");
+    expect(state.openDocuments.map((d) => d.id)).toEqual(["active", "dirty"]);
+  });
+
+  it("closes empty untitled documents without confirmation", () => {
+    const untitled = makeDoc({
+      id: "untitled",
+      name: "Untitled.txt",
+      path: "Untitled.txt",
+      content: "",
+      savedContent: "",
+      isUntitled: true,
+    });
+    const other = makeDoc({ id: "b", name: "b.ts" });
+    resetStore(untitled, [untitled, other]);
+    const { result } = renderHook(() => useDocumentSession());
+
+    act(() => result.current.requestCloseDocument(untitled));
+
+    const state = useWorkbenchStore.getState();
+    expect(state.pendingCloseDocument).toBeNull();
+    expect(state.openDocuments.map((d) => d.id)).toEqual(["b"]);
+  });
+
+  it("asks before closing non-empty untitled documents", () => {
+    const untitled = makeDoc({
+      id: "untitled",
+      name: "Untitled.txt",
+      path: "Untitled.txt",
+      content: "draft",
+      savedContent: "",
+      isUntitled: true,
+    });
+    resetStore(untitled, [untitled]);
+    const { result } = renderHook(() => useDocumentSession());
+
+    act(() => result.current.requestCloseDocument(untitled));
+
+    const state = useWorkbenchStore.getState();
+    expect(state.pendingCloseDocument?.id).toBe("untitled");
+    expect(state.openDocuments).toHaveLength(1);
+  });
+
   it("creates a new file and clears folder/git context", () => {
     resetStore(makeDoc({ id: "a" }));
     const { result } = renderHook(() => useDocumentSession());
@@ -266,6 +319,45 @@ describe("save operations", () => {
     });
 
     expect(invokeMock).toHaveBeenCalledWith("open_save_dialog", { defaultName: "Untitled.txt" });
+  });
+
+  it("saves untitled documents to the path chosen by the user", async () => {
+    resetStore(
+      makeDoc({
+        id: "untitled",
+        name: "Untitled.txt",
+        path: "Untitled.txt",
+        content: "draft",
+        savedContent: "",
+        isUntitled: true,
+      }),
+    );
+    setTauri(true);
+    const saved = makeSavedFile({ name: "notes.txt", path: "/abs/notes.txt", size: 5, lastModified: 300 });
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "open_save_dialog") return "/abs/notes.txt";
+      if (cmd === "save_text_file_as") return saved;
+      return null;
+    });
+
+    const { result } = renderHook(() => useDocumentSession());
+
+    await act(async () => {
+      await result.current.saveDocument();
+    });
+
+    expect(invokeMock).toHaveBeenCalledWith("open_save_dialog", { defaultName: "Untitled.txt" });
+    expect(invokeMock).toHaveBeenCalledWith("save_text_file_as", {
+      path: "/abs/notes.txt",
+      content: "draft",
+      encoding: "utf-8",
+      hasBom: false,
+    });
+    const state = useWorkbenchStore.getState();
+    expect(state.document.isUntitled).toBe(false);
+    expect(state.document.path).toBe("/abs/notes.txt");
+    expect(state.document.savedContent).toBe("draft");
+    expect(state.saveState).toBe("saved");
   });
 
   it("does not write when Save As is cancelled", async () => {
