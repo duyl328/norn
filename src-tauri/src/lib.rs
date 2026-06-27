@@ -22,7 +22,10 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     process::Command,
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -859,6 +862,158 @@ fn list_directory(path: String) -> Result<Vec<DirectoryEntry>, String> {
     });
 
     Ok(entries)
+}
+
+/// 工作区搜索:遍历规则只靠两个开关——尊重忽略文件(.gitignore/.ignore,无需仓库)+
+/// 排除隐藏项(`.` 开头)。不硬编码任何项目目录名,前端把用户设置转成这两个 bool 传进来。
+const SEARCH_MAX_FILES: usize = 50_000;
+const SEARCH_MAX_HITS: usize = 2_000;
+const SEARCH_LINE_MAX_CHARS: usize = 400;
+
+#[derive(Serialize)]
+struct SearchHit {
+    path: String,
+    line: u32,
+    text: String,
+}
+
+fn build_search_walker(
+    root: &Path,
+    exclude_hidden: bool,
+    respect_ignore_files: bool,
+) -> ignore::WalkBuilder {
+    let mut builder = ignore::WalkBuilder::new(root);
+    builder
+        .hidden(exclude_hidden)
+        .git_ignore(respect_ignore_files)
+        .git_global(respect_ignore_files)
+        .git_exclude(respect_ignore_files)
+        .ignore(respect_ignore_files)
+        .parents(respect_ignore_files)
+        .require_git(false)
+        .threads(0);
+    builder
+}
+
+/// 把搜索词编译成正则:字面量先转义,整词裹 `\b`,大小写不敏感时设 case_insensitive。
+fn build_search_regex(
+    query: &str,
+    case_sensitive: bool,
+    whole_word: bool,
+    is_regex: bool,
+) -> Result<regex::Regex, String> {
+    let mut pattern = if is_regex {
+        query.to_string()
+    } else {
+        regex::escape(query)
+    };
+    if whole_word {
+        pattern = format!(r"\b(?:{pattern})\b");
+    }
+    regex::RegexBuilder::new(&pattern)
+        .case_insensitive(!case_sensitive)
+        .build()
+        .map_err(|error| format!("Invalid search pattern: {error}"))
+}
+
+/// 文件名搜索:列出工作区内全部文件的绝对路径,前端做模糊过滤。
+#[tauri::command]
+fn search_file_names(
+    root: String,
+    exclude_hidden: bool,
+    respect_ignore_files: bool,
+) -> Result<Vec<String>, String> {
+    let root_path = PathBuf::from(&root);
+    let mut paths = Vec::new();
+    for entry in build_search_walker(&root_path, exclude_hidden, respect_ignore_files)
+        .build()
+        .flatten()
+    {
+        if entry.file_type().is_some_and(|kind| kind.is_file()) {
+            paths.push(entry.path().to_string_lossy().into_owned());
+            if paths.len() >= SEARCH_MAX_FILES {
+                break;
+            }
+        }
+    }
+    Ok(paths)
+}
+
+/// 内容搜索:并行遍历(`threads(0)` = 全部 CPU 核),每个文件复用 decode_text_bytes
+/// 跳过二进制并按编码解码,逐行匹配。命中总数封顶后提前退出,结果按 path+line 排序。
+#[tauri::command]
+fn search_in_files(
+    root: String,
+    query: String,
+    case_sensitive: bool,
+    whole_word: bool,
+    regex: bool,
+    exclude_hidden: bool,
+    respect_ignore_files: bool,
+) -> Result<Vec<SearchHit>, String> {
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let matcher = build_search_regex(&query, case_sensitive, whole_word, regex)?;
+    let root_path = PathBuf::from(&root);
+    let hits = Arc::new(Mutex::new(Vec::new()));
+    let total = Arc::new(AtomicUsize::new(0));
+
+    build_search_walker(&root_path, exclude_hidden, respect_ignore_files)
+        .build_parallel()
+        .run(|| {
+            let hits = Arc::clone(&hits);
+            let total = Arc::clone(&total);
+            let matcher = matcher.clone();
+            Box::new(move |entry| {
+                if total.load(Ordering::Relaxed) >= SEARCH_MAX_HITS {
+                    return ignore::WalkState::Quit;
+                }
+                let Ok(entry) = entry else {
+                    return ignore::WalkState::Continue;
+                };
+                if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+                    return ignore::WalkState::Continue;
+                }
+                let path = entry.path();
+                let Ok(bytes) = fs::read(path) else {
+                    return ignore::WalkState::Continue;
+                };
+                // decode_text_bytes 对二进制返回 None,顺带处理多编码。
+                let Some(decoded) = decode_text_bytes(&bytes) else {
+                    return ignore::WalkState::Continue;
+                };
+
+                let mut local = Vec::new();
+                for (index, line) in decoded.content.lines().enumerate() {
+                    if matcher.is_match(line) {
+                        let text: String = line.chars().take(SEARCH_LINE_MAX_CHARS).collect();
+                        local.push(SearchHit {
+                            path: path.to_string_lossy().into_owned(),
+                            line: (index as u32) + 1,
+                            text,
+                        });
+                        if total.fetch_add(1, Ordering::Relaxed) + 1 >= SEARCH_MAX_HITS {
+                            break;
+                        }
+                    }
+                }
+                if !local.is_empty() {
+                    if let Ok(mut guard) = hits.lock() {
+                        guard.extend(local);
+                    }
+                }
+                ignore::WalkState::Continue
+            })
+        });
+
+    let mut results = Arc::try_unwrap(hits)
+        .map(|mutex| mutex.into_inner().unwrap_or_default())
+        .unwrap_or_default();
+    results.sort_by(|left, right| left.path.cmp(&right.path).then(left.line.cmp(&right.line)));
+    results.truncate(SEARCH_MAX_HITS);
+    Ok(results)
 }
 
 #[tauri::command]
@@ -2256,6 +2411,8 @@ pub fn run() {
             save_text_file,
             save_text_file_as,
             list_directory,
+            search_file_names,
+            search_in_files,
             watch_directory,
             unwatch_directory,
             reveal_in_file_manager,
@@ -2342,6 +2499,56 @@ mod tests {
         fn path_string(&self, path: &Path) -> String {
             path.to_string_lossy().into_owned()
         }
+    }
+
+    #[test]
+    fn search_regex_modes_behave() {
+        // 字面量:特殊字符被转义,大小写不敏感。
+        let literal = build_search_regex("a.b", false, false, false).unwrap();
+        assert!(literal.is_match("A.B"));
+        assert!(!literal.is_match("aXb"));
+
+        // 整词:不匹配子串。
+        let word = build_search_regex("cat", true, true, false).unwrap();
+        assert!(word.is_match("a cat sat"));
+        assert!(!word.is_match("category"));
+
+        // 正则模式 + 大小写敏感。
+        let re = build_search_regex("a.c", true, false, true).unwrap();
+        assert!(re.is_match("abc"));
+        assert!(!re.is_match("ABC"));
+
+        // 非法正则报错。
+        assert!(build_search_regex("(", false, false, true).is_err());
+    }
+
+    #[test]
+    fn search_in_files_finds_matches_and_skips_binary_and_ignored() {
+        let workspace = TestWorkspace::new();
+        fs::write(workspace.root.join("a.txt"), "hello world\nsecond line").unwrap();
+        fs::write(workspace.root.join("b.txt"), "no match here").unwrap();
+        fs::write(workspace.root.join(".gitignore"), "ignored.txt\n").unwrap();
+        fs::write(workspace.root.join("ignored.txt"), "hello ignored").unwrap();
+        fs::write(
+            workspace.root.join("bin.dat"),
+            [0u8, 159, 146, 150, b'h', b'i'],
+        )
+        .unwrap();
+
+        let hits = search_in_files(
+            workspace.root_string(),
+            "hello".to_string(),
+            false,
+            false,
+            false,
+            true,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(hits.len(), 1, "binary + gitignored files excluded");
+        assert!(hits[0].path.ends_with("a.txt"));
+        assert_eq!(hits[0].line, 1);
     }
 
     #[test]

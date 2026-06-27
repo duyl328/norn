@@ -412,14 +412,66 @@
   }
 
   .windows-quick-search {
-    @apply fixed inset-0 z-40 flex items-start justify-center bg-background/20 pt-[12vh];
+    @apply fixed inset-0 flex items-start justify-center bg-background/20 pt-[12vh];
+    /* Top overlay: highest layer when focused; above editor tab strip (z-30000) and menus. */
+    z-index: 2147483647;
+  }
+
+  /* Docked: floating draggable card, no backdrop, editor stays interactive. */
+  .windows-quick-search-docked {
+    @apply bg-transparent;
+    pointer-events: none;
   }
 
   .windows-quick-search-panel {
-    @apply w-[min(720px,calc(100vw-80px))] rounded-md border border-border p-2 text-popover-foreground shadow-2xl;
-    background: transparent;
-    -webkit-backdrop-filter: saturate(1.12) blur(16px);
-    backdrop-filter: saturate(1.12) blur(16px);
+    @apply flex max-h-[80vh] w-[min(720px,calc(100vw-80px))] flex-col rounded-2xl border border-border/60 p-2.5 text-popover-foreground shadow-2xl;
+    background: hsl(var(--popover) / 0.55);
+    -webkit-backdrop-filter: saturate(1.4) blur(28px);
+    backdrop-filter: saturate(1.4) blur(28px);
+    transition: width 260ms cubic-bezier(0.16, 1, 0.3, 1);
+    animation: qs-pop 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .windows-quick-search-panel-wide {
+    @apply w-[min(1100px,calc(100vw-64px))];
+  }
+
+  .windows-quick-search-panel-docked {
+    @apply flex h-[70vh] w-[420px] flex-col;
+    position: fixed;
+    pointer-events: auto;
+    animation: qs-slide-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Collapsed dock card: header bar only. */
+  .windows-quick-search-panel-docked-collapsed {
+    height: auto;
+  }
+
+  .windows-quick-search-dock-header {
+    @apply mb-1 flex h-7 cursor-move items-center gap-2 rounded-lg px-1;
+  }
+
+  .windows-quick-search-dock-title {
+    @apply flex-1 select-none text-ui font-medium text-muted-foreground;
+  }
+
+  .windows-quick-search-tabs {
+    @apply mb-2 flex items-center gap-1;
+  }
+
+  .windows-quick-search-tab {
+    @apply h-9 flex-1 rounded-[6px] border-0 bg-transparent text-ui-lg font-medium text-foreground/80 transition-colors;
+  }
+
+  .windows-quick-search-tab:hover {
+    @apply text-foreground outline-none;
+    background: hsl(var(--foreground) / 0.07);
+  }
+
+  .windows-quick-search-tab-active {
+    @apply text-foreground;
+    background: hsl(var(--foreground) / 0.1);
   }
 
   .windows-quick-search-input-wrap {
@@ -431,15 +483,33 @@
   }
 
   .windows-quick-search-input {
-    @apply h-10 w-full rounded-sm border border-input bg-background px-9 text-ui-lg outline-none;
+    @apply h-10 w-full rounded-xl border border-input/60 bg-background/40 px-9 text-ui-lg outline-none transition-colors;
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
   }
 
   .windows-quick-search-input:focus {
-    @apply border-ring;
+    @apply border-ring bg-background/60;
+  }
+
+  .windows-quick-search-flags {
+    @apply absolute right-2 flex items-center gap-0.5;
+  }
+
+  .windows-quick-search-flag {
+    @apply grid h-7 w-7 place-items-center rounded-lg border-0 bg-transparent text-muted-foreground transition-colors;
+  }
+
+  .windows-quick-search-flag:hover {
+    @apply bg-accent/70 text-foreground;
+  }
+
+  .windows-quick-search-flag-on {
+    @apply bg-primary/15 text-primary;
   }
 
   .windows-quick-search-section {
-    @apply mt-2 rounded-sm border border-border/60 bg-background/70 p-2;
+    @apply mt-2 rounded-xl border border-border/50 bg-background/40 p-2;
   }
 
   .windows-quick-search-section-heading {
@@ -460,7 +530,7 @@
   }
 
   .windows-quick-search-history-item {
-    @apply flex h-7 max-w-full items-center gap-1.5 rounded-sm border border-border/60 bg-background px-2 text-ui text-muted-foreground transition-colors;
+    @apply flex h-7 max-w-full items-center gap-1.5 rounded-lg border border-border/50 bg-background/50 px-2 text-ui text-muted-foreground transition-colors;
   }
 
   .windows-quick-search-history-item span {
@@ -474,16 +544,24 @@
   }
 
   .windows-quick-search-results {
-    @apply mt-2 grid gap-1;
+    @apply mt-2 grid max-h-[52vh] gap-1 overflow-y-auto;
+  }
+
+  .windows-quick-search-results-split {
+    @apply mt-2 min-h-0 flex-1 overflow-hidden;
+  }
+
+  .windows-quick-search-panel-docked .windows-quick-search-results-split {
+    @apply min-h-0 flex-1;
   }
 
   .windows-quick-search-result {
-    @apply grid min-h-9 grid-cols-[18px_minmax(0,1fr)] items-center gap-2 rounded-sm border-0 bg-transparent px-2 text-left text-ui text-muted-foreground;
+    @apply grid min-h-9 grid-cols-[18px_minmax(0,1fr)] items-center gap-2 rounded-lg border-0 bg-transparent px-2 text-left text-ui text-muted-foreground;
   }
 
   .windows-quick-search-result:hover,
   .windows-quick-search-result:focus-visible {
-    @apply bg-accent text-accent-foreground outline-none;
+    @apply bg-accent/80 text-accent-foreground outline-none;
   }
 
   .windows-quick-search-result-text {
@@ -502,12 +580,123 @@
     @apply rounded-sm px-2 py-3 text-ui text-muted-foreground;
   }
 
+  .windows-quick-search-split {
+    @apply grid h-full min-h-0 grid-cols-[300px_minmax(0,1fr)] gap-2;
+  }
+
+  .windows-quick-search-split-docked {
+    @apply flex h-full min-h-0 flex-col gap-2;
+    grid-template-columns: none;
+  }
+
+  .windows-quick-search-file-list {
+    @apply flex min-h-0 flex-col gap-0.5 overflow-auto rounded-xl border border-border/50 bg-background/30 p-1;
+  }
+
+  .windows-quick-search-split-docked .windows-quick-search-file-list {
+    @apply h-[38%] shrink-0;
+  }
+
+  .windows-quick-search-preview-pane {
+    @apply flex min-h-0 flex-col gap-1;
+  }
+
+  .windows-quick-search-split-docked .windows-quick-search-preview-pane {
+    @apply min-h-0 flex-1;
+  }
+
+  .windows-quick-search-preview-bar {
+    @apply flex h-7 shrink-0 items-center gap-2 rounded-lg border border-border/50 bg-background/30 px-2 text-ui;
+  }
+
+  .windows-quick-search-preview-bar-title {
+    @apply min-w-0 flex-1 truncate font-medium text-foreground;
+  }
+
+  .windows-quick-search-preview-bar-count {
+    @apply shrink-0 font-mono text-ui-sm tabular-nums text-muted-foreground;
+  }
+
+  .windows-quick-search-preview {
+    @apply min-h-0 flex-1 overflow-auto rounded-xl border border-border/50 bg-background/30 py-1 font-mono text-ui-sm;
+  }
+
+  .windows-quick-search-preview-line {
+    @apply flex;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  .windows-quick-search-preview-line:hover {
+    @apply cursor-pointer bg-accent/40;
+  }
+
+  .windows-quick-search-preview-line-match {
+    @apply bg-primary/5;
+  }
+
+  .windows-quick-search-preview-line-current {
+    @apply bg-amber-400/20;
+  }
+
+  /* Line-number gutter stays put on horizontal scroll; solid bg hides code beneath. */
+  .windows-quick-search-preview-lineno {
+    @apply w-12 shrink-0 select-none px-2 text-right text-muted-foreground;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: hsl(var(--background));
+  }
+
+  .windows-quick-search-preview-line-current .windows-quick-search-preview-lineno {
+    @apply font-semibold text-primary;
+  }
+
+  .windows-quick-search-preview-code {
+    @apply pl-3;
+    white-space: pre;
+  }
+
+  .windows-quick-search-mark {
+    @apply rounded-[2px] bg-amber-400/40 text-foreground;
+  }
+
   .windows-quick-search-close {
-    @apply mt-2 h-7 rounded-sm border border-border bg-background px-3 text-ui text-muted-foreground;
+    @apply mt-2 h-7 rounded-lg border border-border/60 bg-background/40 px-3 text-ui text-muted-foreground;
   }
 
   .windows-quick-search-close:hover {
     @apply bg-accent text-accent-foreground;
+  }
+
+  @keyframes qs-pop {
+    from {
+      opacity: 0;
+      transform: translateY(-6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes qs-slide-in {
+    from {
+      opacity: 0;
+      transform: translateX(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .windows-quick-search-panel,
+    .windows-quick-search-panel-docked {
+      animation: none;
+      transition: none;
+    }
   }
 
   .windows-titlebar-controls {

@@ -265,6 +265,31 @@ export function EditorSurface({
     });
   }, [lineWrapping]);
 
+  // 搜索结果点击后定位:内容就绪且为目标文件时,把光标移到行/列并滚动居中,然后清空。
+  const pendingReveal = useWorkbenchStore((state) => state.pendingReveal);
+  const setPendingReveal = useWorkbenchStore((state) => state.setPendingReveal);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !pendingReveal || pendingReveal.path !== document.path) {
+      return;
+    }
+    // 等内容真正载入后再定位(新开文件是异步读取的)。
+    if (view.state.doc.toString() !== document.content) {
+      return;
+    }
+
+    const lineNumber = Math.min(Math.max(pendingReveal.line, 1), view.state.doc.lines);
+    const lineInfo = view.state.doc.line(lineNumber);
+    const pos = Math.min(lineInfo.from + Math.max(pendingReveal.column, 0), lineInfo.to);
+    view.dispatch({
+      selection: { anchor: pos, head: pos },
+      effects: EditorView.scrollIntoView(pos, { x: "nearest", y: "center" }),
+      scrollIntoView: true,
+    });
+    view.focus();
+    setPendingReveal(null);
+  }, [pendingReveal, document.path, document.content, setPendingReveal]);
+
   const setScrollPosition = (orientation: EditorScrollbarOrientation, value: number) => {
     const scrollDOM = scrollDOMRef.current;
 

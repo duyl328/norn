@@ -110,6 +110,13 @@ export function WorkbenchPage() {
     requestFileOpenRef.current = requestFileOpen;
   }, [requestFileOpen]);
 
+  // 顶部搜索结果点击 → 打开文件。注册到 store,避免穿过 titlebar 透传回调。
+  const setOpenFileFromSearch = useWorkbenchStore((state) => state.setOpenFileFromSearch);
+  useEffect(() => {
+    setOpenFileFromSearch((path) => requestFileOpenRef.current({ kind: "path", path }));
+    return () => setOpenFileFromSearch(null);
+  }, [setOpenFileFromSearch]);
+
   useEffect(() => {
     if (!isTauriRuntime()) {
       return;

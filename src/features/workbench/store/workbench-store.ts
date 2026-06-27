@@ -65,6 +65,10 @@ export interface WorkbenchState {
   scratchPanelHeight: number;
   settingsOpen: boolean;
   searchOpen: boolean;
+  // 顶部搜索打开文件的回调:由 workbench-page 注册(指向 requestFileOpen),QuickSearch 调用。
+  openFileFromSearch: ((path: string) => void) | null;
+  // 打开文件后要定位到的行/列(0 基列):QuickSearch 设置,editor-surface 在内容就绪后消费并清空。
+  pendingReveal: { column: number; line: number; path: string } | null;
   quickSearchHistory: string[];
   commandPaletteOpen: boolean;
   keymapOverrides: Record<string, string[]>;
@@ -78,6 +82,8 @@ export interface WorkbenchState {
   setScratchPanelHeight: (setter: StateSetter<number>) => void;
   setSettingsOpen: (setter: StateSetter<boolean>) => void;
   setSearchOpen: (setter: StateSetter<boolean>) => void;
+  setOpenFileFromSearch: (handler: ((path: string) => void) | null) => void;
+  setPendingReveal: (reveal: { column: number; line: number; path: string } | null) => void;
   setQuickSearchHistory: (setter: StateSetter<string[]>) => void;
   setCommandPaletteOpen: (setter: StateSetter<boolean>) => void;
   setKeymapOverrides: (setter: StateSetter<Record<string, string[]>>) => void;
@@ -164,6 +170,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   scratchPanelHeight: scratchPanelDefaultHeight,
   settingsOpen: false,
   searchOpen: false,
+  openFileFromSearch: null,
+  pendingReveal: null,
   quickSearchHistory: loadQuickSearchHistory(),
   commandPaletteOpen: false,
   // 启动时由 workbench-page 异步从 keybindings.json 载入(见 WorkbenchActionsRuntime)。
@@ -181,6 +189,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({ scratchPanelHeight: resolveSetter(setter, state.scratchPanelHeight) })),
   setSettingsOpen: (setter) => set((state) => ({ settingsOpen: resolveSetter(setter, state.settingsOpen) })),
   setSearchOpen: (setter) => set((state) => ({ searchOpen: resolveSetter(setter, state.searchOpen) })),
+  setOpenFileFromSearch: (handler) => set(() => ({ openFileFromSearch: handler })),
+  setPendingReveal: (reveal) => set(() => ({ pendingReveal: reveal })),
   setQuickSearchHistory: (setter) =>
     set((state) => ({ quickSearchHistory: resolveSetter(setter, state.quickSearchHistory) })),
   setCommandPaletteOpen: (setter) =>
