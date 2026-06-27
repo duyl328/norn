@@ -8,7 +8,7 @@ import {
   History,
   RefreshCw,
 } from "lucide-react";
-import { type ComponentType, type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import { type ComponentType, type CSSProperties, type ReactNode, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -226,25 +226,8 @@ function GitCommitMode({
 function GitIgnoredSection({ onOpenFile }: { onOpenFile: (path: string, size?: number) => void }) {
   const { t } = useI18n();
   const rootPath = useWorkbenchStore((state) => state.folderView?.rootPath ?? null);
-  const gitStatus = useWorkbenchStore((state) => state.gitStatus);
-  const [items, setItems] = useState<string[]>([]);
+  const items = useWorkbenchStore((state) => state.gitIgnoredFiles);
   const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!rootPath) {
-      setItems([]);
-      return;
-    }
-    let alive = true;
-    void gitActions.loadIgnored().then((result) => {
-      if (alive) {
-        setItems(result);
-      }
-    });
-    return () => {
-      alive = false;
-    };
-  }, [rootPath, gitStatus]);
 
   if (items.length === 0 || !rootPath) {
     return null;

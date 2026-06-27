@@ -1145,6 +1145,8 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
           void refreshFolderPath(changedDir, { collapseChildren: false, preserveExpansion: true, silent: true });
         }
       }
+
+      void refreshGit();
     })
       .then((cleanup) => {
         if (disposed) {

@@ -48,6 +48,7 @@ import { useI18n } from "../i18n";
 import type {
   FileTreeClipboard,
   FileTreeContextMenuState,
+  FileTreeGitDecoration,
   FileTreeNameDialog,
   FileTreeNode,
   TreeDropTarget,
@@ -71,6 +72,7 @@ export function FileTreePanel({
   contextMenu,
   draggedNode,
   dropTarget,
+  gitDecorations,
   scope,
   treeView,
   onContextMenu,
@@ -106,6 +108,7 @@ export function FileTreePanel({
   contextMenu: FileTreeContextMenuState | null;
   draggedNode: FileTreeNode | null;
   dropTarget: TreeDropTarget | null;
+  gitDecorations?: Map<string, FileTreeGitDecoration> | null;
   scope: "main" | "scratch";
   treeView: TreePanelView | null;
   onContextMenu: (node: FileTreeNode | null, event: MouseEvent, scope?: "main" | "scratch") => void;
@@ -282,6 +285,7 @@ export function FileTreePanel({
                     depth={row.depth}
                     draggedNode={draggedNode}
                     dropTarget={dropTarget}
+                    gitDecoration={gitDecorations?.get(row.node.path) ?? null}
                     loadingPath={treeView.loadingPath}
                     node={row.node}
                     scope={scope}
@@ -470,6 +474,7 @@ export function FileTreeRow({
   depth = 0,
   draggedNode,
   dropTarget,
+  gitDecoration,
   loadingPath,
   node,
   scope,
@@ -489,6 +494,7 @@ export function FileTreeRow({
   depth?: number;
   draggedNode: FileTreeNode | null;
   dropTarget: TreeDropTarget | null;
+  gitDecoration: FileTreeGitDecoration | null;
   loadingPath: string | null;
   node: FileTreeNode;
   scope: "main" | "scratch";
@@ -583,6 +589,7 @@ export function FileTreeRow({
           (node.error || wouldCycle) && "tree-row-muted",
           node.isHidden && "tree-row-hidden",
           node.isReadonly && "tree-row-readonly",
+          gitDecoration && `tree-row-git-${gitDecoration}`,
           isDropTarget && "tree-row-drop-target",
         )}
         data-tree-drop-path={isDirectory ? node.path : undefined}

@@ -25,21 +25,25 @@ export const refreshGit = async (): Promise<void> => {
   if (!path || !isTauriRuntime()) {
     store.setGitStatus(null);
     store.setGitBranches(null);
+    store.setGitIgnoredFiles([]);
     store.setGitRecentCommits([]);
     return;
   }
 
   try {
-    const [status, branches, commits] = await Promise.all([
+    const [status, branches, ignoredFiles, commits] = await Promise.all([
       invoke<GitStatus>("git_status", { path }),
       invoke<GitBranches>("git_branches", { path }),
+      invoke<string[]>("git_ignored_files", { path }),
       invoke<GitCommit[]>("git_recent_commits", { path, limit: RECENT_COMMIT_LIMIT }),
     ]);
     store.setGitStatus(status);
     store.setGitBranches(branches);
+    store.setGitIgnoredFiles(ignoredFiles);
     store.setGitRecentCommits(commits);
     store.setGitError(null);
   } catch (error) {
+    store.setGitIgnoredFiles([]);
     store.setGitError(getGitError(error));
   }
 };

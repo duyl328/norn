@@ -4,6 +4,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   type PointerEvent as ReactPointerEvent,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -19,11 +20,14 @@ import { cn } from "@/lib/utils";
 
 import { useI18n } from "../i18n";
 import { isMac } from "../platform";
+import { useWorkbenchStore } from "../store/workbench-store";
 import type {
   FileTreeClipboard,
   FileTreeContextMenuState,
+  FileTreeGitDecoration,
   FileTreeNode,
   FolderView,
+  GitChange,
   RecentFolder,
   ScratchFolder,
   ScratchFolderView,
@@ -130,10 +134,24 @@ export function ProjectPanel({
   onRevealActiveFile: () => void;
 }) {
   const { t } = useI18n();
+  const gitWorkspace = useWorkbenchStore((state) => state.gitWorkspace);
+  const gitStatus = useWorkbenchStore((state) => state.gitStatus);
+  const gitIgnoredFiles = useWorkbenchStore((state) => state.gitIgnoredFiles);
   const scratchPanelMinRatio = 0.1;
   const scratchPanelMaxRatio = 0.6;
   const [scratchPanelRatio, setScratchPanelRatio] = useState(0.3);
   const panelStackRef = useRef<HTMLDivElement>(null);
+  const gitDecorations = useMemo(() => {
+    if (!folderView || gitWorkspace.kind !== "ready" || !gitWorkspace.inspection.isRepository) {
+      return null;
+    }
+
+    return createFileTreeGitDecorations(
+      gitWorkspace.inspection.gitRoot ?? folderView.rootPath,
+      gitStatus?.changes ?? [],
+      gitIgnoredFiles,
+    );
+  }, [folderView, gitIgnoredFiles, gitStatus?.changes, gitWorkspace]);
 
   const startScratchPanelResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     const stack = panelStackRef.current;
@@ -194,6 +212,7 @@ export function ProjectPanel({
             contextMenu={contextMenu}
             draggedNode={draggedNode}
             dropTarget={dropTarget}
+            gitDecorations={gitDecorations}
             treeView={
               folderView
                 ? {
@@ -532,4 +551,67 @@ export function ProjectPanelScratchFolder({
       />
     </div>
   );
+}
+
+const gitDecorationPriority: Record<FileTreeGitDecoration, number> = {
+  added: 3,
+  modified: 2,
+  ignored: 1,
+};
+
+function createFileTreeGitDecorations(
+  rootPath: string,
+  changes: GitChange[],
+  ignoredFiles: string[],
+): Map<string, FileTreeGitDecoration> {
+  const decorations = new Map<string, FileTreeGitDecoration>();
+  const root = normalizeGitPath(rootPath);
+
+  const mark = (relativePath: string, decoration: FileTreeGitDecoration) => {
+    const normalizedRelativePath = normalizeGitRelativePath(relativePath);
+    if (!normalizedRelativePath) {
+      return;
+    }
+
+    const segments = normalizedRelativePath.split("/");
+    for (let index = 1; index <= segments.length; index += 1) {
+      setDecoration(decorations, joinGitPath(root, segments.slice(0, index).join("/")), decoration);
+    }
+  };
+
+  for (const change of changes) {
+    mark(change.path, change.status === "added" || change.status === "untracked" ? "added" : "modified");
+    if (change.previousPath) {
+      mark(change.previousPath, "modified");
+    }
+  }
+
+  for (const ignoredFile of ignoredFiles) {
+    mark(ignoredFile, "ignored");
+  }
+
+  return decorations;
+}
+
+function setDecoration(
+  decorations: Map<string, FileTreeGitDecoration>,
+  path: string,
+  decoration: FileTreeGitDecoration,
+) {
+  const current = decorations.get(path);
+  if (!current || gitDecorationPriority[decoration] > gitDecorationPriority[current]) {
+    decorations.set(path, decoration);
+  }
+}
+
+function joinGitPath(root: string, relativePath: string) {
+  return `${root.replace(/\/+$/, "")}/${relativePath}`;
+}
+
+function normalizeGitPath(path: string) {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "");
+}
+
+function normalizeGitRelativePath(path: string) {
+  return normalizeGitPath(path).replace(/^\/+/, "");
 }

@@ -143,6 +143,8 @@ export type GitStatus = {
   changes: GitChange[];
 };
 
+export type FileTreeGitDecoration = "added" | "ignored" | "modified";
+
 export type GitBranch = {
   name: string;
   upstream?: string | null;

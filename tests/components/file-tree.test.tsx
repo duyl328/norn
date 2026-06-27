@@ -3,7 +3,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { FileTreePanel } from "@/features/workbench/components/file-tree";
+import { FileTreePanel, FileTreeRow } from "@/features/workbench/components/file-tree";
 import { I18nProvider } from "@/features/workbench/i18n-provider";
 import type {
   FileTreeClipboard,
@@ -12,7 +12,7 @@ import type {
   TreePanelView,
 } from "@/features/workbench/types";
 
-const treeView: TreePanelView = {
+const baseTreeView: TreePanelView = {
   error: null,
   loadingPath: null,
   nodes: [],
@@ -23,7 +23,17 @@ const treeView: TreePanelView = {
 
 const noop = () => {};
 
-const renderPanel = (contextMenu: FileTreeContextMenuState | null = null, clipboard: FileTreeClipboard | null = null) => {
+const renderPanel = ({
+  clipboard = null,
+  contextMenu = null,
+  gitDecorations = null,
+  treeView = baseTreeView,
+}: {
+  clipboard?: FileTreeClipboard | null;
+  contextMenu?: FileTreeContextMenuState | null;
+  gitDecorations?: Map<string, "added" | "ignored" | "modified"> | null;
+  treeView?: TreePanelView;
+} = {}) => {
   const onContextMenu = vi.fn();
 
   render(
@@ -34,6 +44,7 @@ const renderPanel = (contextMenu: FileTreeContextMenuState | null = null, clipbo
         contextMenu={contextMenu}
         draggedNode={null}
         dropTarget={null}
+        gitDecorations={gitDecorations}
         scope="main"
         search={null}
         selection={null}
@@ -88,10 +99,12 @@ describe("FileTreePanel", () => {
 
   it("keeps root-only destructive context menu actions disabled", () => {
     renderPanel({
-      node: { kind: "directory", name: "project", path: "/mock/project", relativePath: "." },
-      scope: "main",
-      x: 16,
-      y: 20,
+      contextMenu: {
+        node: { kind: "directory", name: "project", path: "/mock/project", relativePath: "." },
+        scope: "main",
+        x: 16,
+        y: 20,
+      },
     });
 
     expect(screen.getByRole("menuitem", { name: "重命名" })).toBeDisabled();
@@ -105,5 +118,83 @@ describe("FileTreePanel", () => {
     const rootRow = screen.getByRole("treeitem", { name: /project/ });
     expect(rootRow.querySelector("svg.tree-row-icon")).not.toBeNull();
     expect(rootRow.querySelector("img.tree-row-icon")).toBeNull();
+  });
+
+  it("applies git decoration classes to tree rows", () => {
+    render(
+      <I18nProvider>
+        <FileTreeRow
+          ancestorCanonicalPaths={[]}
+          draggedNode={null}
+          dropTarget={null}
+          gitDecoration="added"
+          leadPath={null}
+          loadingPath={null}
+          node={{ kind: "file", name: "new.ts", path: "/mock/project/new.ts", relativePath: "new.ts" }}
+          scope="main"
+          searchQuery=""
+          selectedPaths={new Set()}
+          onContextMenu={noop}
+          onDragEnd={noop}
+          onDragNode={noop}
+          onDropNode={noop}
+          onDropTargetChange={noop}
+          onOpenFile={noop}
+          onSelectNode={noop}
+          onToggleDirectory={noop}
+        />
+        <FileTreeRow
+          ancestorCanonicalPaths={[]}
+          draggedNode={null}
+          dropTarget={null}
+          gitDecoration="modified"
+          leadPath={null}
+          loadingPath={null}
+          node={{ kind: "file", name: "changed.ts", path: "/mock/project/changed.ts", relativePath: "changed.ts" }}
+          scope="main"
+          searchQuery=""
+          selectedPaths={new Set()}
+          onContextMenu={noop}
+          onDragEnd={noop}
+          onDragNode={noop}
+          onDropNode={noop}
+          onDropTargetChange={noop}
+          onOpenFile={noop}
+          onSelectNode={noop}
+          onToggleDirectory={noop}
+        />
+        <FileTreeRow
+          ancestorCanonicalPaths={[]}
+          draggedNode={null}
+          dropTarget={null}
+          gitDecoration="ignored"
+          leadPath={null}
+          loadingPath={null}
+          node={{
+            childrenLoaded: true,
+            expanded: true,
+            kind: "directory",
+            name: "dist",
+            path: "/mock/project/dist",
+            relativePath: "dist",
+          }}
+          scope="main"
+          searchQuery=""
+          selectedPaths={new Set()}
+          onContextMenu={noop}
+          onDragEnd={noop}
+          onDragNode={noop}
+          onDropNode={noop}
+          onDropTargetChange={noop}
+          onOpenFile={noop}
+          onSelectNode={noop}
+          onToggleDirectory={noop}
+        />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByRole("treeitem", { name: /new\.ts/ })).toHaveClass("tree-row-git-added");
+    expect(screen.getByRole("treeitem", { name: /changed\.ts/ })).toHaveClass("tree-row-git-modified");
+    expect(screen.getByRole("treeitem", { name: /dist/ })).toHaveClass("tree-row-git-ignored");
   });
 });
