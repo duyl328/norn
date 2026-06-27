@@ -15,6 +15,7 @@ export const nativeMenuCommands = {
   saveFileAs: "menu-save-file-as",
   showExplorer: "menu-show-explorer",
   toggleGitPanel: "menu-toggle-git-panel",
+  welcome: "menu-welcome",
 } as const;
 
 export const EDITOR_SCROLLBAR_SIZE = 18;

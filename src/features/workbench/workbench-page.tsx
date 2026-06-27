@@ -617,6 +617,7 @@ const NATIVE_MENU_TO_ACTION: Record<string, string> = {
   [nativeMenuCommands.showExplorer]: "view.toggleExplorer",
   [nativeMenuCommands.find]: "navigate.goToFile",
   [nativeMenuCommands.toggleGitPanel]: "view.toggleGit",
+  [nativeMenuCommands.welcome]: "help.welcome",
 };
 
 /**

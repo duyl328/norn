@@ -54,6 +54,7 @@ export function startWelcomeTour(language: AppLanguage): void {
 
   const config: Config = {
     steps: present,
+    popoverClass: "norn-tour", // 见 styles.css:套用应用主题 token,明暗自适应
     showProgress: present.length > 1,
     progressText: "{{current}} / {{total}}",
     nextBtnText: t("welcome.next"),
