@@ -23,7 +23,7 @@ beforeEach(() => {
   useWorkbenchStore.setState({
     leftPanelOpen: false,
     leftPanelWidth: 260,
-    rightPanelWidth: 320,
+    rightPanelWidth: 360,
     searchOpen: false,
     settingsOpen: false,
     resizingPanel: null,
@@ -79,7 +79,7 @@ describe("resizePanelWithKeyboard", () => {
     act(() => result.current.resizePanelWithKeyboard("left", keyEvent("ArrowRight")));
     expect(useWorkbenchStore.getState().leftPanelWidth).toBe(before + 16);
     act(() => result.current.resizePanelWithKeyboard("right", keyEvent("ArrowLeft")));
-    expect(useWorkbenchStore.getState().rightPanelWidth).toBe(320 + 16);
+    expect(useWorkbenchStore.getState().rightPanelWidth).toBe(360 + 16);
 
     const stable = useWorkbenchStore.getState().leftPanelWidth;
     act(() => result.current.resizePanelWithKeyboard("left", keyEvent("Enter")));
@@ -106,7 +106,7 @@ describe("startPanelResize", () => {
 
     act(() => result.current.startPanelResize("right", pointerDown(500)));
     act(() => window.dispatchEvent(new MouseEvent("pointermove", { clientX: 460 })));
-    expect(useWorkbenchStore.getState().rightPanelWidth).toBe(320 + 40);
+    expect(useWorkbenchStore.getState().rightPanelWidth).toBe(360 + 40);
     act(() => window.dispatchEvent(new MouseEvent("pointerup")));
   });
 });
