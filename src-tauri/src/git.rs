@@ -109,6 +109,8 @@ pub struct GitLogCommit {
 pub struct GitCommitFile {
     path: String,
     status: String,
+    additions: u32,
+    deletions: u32,
 }
 
 #[derive(Serialize)]
@@ -731,6 +733,7 @@ pub fn git_log(path: String, limit: u32) -> Result<Vec<GitLogCommit>, GitError> 
 #[tauri::command]
 pub fn git_commit_files(path: String, hash: String) -> Result<Vec<GitCommitFile>, GitError> {
     let workspace = PathBuf::from(path);
+    let stats = git_commit_file_stats(&workspace, &hash)?;
     let text = git_text(&workspace, &["show", &hash, "--name-status", "--format=", "-M"])?;
     let mut files = Vec::new();
     for line in text.lines() {
@@ -746,12 +749,44 @@ pub fn git_commit_files(path: String, hash: String) -> Result<Vec<GitCommitFile>
         if path.is_empty() {
             continue;
         }
+        let (additions, deletions) = stats.get(&path).copied().unwrap_or((0, 0));
         files.push(GitCommitFile {
             status: status_letter(status_raw).to_string(),
             path,
+            additions,
+            deletions,
         });
     }
     Ok(files)
+}
+
+fn git_commit_file_stats(workspace: &Path, hash: &str) -> Result<HashMap<String, (u32, u32)>, GitError> {
+    let text = git_text(workspace, &["show", hash, "--numstat", "--format=", "-M"])?;
+    Ok(parse_commit_numstat(&text))
+}
+
+fn parse_commit_numstat(text: &str) -> HashMap<String, (u32, u32)> {
+    let mut stats = HashMap::new();
+    for line in text.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut parts = line.split('\t');
+        let additions = parse_numstat_count(parts.next());
+        let deletions = parse_numstat_count(parts.next());
+        let Some(path) = parts.last() else {
+            continue;
+        };
+        if path.is_empty() {
+            continue;
+        }
+        stats.insert(normalize_numstat_path(path), (additions, deletions));
+    }
+    stats
+}
+
+fn parse_numstat_count(value: Option<&str>) -> u32 {
+    value.and_then(|raw| raw.parse::<u32>().ok()).unwrap_or(0)
 }
 
 fn status_letter(raw: &str) -> &'static str {
@@ -883,6 +918,15 @@ mod tests {
         assert_eq!(map.get("src/app.tsx"), Some(&(3, 1)));
         assert_eq!(map.get("src/new/file.ts"), Some(&(5, 0)));
         assert_eq!(map.get("img.png"), Some(&(0, 0)));
+    }
+
+    #[test]
+    fn commit_numstat_normalizes_rename_paths() {
+        let text = "2\t3\tsrc/app.tsx\n7\t1\tsrc/{old => new}/file.ts\n-\t-\tasset.bin\n";
+        let map = parse_commit_numstat(text);
+        assert_eq!(map.get("src/app.tsx"), Some(&(2, 3)));
+        assert_eq!(map.get("src/new/file.ts"), Some(&(7, 1)));
+        assert_eq!(map.get("asset.bin"), Some(&(0, 0)));
     }
 
     #[test]
