@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { StatusBar } from "@/features/workbench/components/status-bar";
+import { useWorkbenchStore } from "@/features/workbench/store/workbench-store";
 import type { GitWorkspaceState, WorkbenchDocument } from "@/features/workbench/types";
 
 const document: WorkbenchDocument = {
@@ -17,9 +18,25 @@ const document: WorkbenchDocument = {
 };
 
 const idleGit: GitWorkspaceState = { kind: "idle" };
+const readyGit: GitWorkspaceState = {
+  kind: "ready",
+  inspection: {
+    branch: "main",
+    gitAvailable: true,
+    gitRoot: "/mock/project",
+    hasDotGit: true,
+    isRepository: true,
+    message: "Git 仓库已就绪。",
+    workspacePath: "/mock/project",
+  },
+};
 
 describe("StatusBar", () => {
   beforeEach(() => {
+    useWorkbenchStore.setState({
+      gitBranches: null,
+      gitStatus: null,
+    });
     Object.assign(navigator, {
       clipboard: {
         writeText: vi.fn().mockResolvedValue(undefined),
@@ -36,6 +53,42 @@ describe("StatusBar", () => {
     expect(screen.getByText("2 lines")).toBeInTheDocument();
     expect(screen.getByText("2.0 KB")).toBeInTheDocument();
     expect(screen.getByText("Saved")).toBeInTheDocument();
+  });
+
+  it("未检测到完整 Git 仓库时不显示底部 Git 信息", () => {
+    render(
+      <StatusBar document={document} gitWorkspace={idleGit} isDirty={false} onOpenSettings={() => {}} saveState="saved" />,
+    );
+
+    expect(screen.queryByText("No Git")).not.toBeInTheDocument();
+    expect(screen.queryByText("main")).not.toBeInTheDocument();
+  });
+
+  it("完整 Git 仓库时显示分支和变更统计", () => {
+    useWorkbenchStore.setState({
+      gitStatus: {
+        ahead: 1,
+        behind: 2,
+        branch: "main",
+        changes: [{ additions: 3, deletions: 1, path: "README.md", status: "modified" }],
+        upstream: "origin/main",
+      },
+    });
+
+    render(
+      <StatusBar
+        document={document}
+        gitWorkspace={readyGit}
+        isDirty={false}
+        onOpenSettings={() => {}}
+        saveState="saved"
+      />,
+    );
+
+    expect(screen.getByText("main")).toBeInTheDocument();
+    expect(screen.getByText("+1")).toBeInTheDocument();
+    expect(screen.getByText("-2")).toBeInTheDocument();
+    expect(screen.getByText("1 files")).toBeInTheDocument();
   });
 
   it("large-readonly 文档显示只读 range 状态", () => {

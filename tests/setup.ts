@@ -22,6 +22,14 @@ if (typeof Range !== "undefined") {
   Range.prototype.getBoundingClientRect = () => emptyRect;
 }
 
+if (typeof ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class ResizeObserver {
+    disconnect() {}
+    observe() {}
+    unobserve() {}
+  };
+}
+
 afterEach(() => {
   cleanup();
 });
