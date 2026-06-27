@@ -862,7 +862,7 @@
   .project-panel-recent-item:hover,
   .project-panel-recent-item:focus-visible {
     @apply outline-none;
-    background: rgb(255 255 255 / 0.11);
+    background: hsl(var(--foreground) / 0.07);
   }
 
   .project-panel-recent-text {
@@ -894,7 +894,7 @@
   .project-panel-recent-select:hover,
   .project-panel-recent-select:focus-visible,
   .project-panel-recent-select-focused {
-    background: hsl(var(--muted) / 0.72);
+    background: hsl(var(--foreground) / 0.1);
     box-shadow: none;
   }
 
@@ -1017,7 +1017,7 @@
   .project-panel-action-button:hover,
   .project-panel-action-button:focus-visible {
     @apply text-foreground outline-none;
-    background: hsl(var(--muted) / 0.82);
+    background: hsl(var(--foreground) / 0.07);
     box-shadow: none;
   }
 
@@ -1523,7 +1523,7 @@
   .file-tree-root-action:hover,
   .file-tree-root-action:focus-visible {
     @apply outline-none;
-    background: hsl(var(--accent) / 0.6);
+    background: hsl(var(--foreground) / 0.07);
     color: hsl(var(--foreground));
   }
 
@@ -1585,8 +1585,8 @@
   .tree-row:hover,
   .tree-row:focus-visible {
     @apply outline-none;
-    background: hsl(var(--accent) / 0.62);
-    color: hsl(var(--accent-foreground));
+    background: hsl(var(--foreground) / 0.07);
+    color: hsl(var(--foreground));
   }
 
   .tree-row-toggle {
@@ -1688,9 +1688,8 @@
   .tree-row-active,
   .tree-row-active:hover,
   .tree-row-active:focus-visible {
-    /* 选中�?柔和的主色半透明填充,去掉生硬�?1px 内描�?观感更平�?
-       同时覆盖 hover �?保证选中行被悬停时高亮不�?hover 背景吞掉�?*/
-    background: hsl(var(--primary) / 0.14);
+    /* 选中态:与设置页按钮一致的中性灰填充(foreground 0.1),hover 为 0.07,选中略重一档。 */
+    background: hsl(var(--foreground) / 0.1);
     color: hsl(var(--foreground));
   }
 
