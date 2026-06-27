@@ -754,6 +754,16 @@ export const getTreeDropTargetFromPoint = (position?: { x: number; y: number }):
   return { path, scope };
 };
 
+export const isEditorDropTargetFromPoint = (position?: { x: number; y: number }): boolean => {
+  if (!position) {
+    return false;
+  }
+
+  const element = globalThis.document.elementFromPoint(position.x, position.y);
+
+  return Boolean(element?.closest("[data-editor-drop-zone]"));
+};
+
 export const getEditorScrollbarGeometry = (
   orientation: EditorScrollbarOrientation,
   metrics: EditorScrollMetrics,
