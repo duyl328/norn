@@ -46,9 +46,13 @@ export function StatusBar({
   const [pathCopied, setPathCopied] = useState(false);
   const pathCopiedTimeoutRef = useRef<number | null>(null);
   const gitStatus = useWorkbenchStore((state) => state.gitStatus);
-  const hasGit = gitWorkspace.kind === "ready" && gitWorkspace.inspection.isRepository && gitStatus !== null;
+  const gitBranches = useWorkbenchStore((state) => state.gitBranches);
+  const hasGit = gitWorkspace.kind === "ready" && gitWorkspace.inspection.isRepository;
   const branchLabel =
-    gitStatus?.branch ?? (gitWorkspace.kind === "ready" ? gitWorkspace.inspection.branch : null) ?? "-";
+    gitStatus?.branch ??
+    gitBranches?.current ??
+    (gitWorkspace.kind === "ready" ? gitWorkspace.inspection.branch : null) ??
+    "-";
   const changeFiles = gitStatus?.changes.length ?? 0;
   const additions = gitStatus?.changes.reduce((total, change) => total + change.additions, 0) ?? 0;
   const deletions = gitStatus?.changes.reduce((total, change) => total + change.deletions, 0) ?? 0;
@@ -182,7 +186,7 @@ export function StatusBar({
         ) : (
           <>
             <GitBranchMenu>
-              <button type="button" className="status-token status-token-button">
+              <button type="button" className="status-token status-token-button" title="查看和切换 Git 分支">
                 <GitBranch className="h-3 w-3" />
                 {branchLabel}
                 {ahead > 0 ? <span className="status-ahead">+{ahead}</span> : null}

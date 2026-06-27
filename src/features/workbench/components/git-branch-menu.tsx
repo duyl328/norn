@@ -5,6 +5,8 @@ import {
   GitBranchPlus,
   GitMerge,
   History,
+  ListTree,
+  RefreshCw,
   Search,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -32,6 +34,11 @@ export function GitBranchMenu({ children }: { children: ReactNode }) {
   const setRightPanelOpen = useWorkbenchStore((state) => state.setRightPanelOpen);
   const [filter, setFilter] = useState("");
 
+  const openBranches = () => {
+    setRightPanelOpen(true);
+    setPanelMode("branch");
+  };
+
   const openHistory = () => {
     setRightPanelOpen(true);
     setPanelMode("history");
@@ -42,6 +49,10 @@ export function GitBranchMenu({ children }: { children: ReactNode }) {
   const remoteBranches = (branches?.remote ?? []).filter((branch) => matches(branch.name));
 
   const currentBranch = gitStatus?.branch ?? branches?.current ?? "—";
+  const currentLocalBranch = branches?.local.find((branch) => branch.current || branch.name === currentBranch);
+  const upstream = gitStatus?.upstream ?? currentLocalBranch?.upstream ?? "无上游";
+  const ahead = gitStatus?.ahead ?? currentLocalBranch?.ahead ?? 0;
+  const behind = gitStatus?.behind ?? currentLocalBranch?.behind ?? 0;
 
   const createBranch = () => {
     const name = window.prompt("从当前分支新建分支，输入名称：");
@@ -58,12 +69,27 @@ export function GitBranchMenu({ children }: { children: ReactNode }) {
           <div className="git-branch-current-label">当前分支</div>
           <div className="git-branch-current-name">{currentBranch}</div>
           <div className="git-branch-current-meta">
-            <span>{gitStatus?.upstream ?? "无上游"}</span>
+            <span>{upstream}</span>
             <span className="git-branch-track">
-              <span className="git-branch-ahead">↑{gitStatus?.ahead ?? 0}</span>
-              <span className="git-branch-behind">↓{gitStatus?.behind ?? 0}</span>
+              <span className="git-branch-ahead">↑{ahead}</span>
+              <span className="git-branch-behind">↓{behind}</span>
             </span>
           </div>
+        </div>
+
+        <div className="git-branch-actions-row">
+          <DropdownMenuItem className="git-branch-action" onClick={openBranches}>
+            <ListTree className="h-3.5 w-3.5" />
+            分支面板
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="git-branch-action"
+            disabled={gitBusy}
+            onClick={() => void gitActions.refresh()}
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            刷新
+          </DropdownMenuItem>
         </div>
 
         <div className="git-branch-actions-row">
@@ -109,7 +135,7 @@ export function GitBranchMenu({ children }: { children: ReactNode }) {
             <BranchRow key={branch.name} branch={branch} onSelect={() => void gitActions.checkout(branch.name)} />
           ))
         ) : (
-          <div className="git-branch-empty">无匹配分支</div>
+          <div className="git-branch-empty">{branches ? "无匹配分支" : "点击刷新加载分支列表"}</div>
         )}
 
         {remoteBranches.length > 0 ? (
