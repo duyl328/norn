@@ -1,8 +1,8 @@
 # Norn
 
-Norn 是一个基于 Tauri 2、React、TypeScript 和 Vite 的轻量代码与 Git 工作台桌面应用。项目目标是提供一个启动更快、占用更轻的日常开发辅助工具，用于查看代码、进行少量文本编辑、检查 Git 变更并完成基础提交流程。
+Norn 是一个基于 Tauri 2、React、TypeScript 和 Vite 的轻量代码编辑器，附带简单 Git 集成。项目目标是提供一个启动更快、占用更轻的日常开发辅助工具，用于查看和编辑代码、检查 Git 变更并完成基础提交流程。
 
-当前仓库处于原型向真实功能过渡阶段：前端工作台界面已搭建完整，后端 Tauri 侧已实现真实的本地文件系统能力；编辑器已接入 CodeMirror 6 并支持语法高亮；真实 Git 操作（status/diff/stage/commit 等）仍待接入。
+当前仓库处于原型向真实功能过渡阶段：前端工作台界面已搭建完整，后端 Tauri 侧已实现真实的本地文件系统能力；编辑器已接入 CodeMirror 6 并支持语法高亮；Git 侧已通过系统 `git` CLI 接入轻量工作流，包括仓库探测、变更列表、diff / 并排版本对比、勾选文件提交、commit / push / pull、基础分支切换和简单冲突处理。
 
 ## 核心功能
 
@@ -13,15 +13,17 @@ Norn 是一个基于 Tauri 2、React、TypeScript 和 Vite 的轻量代码与 Gi
 - 浅色 / 深色主题切换。
 - **真实本地文件系统能力**（Rust / Tauri command）：打开文件 / 文件夹、读取目录树、读写文本文件、另存为、大文件分块读取与降级、新建 / 重命名 / 移动 / 复制 / 删除到回收站、scratch 文件夹。
 - **CodeMirror 6 编辑器**：多标签页、按文件类型语法高亮（按需加载语言包）、大文件自动降级为只读 / 纯文本。
-- **Git 工作区探测**：识别 Git 仓库根目录与当前分支（`inspect_git_workspace`）。
+- **简单 Git 集成**（Rust / Tauri command，调用系统 `git` CLI）：识别仓库根目录与当前分支、显示变更文件、查看 diff / 文件版本对比、勾选文件提交、提交并推送、pull / push、初始化仓库、基础分支切换 / 新建、最近提交和轻量历史图。
+- **基础冲突处理**：识别冲突文件，提供按冲突块选择“采用当前 / 采用传入 / 两者都要”，写回后通过 `git add` 标记为已解决。
+- **项目快速搜索**：支持项目文件名搜索和文件内容搜索。
 - shadcn/ui 风格的基础 UI 组件封装，包括按钮、徽标、对话框、菜单、输入框、滚动区域、分隔线、标签页、文本框和提示。
 - Tauri command `app_version`，返回 Rust crate 版本号。
 
-需求文档中规划但当前尚未完成的能力：
+当前刻意不作为目标的能力：
 
-- **真实 Git 变更操作**：Git 面板的状态列表、diff、stage / unstage、commit、push、pull 仍使用 mock 数据（`mock-data.ts`），尚未调用系统 `git` CLI。
-- 项目文件名搜索（当前文件内搜索已具备基础）。
-- 最近项目持久化（最近文件夹已落地 localStorage）、用户设置、快捷键配置。
+- 完整 IDE 能力：LSP、语义级跳转、查找引用、重构、调试器、插件系统。
+- 专业 Git 客户端能力：完整暂存区管理、hunk 级 stage、stash 管理、blame、rebase、cherry-pick、tag / remote 管理、force push。
+- 当前 Git 工作流定位为轻量编辑器里的简单集成：查看变更、查看 diff、勾选要提交的文件、提交 / 推送 / 拉取、基础分支操作和清晰错误提示。
 
 ## 技术栈
 
@@ -34,8 +36,8 @@ Norn 是一个基于 Tauri 2、React、TypeScript 和 Vite 的轻量代码与 Gi
 | 样式       | Tailwind CSS 3               |
 | UI 基础    | Radix UI、shadcn/ui 风格组件 |
 | 图标       | lucide-react                 |
-| 编辑器规划 | CodeMirror 6                 |
-| Git 规划   | 系统 `git` CLI               |
+| 编辑器     | CodeMirror 6                 |
+| Git 集成   | 系统 `git` CLI               |
 | 包管理     | pnpm                         |
 
 ## 目录结构
@@ -87,7 +89,7 @@ norn/
 - Cargo：随 Rust 工具链安装。
 - Tauri 2 所需系统依赖：请按目标平台安装 Tauri 官方前置依赖。
 - WebView 运行环境：Windows 下通常需要 Microsoft Edge WebView2 Runtime。
-- Git CLI：真实 Git 功能规划依赖系统 `git`，当前代码尚未接入真实 Git 操作。
+- Git CLI：简单 Git 集成依赖系统 `git`，复用用户已有 Git 配置、认证、hook 和 GPG 设置。
 
 ## 安装步骤
 
@@ -179,7 +181,7 @@ pnpm install
 pnpm dev
 ```
 
-浏览器打开 `http://localhost:1420` 后，可以看到 Norn 工作台原型界面，包括项目面板、编辑器 mock、Git 变更面板和状态栏。
+浏览器打开 `http://localhost:1420` 后，可以看到 Norn 工作台原型界面，包括项目面板、编辑器、Git 变更面板和状态栏。浏览器版不包含真实 Tauri native 能力，文件系统与 Git 流程通过测试桩验证。
 
 ### 桌面应用预览
 
@@ -228,6 +230,8 @@ pnpm test:e2e
 
 测试用 Tauri 运行时桩见 `tests/e2e/tauri-mock.ts`，通过模拟原生菜单事件驱动应用，无需真实 Tauri 窗口。
 
+Git 前端 E2E 目前主要验证 UI 数据流和 mock Tauri 调用，不等同于真实仓库端到端验证。真实 Git CLI 行为由 Rust 单元测试覆盖部分解析和错误路径，后续应补充基于临时仓库的集成测试，覆盖 status / diff / 勾选文件提交 / push / pull / 冲突等核心路径。
+
 ### 关于真实 Tauri 窗口的 E2E
 
 驱动真实 Tauri 窗口的官方方案是 `tauri-driver` + WebdriverIO，但**仅支持 Linux / Windows，不支持 macOS**（WKWebView 无 WebDriver 实现）。因此 macOS 上 native 能力（真实文件 / Git）目前只能通过 `pnpm tauri:dev` 手动验证，或在 Linux / Windows CI 上做自动化。
@@ -238,7 +242,7 @@ pnpm test:e2e
 pnpm test:rust
 ```
 
-该脚本会执行 `src-tauri` 下的 `cargo test`，覆盖文本读取、range 读取、二进制 / 非 UTF-8 拒绝、文件操作保护等基础后端行为。
+该脚本会执行 `src-tauri` 下的 `cargo test`，覆盖文本读取、range 读取、二进制 / 非 UTF-8 拒绝、文件操作保护等基础后端行为，并覆盖部分 Git status / rename / numstat / 分支领先落后解析。
 
 ## 构建与部署
 
@@ -270,13 +274,13 @@ Tauri 会先执行前端构建，再根据 `src-tauri/tauri.conf.json` 进行桌
 
 `vite.config.ts` 中配置了 `strictPort: false`，浏览器开发服务器可自动选择后续可用端口。Tauri 开发模式建议使用 `pnpm tauri:dev`，该脚本会为当前 worktree 分配可用端口并注入临时 Tauri devUrl。
 
-### 为什么 Git 变更不是我的真实项目？
+### 为什么浏览器版的 Git 变更不是我的真实项目？
 
-当前文件系统能力已接入真实 Tauri command；Git 面板仍以 mock / 探测结果展示为主，真实 `git status`、`git diff`、`git add`、`git commit`、`git push`、`git pull` 等操作仍待实现。
+浏览器版没有 Tauri native 能力，文件系统和 Git 调用会走测试桩或空状态。请使用 `pnpm tauri:dev` 启动桌面应用，桌面模式会调用真实 Tauri command 和系统 `git` CLI。
 
-### 为什么 Git 按钮看起来可用但没有执行真实操作？
+### 为什么没有完整的 stage / unstage 面板？
 
-当前 Git 面板是 UI 原型，真实的 `git status`、`git diff`、`git add`、`git commit`、`git push`、`git pull` 等命令调用仍待实现。
+Norn 的定位是轻量代码编辑器，不是专业 Git 客户端。当前 Git 工作流采用“勾选文件 → 提交选中文件”的简单模型，提交前会按选中文件执行 `git add -A -- <files>`。完整暂存区管理、hunk 级 stage、stash、blame、rebase、cherry-pick 等能力暂不作为目标。
 
 ### 为什么 Windows 还没有完整验证？
 

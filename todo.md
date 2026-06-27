@@ -18,7 +18,8 @@
 - [x] 接入 Mac 本地 CI：`pnpm ci:quick` / `pnpm ci:full`
 - [x] 接入 Vitest 覆盖率报告与基线门禁：`pnpm test:coverage`
 - [ ] 继续收敛工作台状态与大文件结构（`workbench-page.tsx` 约 900 行，`editor-surface.tsx` 仍超过 800 行）
-- [ ] 接入真实 Git CLI 变更操作（status / diff / stage / commit / push / pull，当前为 mock）
+- [x] 接入轻量 Git CLI 工作流（status / diff / 文件版本对比 / 勾选文件提交 / commit / push / pull / branch / log）
+- [ ] 为轻量 Git 工作流补真实临时仓库集成测试（status / diff / 勾选文件提交 / push / pull / 冲突）
 - [ ] 后续补 Windows 平台验证（当前手头仅 Mac，Windows 路径 / 权限 / UI 差异待单独处理）
 
 ## Git UI / 交互改进（进行中）
@@ -47,7 +48,7 @@
 
 - [ ] 冲突视图增强（可选）：接 MergeView 做并排三方 + 直接编辑；当前为逐块取舍
 - [ ] 新建分支的 `window.prompt` 换成项目内 dialog 组件（`git-branches-pane.tsx`、`git-branch-menu.tsx`）
-- [ ] 分支关系做成可从分支行直接进入的更完整视图（当前为内联卡片）
+- [ ] 分支关系保持轻量展示，清理不必要的“完整 Git 客户端”文案和入口
 - [ ] 清理：删除已无引用的 `.git-file-row` / `.git-file-list` CSS（`GitFileRow` 已移除）、`use-git.ts` 中已不再使用的 `loadDiff`
 - [ ] 可选优化：文件树 / 分支树单链目录合并显示（`a/b/c` 折成一行，VS Code 风格）
 - [ ] 在 Windows 上 `pnpm tauri dev` 重编验证：`git_file_versions` 并排 diff、提交图连线、三模式手感（WSL 侧无法编译 Tauri）
@@ -63,7 +64,7 @@
 2. [ ] 更新项目文档
    - [x] 更新 README 中的当前完成度说明
    - [x] 标明 CodeMirror 已接入
-   - [x] 标明本地文件系统已接入、Git 操作尚未接入
+   - [x] 标明本地文件系统已接入、Git 为轻量集成而非完整客户端
    - [x] 补充环境依赖、包管理器和许可证说明
 
 3. [ ] 继续拆分工作台大组件
@@ -133,50 +134,50 @@
     - [ ] 支持查看默认快捷键
     - [ ] 检测快捷键冲突
 
-12. [ ] 接入 Git CLI 后端
-    - [ ] 通过 Rust / Tauri command 调用系统 `git`
-    - [ ] 使用参数数组执行命令，禁止拼接 shell 字符串
-    - [ ] 设置固定工作目录
-    - [ ] 捕获 stdout、stderr、退出码
-    - [ ] 处理 git 未安装、非 Git 仓库、权限不足等错误
+12. [x] 接入轻量 Git CLI 后端
+    - [x] 通过 Rust / Tauri command 调用系统 `git`
+    - [x] 使用参数数组执行命令，禁止拼接 shell 字符串
+    - [x] 设置固定工作目录
+    - [x] 捕获 stdout、stderr、退出码
+    - [x] 处理 git 未安装、非 Git 仓库、权限不足等错误
 
-13. [ ] 解析 Git 仓库信息
-    - [ ] 使用 `git rev-parse --show-toplevel` 识别仓库根目录
-    - [ ] 使用 `git branch --show-current` 显示当前分支
-    - [ ] 子目录打开时仍能找到 Git root
-    - [ ] 非 Git 目录显示清晰提示
+13. [x] 解析 Git 仓库信息
+    - [x] 使用 `git rev-parse --show-toplevel` 识别仓库根目录
+    - [x] 使用 `git branch --show-current` 显示当前分支
+    - [x] 子目录打开时仍能找到 Git root
+    - [x] 非 Git 目录显示清晰提示
 
-14. [ ] 实现 Git 状态列表
-    - [ ] 使用 `git status --porcelain=v1 -z`
-    - [ ] 区分 staged、unstaged、untracked、deleted、renamed
-    - [ ] 正确处理空格、换行和特殊字符文件名
-    - [ ] 文件状态变化后自动刷新
+14. [x] 实现轻量 Git 状态列表
+    - [x] 使用 `git status --porcelain=v2 --branch -z`
+    - [x] 显示 modified、added、deleted、renamed、untracked、conflict
+    - [x] 正确处理空格、换行和特殊字符文件名
+    - [x] 文件状态变化后自动刷新
+    - [ ] 不实现完整 staged / unstaged 双栏模型；当前采用勾选文件提交模型
 
-15. [ ] 实现 Diff 查看
-    - [ ] 支持 working tree diff
-    - [ ] 支持 staged diff
-    - [ ] 支持 unified diff 展示
-    - [ ] 处理新增文件、删除文件、重命名文件
-    - [ ] 处理二进制文件和大文件提示
+15. [x] 实现 Diff 查看
+    - [x] 支持工作区文件与 HEAD 的对比
+    - [x] 支持并排版本对比
+    - [x] 处理新增文件、删除文件、重命名文件的基础展示
+    - [ ] 补充二进制文件和大文件 diff 的明确提示
     - [ ] 支持从 diff 跳转到编辑器对应行
 
-16. [ ] 实现 Stage / Unstage
-    - [ ] 支持按文件 stage
-    - [ ] 支持按文件 unstage
-    - [ ] 支持 stage 全部
-    - [ ] 支持 unstage 全部
-    - [ ] 操作失败时展示 Git 错误信息
-    - [ ] 操作完成后刷新 Git 状态
+16. [x] 实现文件级选择性提交
+    - [x] 变更文件树支持勾选文件 / 文件夹
+    - [x] 提交前按勾选文件执行 `git add -A -- <files>`
+    - [x] 操作失败时展示 Git 错误信息
+    - [x] 操作完成后刷新 Git 状态
+    - [ ] 不实现专业 Git 客户端式完整 stage / unstage 面板
 
-17. [ ] 实现 Commit / Push / Pull
-    - [ ] 校验 commit message 不能为空
-    - [ ] 校验必须存在 staged files
-    - [ ] 执行 `git commit -m`
-    - [ ] 显示 hook、GPG、用户身份配置等错误
-    - [ ] 支持 `git push`
-    - [ ] 支持 upstream 缺失提示
-    - [ ] 支持 `git pull`
-    - [ ] pull 冲突时显示冲突状态和冲突文件
+17. [x] 实现 Commit / Push / Pull
+    - [x] 校验 commit message 不能为空
+    - [x] 校验必须勾选至少一个文件
+    - [x] 执行 `git commit -m`
+    - [x] 显示 hook、GPG、用户身份配置等错误
+    - [x] 支持 `git push`
+    - [x] 支持 upstream 缺失时尝试 `push -u origin <branch>`
+    - [x] 支持 `git pull`
+    - [x] pull 冲突时显示冲突状态和冲突文件
+    - [ ] 补充真实仓库集成测试覆盖 commit / push / pull 关键路径
 
 18. [ ] 实现本地持久化
     - [ ] 保存最近打开项目
@@ -207,7 +208,8 @@
     - [x] 添加 `test` 脚本
     - [x] 添加覆盖率脚本和基线门禁
     - [x] 添加本地 CI 脚本（Mac 当前执行环境）
-    - [ ] 为 Git 状态解析添加单元测试
+    - [x] 为 Git 状态解析添加单元测试
+    - [ ] 为 Git CLI 核心流程添加临时仓库集成测试
     - [x] 为 Rust command 添加基础测试
     - [x] 添加前端工作台冒烟测试
     - [ ] 在 Windows 机器上补充本地 CI 验证与平台差异测试
@@ -231,4 +233,6 @@
 - [ ] 暂不优先实现 minimap
 - [ ] 暂不做插件系统
 - [ ] 暂不做 hunk 级 stage
-- [ ] 暂不做可视化冲突解决器
+- [ ] 暂不做完整 stage / unstage 双栏面板
+- [ ] 暂不做 stash / blame / rebase / cherry-pick / tag / force push
+- [ ] 暂不做三方可编辑冲突解决器
