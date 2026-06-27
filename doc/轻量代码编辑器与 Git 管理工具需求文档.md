@@ -94,7 +94,7 @@
 
 ## 5.1 第一阶段：MVP
 
-第一阶段目标是完成“可用”的轻量编辑器和 Git 提交工具。
+第一阶段目标是完成“可用”的轻量编辑器，并提供简单 Git 集成。Git 能力服务于日常查看改动和提交，不追求完整 Git 客户端能力。
 
 ### 必须支持
 
@@ -109,7 +109,7 @@
 | 快捷键   | IDEA 风格常用快捷键           |
 | Git 状态 | 显示 changed files            |
 | Git Diff | 查看文件 diff                 |
-| Git 暂存 | stage / unstage 文件          |
+| Git 选择 | 勾选本次要提交的文件          |
 | Git 提交 | 输入 commit message 并 commit |
 | Git 推送 | push 当前分支                 |
 | Git 拉取 | pull 当前分支                 |
@@ -119,11 +119,12 @@
 
 | 功能                      | 说明                       |
 | ------------------------- | -------------------------- |
-| hunk 级暂存               | 第一阶段只支持按文件 stage |
-| merge conflict 可视化解决 | 第一阶段只提示冲突状态     |
+| 完整 stage / unstage 面板 | 不做专业 Git 客户端式暂存区管理 |
+| hunk 级暂存               | 不支持                         |
+| merge conflict 三方编辑器 | 第一阶段只做简单冲突块取舍     |
 | interactive rebase        | 不支持                     |
 | cherry-pick               | 不支持                     |
-| stash 高级管理            | 可延后                     |
+| stash / blame / tag 管理  | 不支持                     |
 | LSP                       | 第一阶段不接               |
 | 插件系统                  | 第一阶段不做               |
 
@@ -137,12 +138,9 @@
 | ------ | ----------------- |
 | Git    | Git log           |
 | Git    | 文件历史          |
-| Git    | blame             |
-| Git    | stash 简单操作    |
 | Git    | checkout 分支     |
 | Git    | 创建分支          |
 | Diff   | side-by-side diff |
-| Diff   | hunk 级 stage     |
 | 编辑器 | 格式化当前文件    |
 | 编辑器 | 当前文件结构跳转  |
 | 编辑器 | 最近文件          |
@@ -155,12 +153,12 @@
 
 | 模块   | 功能                  |
 | ------ | --------------------- |
-| LSP    | 可选语言服务接入      |
 | 格式化 | 多语言 formatter 管理 |
-| Git    | conflict resolver     |
-| Git    | rebase 基础支持       |
-| 扩展   | 插件机制              |
+| Git    | 冲突块处理体验增强    |
+| Git    | 提交后轻量历史视图    |
 | 工作区 | 多仓库 workspace      |
+
+第三阶段仍不包含完整 IDE 能力和专业 Git 客户端能力，例如 LSP、插件系统、rebase、cherry-pick、stash、blame、force push。
 
 ------
 
@@ -626,22 +624,23 @@ git rev-parse --abbrev-ref HEAD
 
 ### 19.1 功能要求
 
-Git 面板显示当前仓库变更文件列表。
+Git 面板显示当前仓库变更文件列表。Norn 只提供轻量提交流程：用户勾选本次要提交的文件，提交时由后端按选中文件执行 `git add -A -- <files>` 和 `git commit`。不提供专业 Git 客户端式 staged / unstaged 双栏管理。
 
 分类：
 
 | 分类      | 说明           |
 | --------- | -------------- |
-| Staged    | 已暂存         |
-| Unstaged  | 已修改但未暂存 |
-| Untracked | 未跟踪文件     |
-| Deleted   | 删除文件       |
-| Renamed   | 重命名文件     |
+| Modified  | 已修改文件 |
+| Added     | 新增文件   |
+| Deleted   | 删除文件   |
+| Renamed   | 重命名文件 |
+| Untracked | 未跟踪文件 |
+| Conflict  | 冲突文件   |
 
 ### 19.2 推荐命令
 
 ```bash
-git status --porcelain=v1 -z
+git status --porcelain=v2 --branch -z
 ```
 
 使用 `-z` 是为了更安全地处理文件名中的空格、换行和特殊字符。
@@ -652,8 +651,8 @@ git status --porcelain=v1 -z
 
 1. 文件路径
 2. 状态标记
-3. 是否已暂存
-4. 点击后打开 diff
+3. 是否勾选为本次提交内容
+4. 双击后打开 diff / 并排版本对比
 5. 右键操作菜单
 
 状态标记示例：
@@ -665,6 +664,7 @@ git status --porcelain=v1 -z
 | D    | Deleted   |
 | R    | Renamed   |
 | ??   | Untracked |
+| !    | Conflict  |
 
 ------
 
@@ -674,15 +674,12 @@ git status --porcelain=v1 -z
 
 | 类型              | 说明       | 命令                        |
 | ----------------- | ---------- | --------------------------- |
-| Working Tree Diff | 工作区改动 | `git diff -- file`          |
-| Staged Diff       | 暂存区改动 | `git diff --cached -- file` |
-| Full Diff         | 全部改动   | `git diff HEAD -- file`     |
+| 工作区对比 | 工作区文件相对 HEAD 的改动 | `git diff HEAD -- file` |
+| 历史对比   | 某次提交里文件相对父提交的改动 | `git show` / `git diff` |
 
 ### 20.2 第一阶段展示方式
 
-第一阶段至少支持 unified diff 展示。
-
-推荐后续支持 side-by-side diff。
+第一阶段支持统一 diff 解析和并排版本对比。暂不做 staged diff，因为当前产品不提供完整暂存区工作流。
 
 ### 20.3 Diff 面板要求
 
@@ -708,26 +705,26 @@ git status --porcelain=v1 -z
 
 ------
 
-## 21. Stage / Unstage
+## 21. 选择本次提交文件
 
 ### 21.1 第一阶段支持
 
-第一阶段只支持按文件 stage / unstage。
+第一阶段支持按文件或文件夹勾选本次要提交的内容。未勾选的文件不会被本次提交纳入。
 
 ### 21.2 操作
 
-| 操作         | 命令                           |
-| ------------ | ------------------------------ |
-| Stage 文件   | `git add -- file`              |
-| Stage 全部   | `git add -A`                   |
-| Unstage 文件 | `git restore --staged -- file` |
-| Unstage 全部 | `git restore --staged .`       |
+| 操作             | 说明                                      |
+| ---------------- | ----------------------------------------- |
+| 勾选文件         | 将文件纳入本次提交                         |
+| 取消勾选文件     | 本次提交忽略该文件                         |
+| 提交选中文件     | `git add -A -- <files>` 后执行 `git commit` |
+| 提交并推送       | 提交成功后执行 `git push`                  |
 
 ### 21.3 UI 要求
 
-1. 每个文件旁边有 stage / unstage 按钮
-2. 支持全部 stage
-3. 支持全部 unstage
+1. 每个文件旁边有勾选框
+2. 文件夹支持三态勾选
+3. 提交框提示本次将提交的文件数量
 4. 操作后自动刷新 Git 状态
 5. 操作失败时显示错误信息
 
@@ -737,14 +734,14 @@ git status --porcelain=v1 -z
 
 ### 22.1 功能要求
 
-用户可以在 Git 面板输入 commit message，并提交已暂存文件。
+用户可以在 Git 面板输入 commit message，并提交已勾选文件。
 
 ### 22.2 提交流程
 
 ```text
 用户输入 commit message
   -> 检查 message 是否为空
-  -> 检查是否存在 staged files
+  -> 检查是否至少勾选一个文件
   -> 执行 git commit
   -> 显示结果
   -> 刷新 Git 状态
@@ -767,7 +764,7 @@ git ["commit", "-m", message]
 | 校验             | 规则                            |
 | ---------------- | ------------------------------- |
 | 空 message       | 禁止提交                        |
-| 无 staged files  | 禁止提交                        |
+| 未勾选文件       | 禁止提交                        |
 | commit hook 失败 | 显示 hook 输出                  |
 | GPG 签名失败     | 显示 Git 错误                   |
 | 用户身份未配置   | 提示配置 user.name / user.email |
@@ -1232,8 +1229,8 @@ git config --global user.email "you@example.com"
 | AC-GIT-002 | 可以显示当前分支                  |
 | AC-GIT-003 | 可以显示 changed files            |
 | AC-GIT-004 | 可以查看单个文件 diff             |
-| AC-GIT-005 | 可以 stage 文件                   |
-| AC-GIT-006 | 可以 unstage 文件                 |
+| AC-GIT-005 | 可以勾选本次要提交的文件          |
+| AC-GIT-006 | 可以取消勾选本次不提交的文件      |
 | AC-GIT-007 | 可以输入 commit message 并 commit |
 | AC-GIT-008 | 可以 push 当前分支                |
 | AC-GIT-009 | 可以 pull 当前分支                |
@@ -1259,7 +1256,7 @@ git config --global user.email "you@example.com"
 8. 常用快捷键
 9. Git status
 10. Git diff
-11. Stage / Unstage
+11. 勾选文件提交
 12. Commit
 13. Push / Pull
 
@@ -1280,18 +1277,25 @@ git config --global user.email "you@example.com"
 
 ------
 
-## 42. v0.3 Git 增强
+## 42. v0.3 轻量 Git 与 review 增强
 
 包含：
 
 1. Git log
-2. blame
-3. stash
-4. 创建分支
-5. 切换分支增强
-6. hunk 级 stage
-7. side-by-side diff
-8. 简单冲突状态展示
+2. 文件历史
+3. 创建分支
+4. 切换分支增强
+5. side-by-side diff
+6. 简单冲突块处理
+7. 更清晰的 Git 错误提示
+
+不包含：
+
+1. hunk 级 stage
+2. stash / blame
+3. rebase / cherry-pick
+4. tag / remote 管理
+5. force push
 
 ------
 

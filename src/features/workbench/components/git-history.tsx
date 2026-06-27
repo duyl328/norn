@@ -335,6 +335,10 @@ function CommitFileTree({
           >
             <TreeIcon name={node.name} kind="file" />
             <span className="min-w-0 flex-1 truncate text-ui-md">{node.name}</span>
+            <span className="git-tree-file-stat" aria-label={`+${node.item.additions} -${node.item.deletions}`}>
+              <span className="status-additions">+{node.item.additions}</span>
+              <span className="status-deletions">-{node.item.deletions}</span>
+            </span>
             <span className={cn("git-change-status", `git-change-status-${node.item.status}`)}>
               {getChangeStatusLabel(node.item.status)}
             </span>

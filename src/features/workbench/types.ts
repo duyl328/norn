@@ -188,6 +188,8 @@ export type GitGraphCommit = GitLogCommit & { column: number };
 export type GitCommitFile = {
   path: string;
   status: GitChangeStatus;
+  additions: number;
+  deletions: number;
 };
 
 export type GitCommitRef = {
