@@ -41,7 +41,7 @@ export function useEditorTabs({ openDocuments, document, onCreateFile, viewRef }
     () =>
       openDocuments.map((openDocument) => ({
         accent: getTabAccent(openDocument.id),
-        closable: openDocuments.length > 1,
+        closable: true,
         id: openDocument.id,
         name: openDocument.name,
         dirty: isDocumentDirty(openDocument) || openDocument.isUntitled,

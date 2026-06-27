@@ -10,6 +10,15 @@ import {
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 import { type BranchTreeNode, buildBranchTree } from "../branch-tree";
@@ -60,11 +69,15 @@ export function GitBranchesPane() {
     };
   }, [localKey, gitRefreshVersion]);
 
-  const createBranch = () => {
-    const name = window.prompt(t("git.createBranchPrompt"));
-    if (name && name.trim()) {
-      void gitActions.createBranch(name.trim());
-    }
+  // window.prompt 在 Tauri 的 WKWebView 里是 no-op(直接返回 null),改用应用内对话框。
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const confirmCreate = () => {
+    const name = newName.trim();
+    if (!name) return;
+    void gitActions.createBranch(name);
+    setCreateOpen(false);
+    setNewName("");
   };
 
   return (
@@ -72,7 +85,16 @@ export function GitBranchesPane() {
       <BranchSummary />
 
       <div className="git-branches-toolbar">
-        <Button className="git-toolbar-button" size="toolbar" variant="ghost" disabled={gitBusy} onClick={createBranch}>
+        <Button
+          className="git-toolbar-button"
+          size="toolbar"
+          variant="ghost"
+          disabled={gitBusy}
+          onClick={() => {
+            setNewName("");
+            setCreateOpen(true);
+          }}
+        >
           <GitBranchPlus className="h-3.5 w-3.5" />
           {t("git.newBranch")}
         </Button>
@@ -121,6 +143,31 @@ export function GitBranchesPane() {
           />
         </>
       ) : null}
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("git.newBranch")}</DialogTitle>
+            <DialogDescription>{t("git.createBranchPrompt")}</DialogDescription>
+          </DialogHeader>
+          <Input
+            autoFocus
+            value={newName}
+            onChange={(event) => setNewName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") confirmCreate();
+            }}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={confirmCreate} disabled={!newName.trim()}>
+              {t("common.create")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
