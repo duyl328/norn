@@ -28,6 +28,7 @@ import {
 import { foldHoverHighlight } from "./editor-fold-hover";
 import { createSmartOverlayExtension } from "./editor-highlighting";
 import { indentFoldService } from "./editor-indent-fold";
+import { pinnedLineExtension, pinnedLineNumberHandlers } from "./editor-pinned-line";
 import { createEditorSearchPanel } from "./editor-search-panel";
 import type { WorkbenchDocument } from "./types";
 
@@ -114,7 +115,8 @@ export const createCodeMirrorExtensions = (
   tabSize: number,
 ): Extension[] => [
   tabSizeCompartment.of(tabSizeExtension(tabSize)),
-  lineNumbers(),
+  lineNumbers({ domEventHandlers: pinnedLineNumberHandlers }),
+  pinnedLineExtension,
   highlightActiveLineGutter(),
   history(),
   drawSelection(),

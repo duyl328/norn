@@ -3678,6 +3678,23 @@
     text-align: right;
   }
 
+  .codemirror-shell .cm-lineNumbers {
+    user-select: none;
+  }
+
+  .codemirror-shell .cm-lineNumbers .cm-gutterElement {
+    cursor: pointer;
+  }
+
+  .codemirror-shell .cm-pinnedLine {
+    background-color: hsl(var(--primary) / 0.12);
+  }
+
+  .codemirror-shell .cm-pinnedLineGutter {
+    background-color: hsl(var(--primary) / 0.18);
+    color: hsl(var(--foreground));
+  }
+
   /* 折叠�?箭头平时淡出,移到 gutter 上才显眼(IDEA �?;占位符做成小胶囊�?*/
   .codemirror-shell .cm-foldGutter .cm-gutterElement {
     min-width: 0;
