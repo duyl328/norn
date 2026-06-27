@@ -4,6 +4,7 @@ import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { MacTitlebar } from "@/features/workbench/components/titlebar";
+import { I18nProvider } from "@/features/workbench/i18n-provider";
 
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
@@ -16,18 +17,20 @@ vi.mock("@tauri-apps/api/window", () => ({
 
 const renderMacTitlebar = (rightPanelOpen = true) =>
   render(
-    <MacTitlebar
-      gitBadgeCount={3}
-      leftPanelOpen
-      leftPanelWidth={260}
-      onCloseSearch={() => {}}
-      onOpenSearch={() => {}}
-      onToggleLeftPanel={() => {}}
-      onToggleRightPanel={() => {}}
-      rightPanelOpen={rightPanelOpen}
-      rightPanelWidth={320}
-      searchOpen={false}
-    />,
+    <I18nProvider>
+      <MacTitlebar
+        gitBadgeCount={3}
+        leftPanelOpen
+        leftPanelWidth={260}
+        onCloseSearch={() => {}}
+        onOpenSearch={() => {}}
+        onToggleLeftPanel={() => {}}
+        onToggleRightPanel={() => {}}
+        rightPanelOpen={rightPanelOpen}
+        rightPanelWidth={320}
+        searchOpen={false}
+      />
+    </I18nProvider>,
   );
 
 describe("MacTitlebar", () => {
