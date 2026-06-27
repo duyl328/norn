@@ -91,7 +91,12 @@
 
 .platform-windows .git-panel-shell {
   border: var(--workspace-panel-border);
-  border-radius: 10px;
+  border-radius: 8px;
+}
+
+.platform-windows .git-panel-stack {
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
 }
 
 .platform-windows .right-task-panel-header {
@@ -107,7 +112,8 @@
    灰底,去掉顶部分隔线,并降低高度(原 22px → 更矮,底部更省空间)。
    设置按钮同步缩小,避免比状态栏还高。 */
 .platform-windows .status-bar {
-  background: hsl(var(--muted));
+  /* 与左侧文件树同色(editor-background),底部与左侧连成一体。 */
+  background: hsl(var(--editor-background));
   border-top: 0;
   height: 17px;
 }

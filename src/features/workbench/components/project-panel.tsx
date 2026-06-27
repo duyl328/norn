@@ -1,4 +1,4 @@
-import { ChevronDown, FolderOpen } from "lucide-react";
+import { ChevronDown, FolderOpen, Settings } from "lucide-react";
 import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
+import { isMac } from "../platform";
 import type {
   FileTreeClipboard,
   FileTreeContextMenuState,
@@ -59,6 +60,7 @@ export function ProjectPanel({
   onDropTargetChange,
   onOpenFolder,
   onOpenRecentFolder,
+  onOpenSettings,
   onOpenTreeFile,
   onSelectTreeNode,
   onTreeKeyDown,
@@ -101,6 +103,7 @@ export function ProjectPanel({
   onDropTargetChange: (target: TreeDropTarget | null) => void;
   onOpenFolder: () => void;
   onOpenRecentFolder: (path: string) => void;
+  onOpenSettings: () => void;
   onOpenTreeFile: (node: FileTreeNode) => void;
   onSelectTreeNode: (node: FileTreeNode, modifiers: TreeSelectionModifiers, scope: "main" | "scratch") => void;
   onTreeKeyDown: (scope: "main" | "scratch", event: ReactKeyboardEvent) => void;
@@ -277,7 +280,20 @@ export function ProjectPanel({
           onToggleRootDirectory={onToggleScratchRootDirectory}
         />
       </div>
+      {/* mac:菜单栏在系统顶栏、不便操作设置,故在左栏底部保留入口。Windows 顶部已有菜单,去掉避免重复违和。 */}
+      {isMac() ? <ProjectPanelFooter onOpenSettings={onOpenSettings} /> : null}
     </aside>
+  );
+}
+
+export function ProjectPanelFooter({ onOpenSettings }: { onOpenSettings: () => void }) {
+  return (
+    <div className="project-panel-footer">
+      <button className="project-panel-action-button" type="button" onClick={onOpenSettings}>
+        <Settings className="h-[18px] w-[18px] shrink-0" />
+        <span className="truncate">Settings</span>
+      </button>
+    </div>
   );
 }
 export function ProjectPanelStart({

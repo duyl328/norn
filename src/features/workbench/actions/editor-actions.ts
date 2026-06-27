@@ -2,8 +2,8 @@ import { closeBracketsKeymap } from "@codemirror/autocomplete";
 import {
   copyLineDown,
   copyLineUp,
-  deleteLine,
   defaultKeymap,
+  deleteLine,
   historyKeymap,
   indentLess,
   indentMore,
@@ -25,12 +25,28 @@ import {
   selectSelectionMatches,
 } from "@codemirror/search";
 import type { Extension } from "@codemirror/state";
-import { type Command, keymap, type KeyBinding } from "@codemirror/view";
+import { type Command, type KeyBinding, keymap } from "@codemirror/view";
 
-import { getActiveEditorView } from "./active-editor";
 import { expandSelection, shrinkSelection, unselectLastOccurrence } from "../editor-commands";
 import { openFind, openReplace } from "../editor-search-panel";
+import { formatText } from "../formatter";
+import { useWorkbenchStore } from "../store/workbench-store";
+import { getFileExtension } from "../workbench-utils";
+import { getActiveEditorView } from "./active-editor";
 import type { Action, ActionCategory } from "./types";
+
+/** 整理当前文档:按扩展名选策略(JSON / 括号重排 / 空白整理),整段替换并把光标留在原行。 */
+const formatDocument: Command = (view) => {
+  const ext = getFileExtension(useWorkbenchStore.getState().document.path);
+  const src = view.state.doc.toString();
+  const next = formatText(src, ext);
+  if (next === src) return false;
+  const line = view.state.doc.lineAt(view.state.selection.main.head).number;
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next } });
+  const target = view.state.doc.line(Math.min(line, view.state.doc.lines));
+  view.dispatch({ selection: { anchor: target.from }, scrollIntoView: true });
+  return true;
+};
 
 interface EditorActionDef {
   id: string;
@@ -134,6 +150,13 @@ export const EDITOR_ACTIONS: readonly EditorActionDef[] = [
   { id: "editor.selectLine", title: "Select Line", category: "Edit", keys: ["Alt+L"], command: selectLine },
   { id: "editor.foldAll", title: "Fold All", category: "Edit", keys: ["Ctrl+Alt+["], command: foldAll },
   { id: "editor.unfoldAll", title: "Unfold All", category: "Edit", keys: ["Ctrl+Alt+]"], command: unfoldAll },
+  {
+    id: "editor.format",
+    title: "Reformat / Tidy File",
+    category: "Edit",
+    keys: ["Mod+Alt+L"],
+    command: formatDocument,
+  },
 ];
 
 /**

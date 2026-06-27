@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 
 import { setActiveEditorView } from "../actions/active-editor";
 import { buildEditorKeymapExtension } from "../actions/editor-actions";
-import { createCodeMirrorExtensions } from "../codemirror-setup";
+import { createCodeMirrorExtensions, tabSizeExtension } from "../codemirror-setup";
 import { EDITOR_SCROLLBAR_SIZE, emptyEditorScrollMetrics } from "../constants";
 import {
   FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES,
@@ -27,7 +27,6 @@ import {
 } from "../workbench-utils";
 import { ConflictResolverView } from "./conflict-resolver-view";
 import { DiffView } from "./diff-view";
-import { MergeDiffView } from "./merge-diff-view";
 import { TabFoldStack } from "./titlebar";
 
 // 标签被相邻更高层标签遮挡超过该比例(%)才算「真正进入折叠」,显示堆叠边框;
@@ -60,9 +59,11 @@ export function EditorSurface({
   const languageCompartmentRef = useRef(new Compartment());
   const keymapCompartmentRef = useRef(new Compartment());
   const lineWrapCompartmentRef = useRef(new Compartment());
+  const tabSizeCompartmentRef = useRef(new Compartment());
   const keymapOverrides = useWorkbenchStore((state) => state.keymapOverrides);
   const keymapOverridesRef = useRef(keymapOverrides);
   const lineWrapping = useWorkbenchStore((state) => state.editorLineWrapping);
+  const tabSize = useWorkbenchStore((state) => state.editorTabSize);
   const dragRef = useRef<{
     maxScroll: number;
     orientation: EditorScrollbarOrientation;
@@ -118,6 +119,7 @@ export function EditorSurface({
         extensions: createCodeMirrorExtensions(
           languageCompartmentRef.current,
           lineWrapCompartmentRef.current,
+          tabSizeCompartmentRef.current,
           document,
           (content) => {
             if (!suppressChangeRef.current) {
@@ -126,6 +128,7 @@ export function EditorSurface({
           },
           keymapCompartmentRef.current.of(buildEditorKeymapExtension(keymapOverridesRef.current)),
           useWorkbenchStore.getState().editorLineWrapping,
+          useWorkbenchStore.getState().editorTabSize,
         ),
       }),
     });
@@ -289,6 +292,13 @@ export function EditorSurface({
     view.focus();
     setPendingReveal(null);
   }, [pendingReveal, document.path, document.content, setPendingReveal]);
+
+  // 设置里改 Tab 宽度时同理:只重配置 compartment。
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: tabSizeCompartmentRef.current.reconfigure(tabSizeExtension(tabSize)),
+    });
+  }, [tabSize]);
 
   const setScrollPosition = (orientation: EditorScrollbarOrientation, value: number) => {
     const scrollDOM = scrollDOMRef.current;
@@ -469,7 +479,13 @@ export function EditorSurface({
                       }
                     }}
                   >
-                    <img alt="" aria-hidden="true" className="editor-file-tab-icon" draggable={false} src={tabIcon.src} />
+                    <img
+                      alt=""
+                      aria-hidden="true"
+                      className="editor-file-tab-icon"
+                      draggable={false}
+                      src={tabIcon.src}
+                    />
                     <span className="truncate">{tab.name}</span>
                     <span
                       className={cn("editor-file-tab-trailing", hideCloseButton && "editor-file-tab-trailing-hidden")}
@@ -532,22 +548,12 @@ export function EditorSurface({
         </div>
       ) : null}
       {document.mode === "diff" ? (
-        <div className="diff-view-frame min-h-0 flex-1 overflow-auto">
+        <div className="diff-view-frame min-h-0 flex-1">
           {document.conflict && document.diff ? (
-            <ConflictResolverView
-              filePath={document.path.replace(/^diff:\/\//, "")}
-              text={document.diff.modified}
-            />
+            <ConflictResolverView filePath={document.path.replace(/^diff:\/\//, "")} text={document.diff.modified} />
           ) : document.diff ? (
-            <MergeDiffView
-              filePath={document.path.replace(/^diff:\/\//, "")}
-              name={document.name}
-              original={document.diff.original}
-              modified={document.diff.modified}
-            />
-          ) : (
-            <DiffView text={document.content} />
-          )}
+            <DiffView name={document.name} original={document.diff.original} modified={document.diff.modified} />
+          ) : null}
         </div>
       ) : (
         <>

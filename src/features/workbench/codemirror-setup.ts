@@ -6,6 +6,7 @@ import {
   defaultHighlightStyle,
   foldGutter,
   indentOnInput,
+  indentUnit,
   syntaxHighlighting,
 } from "@codemirror/language";
 import { highlightSelectionMatches, search } from "@codemirror/search";
@@ -35,6 +36,8 @@ export const codeMirrorTheme = EditorView.theme({
     height: "100%",
     backgroundColor: "hsl(var(--editor-background))",
     color: "hsl(var(--foreground))",
+    // 字号走 CSS 变量,设置里改字号时由 use-settings-runtime 更新,无需重建编辑器。
+    fontSize: "var(--editor-font-size, 13px)",
   },
   "&.cm-focused": {
     outline: "none",
@@ -94,14 +97,23 @@ export const codeMirrorTheme = EditorView.theme({
  * - 纯编辑原语(光标/退格/撤销)也在该扩展里(standardKeymap/historyKeymap)。
  * 因此这里只接收一个已装配好的 keymap 扩展。
  */
+/** Tab 宽度 + 缩进单位:走 compartment,可在不重建编辑器的前提下随设置改。 */
+export const tabSizeExtension = (tabSize: number): Extension => [
+  EditorState.tabSize.of(tabSize),
+  indentUnit.of(" ".repeat(tabSize)),
+];
+
 export const createCodeMirrorExtensions = (
   languageCompartment: Compartment,
   lineWrappingCompartment: Compartment,
+  tabSizeCompartment: Compartment,
   document: WorkbenchDocument,
   onChange: (content: string) => void,
   keymapExtension: Extension,
   lineWrapping: boolean,
+  tabSize: number,
 ): Extension[] => [
+  tabSizeCompartment.of(tabSizeExtension(tabSize)),
   lineNumbers(),
   highlightActiveLineGutter(),
   history(),

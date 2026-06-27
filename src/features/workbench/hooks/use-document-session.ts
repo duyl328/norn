@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useRef } from "react";
 
+import { getActiveEditorView } from "../actions/active-editor";
 import { hasConflictMarkers } from "../conflict-parse";
 import {
   LARGE_FILE_CHUNK_BYTES,
@@ -10,6 +11,7 @@ import {
   SUPER_LARGE_FILE_BYTES,
   workspaceFsChangeEvent,
 } from "../constants";
+import { formatText } from "../formatter";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type {
   NativeDirectoryEntry,
@@ -25,6 +27,7 @@ import {
   arePathsEqual,
   createUntitledDocument,
   formatFileSize,
+  getFileExtension,
   getFileOpenId,
   getNativeSaveError,
   getParentPath,
@@ -334,7 +337,16 @@ export function useDocumentSession() {
       return null;
     }
 
-    const content = document.content;
+    // 保存时整理(formatOnSave):按文件类型就地整理,并同步进编辑器,使显示与落盘一致。
+    let content = document.content;
+    if (useWorkbenchStore.getState().editorFormatOnSave) {
+      const formatted = formatText(content, getFileExtension(document.path));
+      if (formatted !== content) {
+        content = formatted;
+        const view = getActiveEditorView();
+        view?.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: formatted } });
+      }
+    }
     setSaveState("saving");
     setFileError(null);
 

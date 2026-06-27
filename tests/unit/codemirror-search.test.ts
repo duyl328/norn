@@ -37,10 +37,12 @@ const mount = (document: WorkbenchDocument) => {
       extensions: createCodeMirrorExtensions(
         new Compartment(),
         new Compartment(),
+        new Compartment(),
         document,
         () => {},
         buildEditorKeymapExtension({}),
         false,
+        2,
       ),
     }),
   });

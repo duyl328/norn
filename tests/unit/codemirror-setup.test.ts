@@ -1,8 +1,8 @@
 import { Compartment } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
 
-import { codeMirrorTheme, createCodeMirrorExtensions } from "@/features/workbench/codemirror-setup";
 import { buildEditorKeymapExtension } from "@/features/workbench/actions/editor-actions";
+import { codeMirrorTheme, createCodeMirrorExtensions } from "@/features/workbench/codemirror-setup";
 import type { WorkbenchDocument } from "@/features/workbench/types";
 
 const doc = (overrides: Partial<WorkbenchDocument> = {}): WorkbenchDocument => ({
@@ -20,10 +20,12 @@ describe("createCodeMirrorExtensions", () => {
     const extensions = createCodeMirrorExtensions(
       new Compartment(),
       new Compartment(),
+      new Compartment(),
       doc(),
       () => {},
       buildEditorKeymapExtension({}),
       false,
+      2,
     );
     expect(Array.isArray(extensions)).toBe(true);
     expect(extensions.length).toBeGreaterThan(0);
@@ -33,10 +35,12 @@ describe("createCodeMirrorExtensions", () => {
     const extensions = createCodeMirrorExtensions(
       new Compartment(),
       new Compartment(),
+      new Compartment(),
       doc({ mode: "large-readonly" }),
       () => {},
       buildEditorKeymapExtension({}),
       false,
+      2,
     );
     expect(extensions.length).toBeGreaterThan(0);
   });

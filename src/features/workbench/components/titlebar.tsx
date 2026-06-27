@@ -319,7 +319,13 @@ export function MacTitlebar({
       <div className="mac-titlebar-search">
         <TopSearchButton className="mac-titlebar-search-button" onClick={onOpenSearch} />
       </div>
-      <div className="mac-titlebar-side mac-titlebar-side-right" data-tauri-drag-region>
+      <div
+        className={cn(
+          "mac-titlebar-side mac-titlebar-side-right",
+          rightPanelOpen && "mac-titlebar-side-right-passthrough",
+        )}
+        data-tauri-drag-region
+      >
         <PanelToggleButton
           className="titlebar-panel-button mac-panel-toggle-button"
           label={rightPanelOpen ? "Hide Git panel" : "Show Git panel"}
@@ -386,9 +392,19 @@ export function SidebarPanelIcon({ side }: { side: "left" | "right" }) {
       aria-hidden="true"
       focusable="false"
     >
-      <rect x="1" y="1" width="22" height="22" rx="6" fill="#F3F6E6" />
-      <rect x="4" y="4" width="16" height="16" rx="3.4" stroke="#7E847A" strokeWidth="1.4" fill="none" />
-      <rect x="6.75" y="7.4" width="2.05" height="9" rx="1.02" fill="#7B8178" />
+      {/* 颜色走 CSS(主题 token),否则 SVG 属性里的固定色不会随明暗切换。见 styles.css。 */}
+      <rect className="sidebar-panel-svg-bg" x="1" y="1" width="22" height="22" rx="6" />
+      <rect
+        className="sidebar-panel-svg-frame"
+        x="4"
+        y="4"
+        width="16"
+        height="16"
+        rx="3.4"
+        strokeWidth="1.4"
+        fill="none"
+      />
+      <rect className="sidebar-panel-svg-bar" x="6.75" y="7.4" width="2.05" height="9" rx="1.02" />
     </svg>
   );
 }
