@@ -418,8 +418,9 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
     viewFileAt(path, hit?.line ?? 1, hit ? firstMatchColumn(hit.text, previewRegex) : 0);
   };
 
-  // 拖动停靠卡片:按住头部移动。
+  // 拖动停靠卡片:按住头部移动。点头部里的按钮(折叠/关闭)不触发拖动,否则指针捕获会吞掉按钮点击。
   const onDockDragStart = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest("button")) return;
     const rect = panelRef.current?.getBoundingClientRect();
     if (!rect) return;
     dragOffsetRef.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -444,7 +445,9 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
   };
   const onDockDragEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
     dragOffsetRef.current = null;
-    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   };
 
   const applyHistoryItem = (value: string) => {
@@ -556,84 +559,76 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
-        {showBody ? (
-          <>
-            <div className="windows-quick-search-input-wrap">
-              <Search className="windows-quick-search-input-icon" aria-hidden="true" />
-              <input
-                className="windows-quick-search-input"
-                autoFocus
-                ref={inputRef}
-                value={query}
-                placeholder={mode === "files" ? "Search files by name" : "Search text in folder"}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    onClose();
-                    return;
-                  }
+        <div className={cn("windows-quick-search-input-wrap", !showBody && "hidden")}>
+          <Search className="windows-quick-search-input-icon" aria-hidden="true" />
+          <input
+            className="windows-quick-search-input"
+            autoFocus
+            ref={inputRef}
+            value={query}
+            placeholder={mode === "files" ? "Search files by name" : "Search text in folder"}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                onClose();
+                return;
+              }
 
-                  // 文本模式:上下键在左侧文件列表里移动选中项。
-                  if (
-                    mode === "text" &&
-                    (event.key === "ArrowDown" || event.key === "ArrowUp") &&
-                    groupPaths.length > 0
-                  ) {
-                    event.preventDefault();
-                    const index = effectiveSelected ? groupPaths.indexOf(effectiveSelected) : -1;
-                    const next =
-                      event.key === "ArrowDown" ? Math.min(index + 1, groupPaths.length - 1) : Math.max(index - 1, 0);
-                    setSelectedPath(groupPaths[next]);
-                    return;
-                  }
+              // 文本模式:上下键在左侧文件列表里移动选中项。
+              if (mode === "text" && (event.key === "ArrowDown" || event.key === "ArrowUp") && groupPaths.length > 0) {
+                event.preventDefault();
+                const index = effectiveSelected ? groupPaths.indexOf(effectiveSelected) : -1;
+                const next =
+                  event.key === "ArrowDown" ? Math.min(index + 1, groupPaths.length - 1) : Math.max(index - 1, 0);
+                setSelectedPath(groupPaths[next]);
+                return;
+              }
 
-                  if (event.key === "Enter" && trimmedQuery) {
-                    event.preventDefault();
-                    if (mode === "text") {
-                      // 文本模式回车 = 开始查看:打开到编辑器 + 停靠右侧(预览自动滚到当前命中)。
-                      if (effectiveSelected) viewFile(effectiveSelected);
-                    } else if (fileResults[0]) {
-                      quickOpen(fileResults[0].path);
-                    } else {
-                      commitHistory(trimmedQuery);
-                    }
-                  }
-                }}
-              />
-              {mode === "text" ? (
-                <div className="windows-quick-search-flags">
-                  <button
-                    type="button"
-                    title="Match case"
-                    aria-pressed={caseSensitive}
-                    className={cn("windows-quick-search-flag", caseSensitive && "windows-quick-search-flag-on")}
-                    onClick={() => setCaseSensitive((value) => !value)}
-                  >
-                    <CaseSensitive className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    title="Match whole word"
-                    aria-pressed={wholeWord}
-                    className={cn("windows-quick-search-flag", wholeWord && "windows-quick-search-flag-on")}
-                    onClick={() => setWholeWord((value) => !value)}
-                  >
-                    <WholeWord className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    title="Use regular expression"
-                    aria-pressed={useRegex}
-                    className={cn("windows-quick-search-flag", useRegex && "windows-quick-search-flag-on")}
-                    onClick={() => setUseRegex((value) => !value)}
-                  >
-                    <Regex className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ) : null}
+              if (event.key === "Enter" && trimmedQuery) {
+                event.preventDefault();
+                if (mode === "text") {
+                  // 文本模式回车 = 开始查看:打开到编辑器 + 停靠右侧(预览自动滚到当前命中)。
+                  if (effectiveSelected) viewFile(effectiveSelected);
+                } else if (fileResults[0]) {
+                  quickOpen(fileResults[0].path);
+                } else {
+                  commitHistory(trimmedQuery);
+                }
+              }
+            }}
+          />
+          {mode === "text" ? (
+            <div className="windows-quick-search-flags">
+              <button
+                type="button"
+                title="Match case"
+                aria-pressed={caseSensitive}
+                className={cn("windows-quick-search-flag", caseSensitive && "windows-quick-search-flag-on")}
+                onClick={() => setCaseSensitive((value) => !value)}
+              >
+                <CaseSensitive className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                title="Match whole word"
+                aria-pressed={wholeWord}
+                className={cn("windows-quick-search-flag", wholeWord && "windows-quick-search-flag-on")}
+                onClick={() => setWholeWord((value) => !value)}
+              >
+                <WholeWord className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                title="Use regular expression"
+                aria-pressed={useRegex}
+                className={cn("windows-quick-search-flag", useRegex && "windows-quick-search-flag-on")}
+                onClick={() => setUseRegex((value) => !value)}
+              >
+                <Regex className="h-3.5 w-3.5" />
+              </button>
             </div>
-          </>
-        ) : null}
+          ) : null}
+        </div>
 
         {!docked && quickSearchHistory.length > 0 ? (
           <section className="windows-quick-search-section" aria-label="Search history">
@@ -674,125 +669,125 @@ function QuickSearchDialog({ onClose }: { onClose: () => void }) {
           </section>
         ) : null}
 
-        {showBody ? (
-          <div
-            className={cn("windows-quick-search-results", showTextSplit && "windows-quick-search-results-split")}
-            aria-label="Search results"
-          >
-            {error ? <div className="windows-quick-search-empty">{error}</div> : null}
-            {needsFolderForText ? (
-              <div className="windows-quick-search-empty">Open a folder to search its contents</div>
-            ) : mode === "files" ? (
-              trimmedQuery ? (
-                fileResults.length > 0 ? (
-                  fileResults.map((result) => (
+        <div
+          className={cn(
+            "windows-quick-search-results",
+            showTextSplit && "windows-quick-search-results-split",
+            !showBody && "hidden",
+          )}
+          aria-label="Search results"
+        >
+          {error ? <div className="windows-quick-search-empty">{error}</div> : null}
+          {needsFolderForText ? (
+            <div className="windows-quick-search-empty">Open a folder to search its contents</div>
+          ) : mode === "files" ? (
+            trimmedQuery ? (
+              fileResults.length > 0 ? (
+                fileResults.map((result) => (
+                  <button
+                    className="windows-quick-search-result"
+                    type="button"
+                    key={result.path}
+                    onClick={() => quickOpen(result.path)}
+                  >
+                    <FileText className="h-3.5 w-3.5 shrink-0" />
+                    <span className="windows-quick-search-result-text">
+                      <span className="windows-quick-search-result-label">{result.label}</span>
+                      <span className="windows-quick-search-result-detail">
+                        {fuzzyHighlight(result.detail, normalizedQuery)}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <div className="windows-quick-search-empty">No files match</div>
+              )
+            ) : quickSearchHistory.length === 0 ? (
+              <div className="windows-quick-search-empty">Type to search files</div>
+            ) : null
+          ) : !trimmedQuery ? (
+            <div className="windows-quick-search-empty">Type to search file contents</div>
+          ) : busy ? (
+            <div className="windows-quick-search-empty">Searching…</div>
+          ) : textGroups.length > 0 ? (
+            <div className={cn("windows-quick-search-split", docked && "windows-quick-search-split-docked")}>
+              <div className="windows-quick-search-file-list" role="listbox" aria-label="Matched files">
+                <MatchTree
+                  collapsed={collapsedDirs}
+                  nodes={matchTree}
+                  onOpenFile={viewFile}
+                  onSelect={setSelectedPath}
+                  onToggle={toggleDir}
+                  selectedPath={effectiveSelected}
+                />
+              </div>
+              <div className="windows-quick-search-preview-pane">
+                {effectiveSelected && selectedHits.length > 0 ? (
+                  <div className="windows-quick-search-preview-bar">
+                    <span className="windows-quick-search-preview-bar-title">{baseName(effectiveSelected)}</span>
+                    <span className="windows-quick-search-preview-bar-count">
+                      {currentMatchIndex + 1}/{selectedHits.length}
+                    </span>
                     <button
-                      className="windows-quick-search-result"
                       type="button"
-                      key={result.path}
-                      onClick={() => quickOpen(result.path)}
+                      className="windows-quick-search-icon-button"
+                      title="Previous match"
+                      aria-label="Previous match"
+                      disabled={selectedHits.length < 2}
+                      onClick={() => gotoMatch(-1)}
                     >
-                      <FileText className="h-3.5 w-3.5 shrink-0" />
-                      <span className="windows-quick-search-result-text">
-                        <span className="windows-quick-search-result-label">{result.label}</span>
-                        <span className="windows-quick-search-result-detail">
-                          {fuzzyHighlight(result.detail, normalizedQuery)}
-                        </span>
-                      </span>
+                      <ChevronUp className="h-3.5 w-3.5" />
                     </button>
-                  ))
-                ) : (
-                  <div className="windows-quick-search-empty">No files match</div>
-                )
-              ) : quickSearchHistory.length === 0 ? (
-                <div className="windows-quick-search-empty">Type to search files</div>
-              ) : null
-            ) : !trimmedQuery ? (
-              <div className="windows-quick-search-empty">Type to search file contents</div>
-            ) : busy ? (
-              <div className="windows-quick-search-empty">Searching…</div>
-            ) : textGroups.length > 0 ? (
-              <div className={cn("windows-quick-search-split", docked && "windows-quick-search-split-docked")}>
-                <div className="windows-quick-search-file-list" role="listbox" aria-label="Matched files">
-                  <MatchTree
-                    collapsed={collapsedDirs}
-                    nodes={matchTree}
-                    onOpenFile={viewFile}
-                    onSelect={setSelectedPath}
-                    onToggle={toggleDir}
-                    selectedPath={effectiveSelected}
-                  />
-                </div>
-                <div className="windows-quick-search-preview-pane">
-                  {effectiveSelected && selectedHits.length > 0 ? (
-                    <div className="windows-quick-search-preview-bar">
-                      <span className="windows-quick-search-preview-bar-title">{baseName(effectiveSelected)}</span>
-                      <span className="windows-quick-search-preview-bar-count">
-                        {currentMatchIndex + 1}/{selectedHits.length}
-                      </span>
-                      <button
-                        type="button"
-                        className="windows-quick-search-icon-button"
-                        title="Previous match"
-                        aria-label="Previous match"
-                        disabled={selectedHits.length < 2}
-                        onClick={() => gotoMatch(-1)}
-                      >
-                        <ChevronUp className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        className="windows-quick-search-icon-button"
-                        title="Next match"
-                        aria-label="Next match"
-                        disabled={selectedHits.length < 2}
-                        onClick={() => gotoMatch(1)}
-                      >
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ) : null}
-                  <div className="windows-quick-search-preview" ref={previewRef}>
-                    {effectiveSelected && preview?.path === effectiveSelected ? (
-                      preview.content
-                        .split("\n")
-                        .slice(0, PREVIEW_LINE_CAP)
-                        .map((line, index) => {
-                          const lineNo = index + 1;
-                          const isMatch = matchLineSet.has(lineNo);
-                          return (
-                            <div
-                              key={lineNo}
-                              data-line={lineNo}
-                              className={cn(
-                                "windows-quick-search-preview-line",
-                                isMatch && "windows-quick-search-preview-line-match",
-                                lineNo === currentMatchLine && "windows-quick-search-preview-line-current",
-                              )}
-                              onClick={() =>
-                                viewFileAt(effectiveSelected, lineNo, firstMatchColumn(line, previewRegex))
-                              }
-                            >
-                              <span className="windows-quick-search-preview-lineno">{lineNo}</span>
-                              <span className="windows-quick-search-preview-code">
-                                {isMatch ? renderHighlighted(line, previewRegex) : line || " "}
-                              </span>
-                            </div>
-                          );
-                        })
-                    ) : previewErrorPath === effectiveSelected ? (
-                      <div className="windows-quick-search-empty">Unable to preview file</div>
-                    ) : (
-                      <div className="windows-quick-search-empty">Loading…</div>
-                    )}
+                    <button
+                      type="button"
+                      className="windows-quick-search-icon-button"
+                      title="Next match"
+                      aria-label="Next match"
+                      disabled={selectedHits.length < 2}
+                      onClick={() => gotoMatch(1)}
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
                   </div>
+                ) : null}
+                <div className="windows-quick-search-preview" ref={previewRef}>
+                  {effectiveSelected && preview?.path === effectiveSelected ? (
+                    preview.content
+                      .split("\n")
+                      .slice(0, PREVIEW_LINE_CAP)
+                      .map((line, index) => {
+                        const lineNo = index + 1;
+                        const isMatch = matchLineSet.has(lineNo);
+                        return (
+                          <div
+                            key={lineNo}
+                            data-line={lineNo}
+                            className={cn(
+                              "windows-quick-search-preview-line",
+                              isMatch && "windows-quick-search-preview-line-match",
+                              lineNo === currentMatchLine && "windows-quick-search-preview-line-current",
+                            )}
+                            onClick={() => viewFileAt(effectiveSelected, lineNo, firstMatchColumn(line, previewRegex))}
+                          >
+                            <span className="windows-quick-search-preview-lineno">{lineNo}</span>
+                            <span className="windows-quick-search-preview-code">
+                              {isMatch ? renderHighlighted(line, previewRegex) : line || " "}
+                            </span>
+                          </div>
+                        );
+                      })
+                  ) : previewErrorPath === effectiveSelected ? (
+                    <div className="windows-quick-search-empty">Unable to preview file</div>
+                  ) : (
+                    <div className="windows-quick-search-empty">Loading…</div>
+                  )}
                 </div>
               </div>
-            ) : (
-              <div className="windows-quick-search-empty">No matches</div>
-            )}
-          </div>
-        ) : null}
+            </div>
+          ) : (
+            <div className="windows-quick-search-empty">No matches</div>
+          )}
+        </div>
 
         {docked ? null : (
           <button className="windows-quick-search-close" type="button" onClick={onClose}>
