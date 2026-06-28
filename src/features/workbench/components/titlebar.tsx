@@ -391,6 +391,7 @@ export function PanelToggleButton({
     <button
       className={cn("panel-toggle-button", className, open && "panel-toggle-button-active")}
       type="button"
+      data-tour={`panel-${side}`}
       aria-label={label}
       title={label}
       aria-pressed={open}
@@ -505,7 +506,7 @@ export function TopSearchButton({ className, onClick }: { className: string; onC
   const { t } = useI18n();
 
   return (
-    <button className={className} type="button" onClick={onClick}>
+    <button className={className} type="button" data-tour="search" onClick={onClick}>
       <Search className="h-3.5 w-3.5 shrink-0" />
       <span className="truncate">{t("titlebar.searchPlaceholder")}</span>
     </button>
