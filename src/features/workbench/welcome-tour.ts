@@ -1,6 +1,4 @@
-import "driver.js/dist/driver.css";
-
-import { type Config, driver, type DriveStep } from "driver.js";
+import { type Config, type DriveStep } from "driver.js";
 
 import { formatKey } from "./actions/registry";
 import { translate } from "./i18n-dictionaries";
@@ -13,8 +11,7 @@ import { markWelcomeSeen } from "./welcome";
  * 兼容 mac/Windows 标题栏差异与「面板收起」等状态。
  */
 export function startWelcomeTour(language: AppLanguage): void {
-  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string>) =>
-    translate(language, key, params);
+  const t = (key: Parameters<typeof translate>[1], params?: Record<string, string>) => translate(language, key, params);
   const k = (spec: string) => formatKey(spec);
 
   const steps: DriveStep[] = [
@@ -48,9 +45,7 @@ export function startWelcomeTour(language: AppLanguage): void {
   ];
 
   // 元素步骤若目标不在 DOM(平台差异/面板收起)就丢弃,避免空高亮。
-  const present = steps.filter(
-    (step) => !step.element || document.querySelector(step.element as string),
-  );
+  const present = steps.filter((step) => !step.element || document.querySelector(step.element as string));
 
   const config: Config = {
     steps: present,
@@ -67,5 +62,9 @@ export function startWelcomeTour(language: AppLanguage): void {
     onDestroyed: () => markWelcomeSeen(),
   };
 
-  driver(config).drive();
+  // 引导是低频首启功能：driver.js 及其 CSS 按需动态加载，不进首屏关键包。
+  void (async () => {
+    const [{ driver }] = await Promise.all([import("driver.js"), import("driver.js/dist/driver.css")]);
+    driver(config).drive();
+  })();
 }

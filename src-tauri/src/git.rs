@@ -201,6 +201,20 @@ fn workspace_file_path(workspace: &Path, file: &str) -> Result<PathBuf, GitError
     Ok(joined)
 }
 
+/// 返回 `files` 中当前被 .gitignore 忽略的子集。`git check-ignore -q` 命中退出 0、未命中退出 1
+/// （均非错误），spawn 失败才返回 Err——这里把任何非「命中」一律当作未忽略，宁可后续 add 报真错。
+fn ignored_paths(workspace: &Path, files: &[String]) -> Vec<String> {
+    files
+        .iter()
+        .filter(|file| {
+            run_git(workspace, &["check-ignore", "-q", "--", file])
+                .map(|out| out.status.success())
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect()
+}
+
 /// 运行 git 并要求成功，失败时把 stderr/stdout 映射成结构化错误。
 fn git_text(workspace: &Path, args: &[&str]) -> Result<String, GitError> {
     let output = run_git(workspace, args)?;
@@ -506,16 +520,37 @@ pub async fn git_commit(
 ) -> Result<(), GitError> {
     let workspace = PathBuf::from(path);
 
-    // 暂存:有选中文件就只暂存这些(含未跟踪 / 删除),否则全量。
+    // 选中文件里可能含被 .gitignore 忽略的路径:典型场景是刚把已跟踪文件加入忽略(git_ignore_path
+    // 做了 rm --cached),其「已暂存删除」仍显示在变更列表里被勾选提交。显式 `git add <被忽略路径>`
+    // 会报错中断整条提交,故先识别忽略子集。
+    let ignored = if files.is_empty() {
+        Vec::new()
+    } else {
+        ignored_paths(&workspace, &files)
+    };
+
+    // 暂存:有选中文件就只暂存这些(剔除被忽略项,避免 add 报错),否则全量。
     if files.is_empty() {
         git_text(&workspace, &["add", "-A"])?;
     } else {
-        let mut args: Vec<&str> = vec!["add", "-A", "--"];
-        args.extend(files.iter().map(String::as_str));
-        git_text(&workspace, &args)?;
+        let to_add: Vec<&str> = files
+            .iter()
+            .filter(|file| !ignored.iter().any(|ig| ig == *file))
+            .map(String::as_str)
+            .collect();
+        if !to_add.is_empty() {
+            let mut args: Vec<&str> = vec!["add", "-A", "--"];
+            args.extend(to_add);
+            git_text(&workspace, &args)?;
+        }
     }
 
-    // 提交:选中文件用 pathspec 限定;amend 改写上一条(无新说明则保留原说明)。
+    // 选中项含被忽略的「缓存删除」时不能用 pathspec 偏提交:pathspec 提交按工作区比对,而文件仍在
+    // 磁盘上(rm --cached 保留磁盘文件),删除只存在于索引层,偏提交看不到它。此时改走索引提交(无
+    // pathspec):索引里恰好是上面 add 的选中项 + git_ignore_path 暂存的删除。
+    let use_pathspec = !files.is_empty() && ignored.is_empty();
+
+    // 提交:amend 改写上一条(无新说明则保留原说明)。
     let mut args: Vec<&str> = vec!["commit"];
     if amend {
         args.push("--amend");
@@ -529,7 +564,7 @@ pub async fn git_commit(
         args.push("-m");
         args.push(message.as_str());
     }
-    if !files.is_empty() {
+    if use_pathspec {
         args.push("--");
         args.extend(files.iter().map(String::as_str));
     }
@@ -1459,6 +1494,42 @@ mod tests {
             .iter()
             .any(|c| c.path == "y.txt" && c.status == "untracked"));
         assert!(!st.changes.iter().any(|c| c.path == "x.txt"));
+    }
+
+    #[test]
+    fn commit_selected_with_ignored_cached_removal() {
+        // 复现并验证修复:把已跟踪文件加入忽略后，连同其「已暂存删除」一起选中提交，
+        // 不应因 `git add <被忽略路径>` 报错中断，且删除应真正落定到提交里。
+        let dir = repo();
+        commit_file(dir.path(), "main.txt", "v1\n", "init");
+        write(dir.path(), ".idea/workspace.xml", "<x/>\n");
+        run(git_commit(
+            ws(&dir),
+            "track idea".into(),
+            false,
+            false,
+            vec![],
+        ))
+        .unwrap();
+        // 改一个普通文件 + 忽略 .idea（rm --cached 留下「已暂存删除」）。
+        write(dir.path(), "main.txt", "v2\n");
+        run(git_ignore_path(ws(&dir), ".idea/".into())).unwrap();
+        // 选中普通文件 + 被忽略的缓存删除一起提交。
+        run(git_commit(
+            ws(&dir),
+            "edit + ignore idea".into(),
+            false,
+            false,
+            vec!["main.txt".into(), ".idea/workspace.xml".into()],
+        ))
+        .unwrap();
+        // .idea/workspace.xml 不再被跟踪；磁盘文件仍在。
+        assert!(sh_out(dir.path(), &["ls-files"])
+            .lines()
+            .all(|l| l != ".idea/workspace.xml"));
+        assert!(dir.path().join(".idea/workspace.xml").exists());
+        // main.txt 的改动已进入本次提交。
+        assert_eq!(sh_out(dir.path(), &["show", "HEAD:main.txt"]), "v2");
     }
 
     #[test]

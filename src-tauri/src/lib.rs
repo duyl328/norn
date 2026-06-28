@@ -26,7 +26,7 @@ use std::{
         atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
     },
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 const MENU_EVENT: &str = "norn-menu";
@@ -36,7 +36,37 @@ const FS_CHANGE_EVENT: &str = "workspace-fs-change";
 // 当前打开文件夹的文件系统监听器。切换文件夹时整体替换;drop 旧 debouncer 即停止其监听。
 #[derive(Default)]
 struct FsWatchState(Mutex<Option<Debouncer<RecommendedWatcher>>>);
-struct PendingOpenFilesState(Mutex<Vec<String>>);
+struct PendingOpenFilesState(Mutex<PendingOpenFiles>);
+
+/// 进程启动时刻，用于度量「原生冷启动」部分（进程拉起 → WebView/前端可用），这段时间 JS 看不到。
+struct StartupClock(Instant);
+
+/// 文件关联打开的待处理队列 + 前端就绪标记。
+/// 冷启动（尤其 macOS：文件经 Apple Event → `RunEvent::Opened` 到达，早于前端注册 listener）时，
+/// 文件先缓冲在 `pending`；前端挂载后 `take_initial_open_files` 排空并置 `ready`，之后改走实时事件。
+#[derive(Default)]
+struct PendingOpenFiles {
+    pending: Vec<String>,
+    ready: bool,
+}
+
+impl PendingOpenFiles {
+    /// 收到待打开文件：已就绪→返回 `Some(paths)` 由调用方实时 emit；未就绪→缓冲并返回 `None`。
+    fn accept(&mut self, paths: Vec<String>) -> Option<Vec<String>> {
+        if self.ready {
+            Some(paths)
+        } else {
+            self.pending.extend(paths);
+            None
+        }
+    }
+
+    /// 前端就绪：标记 `ready` 并取走已缓冲的文件。
+    fn take_ready(&mut self) -> Vec<String> {
+        self.ready = true;
+        std::mem::take(&mut self.pending)
+    }
+}
 const MENU_NEW_FILE: &str = "menu-new-file";
 const MENU_OPEN_FILE: &str = "menu-open-file";
 const MENU_OPEN_FOLDER: &str = "menu-open-folder";
@@ -243,7 +273,13 @@ fn destroy_current_window(window: tauri::WebviewWindow) -> Result<(), String> {
 
 #[tauri::command]
 fn take_initial_open_files(state: tauri::State<'_, PendingOpenFilesState>) -> Vec<String> {
-    std::mem::take(&mut *state.0.lock().unwrap())
+    state.0.lock().unwrap().take_ready()
+}
+
+/// 自进程启动至今的毫秒数。前端用它估算「原生冷启动」耗时（进程拉起 → 前端首次能调用此命令）。
+#[tauri::command]
+fn app_startup_ms(clock: tauri::State<'_, StartupClock>) -> u64 {
+    clock.0.elapsed().as_millis() as u64
 }
 
 /// 快捷检测:仅运行 `git --version`,不依赖任何打开的文件夹。供设置页「检测 Git」按钮用。
@@ -780,6 +816,39 @@ fn copy_files_to_clipboard(paths: Vec<String>, text: String) -> Result<bool, Str
         let _ = (&paths, &text);
         Ok(false)
     }
+}
+
+// 用系统默认浏览器打开一个 http(s) 外链（帮助菜单的文档/发布说明/反馈等）。
+// 仅允许 http/https，杜绝借此打开本地文件或其它 scheme（target 也因此不会以 `-` 开头被当作参数）。
+#[tauri::command]
+fn open_external(target: String) -> Result<(), String> {
+    if !target.starts_with("https://") && !target.starts_with("http://") {
+        return Err("Only http(s) URLs are allowed".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut c = Command::new("open");
+        c.arg(&target);
+        c
+    };
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut c = Command::new("cmd");
+        c.args(["/C", "start", "", &target]);
+        c
+    };
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let mut command = {
+        let mut c = Command::new("xdg-open");
+        c.arg(&target);
+        c
+    };
+
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Unable to open link: {error}"))
 }
 
 // 在该路径所在目录打开系统终端(文件 → 其所在目录;目录 → 该目录本身)。
@@ -2624,7 +2693,16 @@ fn emit_open_files<R: tauri::Runtime>(app: &tauri::AppHandle<R>, paths: Vec<Stri
         return;
     }
 
-    let _ = app.emit(OPEN_FILES_EVENT, paths);
+    // 前端就绪才实时 emit；否则缓冲，等前端挂载时 take_initial_open_files 排空（修复冷启动竞态）。
+    let to_emit = app
+        .state::<PendingOpenFilesState>()
+        .0
+        .lock()
+        .unwrap()
+        .accept(paths);
+    if let Some(paths) = to_emit {
+        let _ = app.emit(OPEN_FILES_EVENT, paths);
+    }
 
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -2634,6 +2712,7 @@ fn emit_open_files<R: tauri::Runtime>(app: &tauri::AppHandle<R>, paths: Vec<Stri
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let startup_clock = StartupClock(Instant::now());
     let initial_open_files = collect_open_file_args(std::env::args().skip(1));
 
     tauri::Builder::default()
@@ -2644,8 +2723,12 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(startup_clock)
         .manage(FsWatchState::default())
-        .manage(PendingOpenFilesState(Mutex::new(initial_open_files)))
+        .manage(PendingOpenFilesState(Mutex::new(PendingOpenFiles {
+            pending: initial_open_files,
+            ready: false,
+        })))
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
 
@@ -2694,6 +2777,7 @@ pub fn run() {
             debug_log,
             destroy_current_window,
             take_initial_open_files,
+            app_startup_ms,
             detect_git_cli,
             inspect_git_workspace,
             open_file_dialog,
@@ -2711,6 +2795,7 @@ pub fn run() {
             unwatch_directory,
             reveal_in_file_manager,
             open_terminal_at,
+            open_external,
             copy_files_to_clipboard,
             scratch_folder,
             create_file,
@@ -2780,6 +2865,25 @@ pub fn run() {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn pending_open_files_buffers_until_ready_then_emits_live() {
+        let mut state = PendingOpenFiles::default();
+        // 未就绪（冷启动 Opened 早于前端 listener）→ 缓冲，不实时 emit。
+        assert_eq!(state.accept(vec!["a.txt".into()]), None);
+        assert_eq!(state.accept(vec!["b.txt".into()]), None);
+        // 前端挂载：排空缓冲并置 ready。
+        assert_eq!(
+            state.take_ready(),
+            vec!["a.txt".to_string(), "b.txt".to_string()]
+        );
+        // 之后到达的文件改走实时 emit（返回 Some 供调用方发事件），不再缓冲。
+        assert_eq!(
+            state.accept(vec!["c.txt".into()]),
+            Some(vec!["c.txt".to_string()])
+        );
+        assert!(state.take_ready().is_empty());
+    }
 
     struct TestWorkspace {
         root: PathBuf,

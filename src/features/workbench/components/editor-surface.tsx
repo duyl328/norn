@@ -1,7 +1,15 @@
 import { Compartment, EditorState, StateEffect, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { Plus, X } from "lucide-react";
-import { type CSSProperties, type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  lazy,
+  type PointerEvent as ReactPointerEvent,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -17,6 +25,7 @@ import {
 } from "../editor-highlighting";
 import { useEditorTabs } from "../hooks/use-editor-tabs";
 import { useI18n } from "../i18n";
+import { markPerf } from "../perf-marks";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type { EditorScrollbarOrientation, EditorScrollMetrics, WorkbenchDocument } from "../types";
 import {
@@ -26,9 +35,13 @@ import {
   getFileTreeIcon,
   getTabBorderAccent,
 } from "../workbench-utils";
-import { ConflictResolverView } from "./conflict-resolver-view";
-import { DiffView } from "./diff-view";
 import { TabFoldStack } from "./titlebar";
+
+// diff / 冲突视图仅在 diff 模式用到，按需加载，不进首屏编辑器关键路径。
+const ConflictResolverView = lazy(() =>
+  import("./conflict-resolver-view").then((m) => ({ default: m.ConflictResolverView })),
+);
+const DiffView = lazy(() => import("./diff-view").then((m) => ({ default: m.DiffView })));
 
 // 标签被相邻更高层标签遮挡超过该比例(%)才算「真正进入折叠」,显示堆叠边框;
 // 低于此则按普通标签渲染。避免首/尾标签稍一滚动就常驻折叠边框。
@@ -143,6 +156,7 @@ export function EditorSurface({
     });
 
     viewRef.current = view;
+    markPerf("editor-created"); // CodeMirror 实例已建好，文件文本此刻已可见
     setActiveEditorView(view);
     scrollDOMRef.current = view.scrollDOM;
     setHighlightWarning(null);
@@ -574,11 +588,13 @@ export function EditorSurface({
       ) : null}
       {document.mode === "diff" ? (
         <div className="diff-view-frame min-h-0 flex-1">
-          {document.conflict && document.diff ? (
-            <ConflictResolverView filePath={document.path.replace(/^diff:\/\//, "")} text={document.diff.modified} />
-          ) : document.diff ? (
-            <DiffView name={document.name} original={document.diff.original} modified={document.diff.modified} />
-          ) : null}
+          <Suspense fallback={null}>
+            {document.conflict && document.diff ? (
+              <ConflictResolverView filePath={document.path.replace(/^diff:\/\//, "")} text={document.diff.modified} />
+            ) : document.diff ? (
+              <DiffView name={document.name} original={document.diff.original} modified={document.diff.modified} />
+            ) : null}
+          </Suspense>
         </div>
       ) : (
         <>

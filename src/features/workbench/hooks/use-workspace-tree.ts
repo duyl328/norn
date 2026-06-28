@@ -412,7 +412,9 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     if (!current || current.scope !== scope) {
       return [];
     }
-    return current.paths.map((path) => getTreeNodeByPath(scope, path)).filter((node): node is FileTreeNode => Boolean(node));
+    return current.paths
+      .map((path) => getTreeNodeByPath(scope, path))
+      .filter((node): node is FileTreeNode => Boolean(node));
   };
 
   const contextActionNodes = (node: FileTreeNode, scope: "main" | "scratch"): FileTreeNode[] => {
@@ -509,7 +511,12 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     const clamped = Math.min(order.length - 1, Math.max(0, targetIndex));
     const leadPath = order[clamped];
     if (extend && current?.scope === scope) {
-      setTreeSelection({ scope, anchorPath: current.anchorPath, leadPath, paths: orderedRange(order, current.anchorPath, leadPath) });
+      setTreeSelection({
+        scope,
+        anchorPath: current.anchorPath,
+        leadPath,
+        paths: orderedRange(order, current.anchorPath, leadPath),
+      });
     } else {
       selectSingleTreePath(scope, leadPath);
     }

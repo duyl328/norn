@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 
 import { useI18n } from "../i18n";
+import { useWorkbenchStore } from "../store/workbench-store";
 
 type DiffLine = {
   index: number;
@@ -77,6 +78,74 @@ const buildAlignedDiff = (leftContent: string, rightContent: string): DiffLine[]
 
   return rows;
 };
+
+/**
+ * 应用级模态提示（检查更新 / 关于）。WKWebView 里 window.alert/confirm 无效，统一用此对话框反馈。
+ * 由 store.appNotice 驱动：checking=检查中、message=单条信息(确定关闭)、update=发现新版(更新并重启/稍后)。
+ */
+export function AppNoticeDialog() {
+  const notice = useWorkbenchStore((state) => state.appNotice);
+  const setAppNotice = useWorkbenchStore((state) => state.setAppNotice);
+  const [installing, setInstalling] = useState(false);
+
+  const close = () => {
+    setInstalling(false);
+    setAppNotice(null);
+  };
+
+  const install = () => {
+    setInstalling(true);
+    void import("../check-updates")
+      .then((m) => m.installPendingUpdate())
+      .catch(() => setInstalling(false));
+  };
+
+  return (
+    <Dialog open={notice !== null} onOpenChange={(nextOpen) => (!nextOpen && !installing ? close() : undefined)}>
+      <DialogContent>
+        {notice?.kind === "checking" ? (
+          <DialogHeader>
+            <DialogTitle>正在检查更新…</DialogTitle>
+            <DialogDescription>请稍候。</DialogDescription>
+          </DialogHeader>
+        ) : null}
+
+        {notice?.kind === "message" ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>{notice.title}</DialogTitle>
+              {notice.body ? (
+                <DialogDescription className="whitespace-pre-line break-words">{notice.body}</DialogDescription>
+              ) : null}
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="ghost" onClick={close}>
+                确定
+              </Button>
+            </DialogFooter>
+          </>
+        ) : null}
+
+        {notice?.kind === "update" ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>发现新版本 {notice.version}</DialogTitle>
+              {notice.body ? <DialogDescription>{notice.body}</DialogDescription> : null}
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="ghost" onClick={close} disabled={installing}>
+                稍后
+              </Button>
+              <Button variant="ghost" onClick={install} disabled={installing}>
+                {installing ? "正在下载…" : "更新并重启"}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export function UnsavedChangesDialog({
   onCancel,

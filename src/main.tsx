@@ -5,7 +5,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 
 import { App } from "@/app";
+import { markPerf } from "@/features/workbench/perf-marks";
 import { applyPlatformClass } from "@/features/workbench/platform";
+
+markPerf("js-eval"); // 入口 JS 开始执行（首屏关键包已下载并进入解析/执行）
 
 document.documentElement.classList.remove("dark");
 document.documentElement.dataset.theme = "light";
@@ -28,3 +31,5 @@ ReactDOM.createRoot(root).render(
     <App />
   </React.StrictMode>,
 );
+
+markPerf("react-render-called"); // 已发起首次渲染（同步部分结束，后续是 React 提交 + 各组件挂载）

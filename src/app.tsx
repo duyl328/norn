@@ -2,6 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect } from "react";
 
 import { I18nProvider } from "@/features/workbench/i18n-provider";
+import { markPerf, reportPerf } from "@/features/workbench/perf-marks";
 import { WorkbenchPage } from "@/features/workbench/workbench-page";
 
 export function App() {
@@ -16,6 +17,10 @@ export function App() {
     } catch {
       // 非 Tauri(浏览器开发)环境,没有原生窗口可显示。
     }
+    markPerf("window-shown"); // 调用 show()：用户此刻应已看到窗口
+    // 稍后汇总：给初次文件打开（文件关联冷启动是异步 IPC）留出时间，再打印计时表。
+    const timer = window.setTimeout(reportPerf, 1500);
+    return () => window.clearTimeout(timer);
   }, []);
 
   return (

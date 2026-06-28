@@ -2,7 +2,7 @@ import { EditorView } from "@codemirror/view";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -11,17 +11,13 @@ import { getActiveEditorView } from "./actions/active-editor";
 import { openGoToLineRequestEvent } from "./actions/editor-actions";
 import { type ActionDeps, ActionsProvider, useActions } from "./actions/use-actions";
 import { useKeybindings } from "./actions/use-keybindings";
-import { checkForUpdates } from "./check-updates";
-import { CommandPalette } from "./components/command-palette";
-import { SaveConflictDialog, UnsavedChangesDialog } from "./components/dialogs";
+import { AppNoticeDialog, SaveConflictDialog, UnsavedChangesDialog } from "./components/dialogs";
 import { EditorSurface } from "./components/editor-surface";
 import { FileTreeNameDialogView, FileTreeTrashDialog } from "./components/file-tree";
-import { GitPanel } from "./components/git-panel";
-import { ProjectPanel } from "./components/project-panel";
-import { SettingsPage } from "./components/settings";
 import { StatusBar } from "./components/status-bar";
 import { MacTitlebar, PanelResizeHandle, WindowsTitleBar } from "./components/titlebar";
 import {
+  helpMenuUrls,
   leftPanelMaxWidth,
   leftPanelMinWidth,
   nativeMenuCommands,
@@ -35,9 +31,11 @@ import { gitActions } from "./hooks/use-git";
 import { usePanelLayout } from "./hooks/use-panel-layout";
 import { useSettingsRuntime } from "./hooks/use-settings-runtime";
 import { useWorkspaceTree } from "./hooks/use-workspace-tree";
+import { markPerf } from "./perf-marks";
 import { isMac, isWindows } from "./platform";
 import { loadSettings } from "./settings";
 import { useWorkbenchStore } from "./store/workbench-store";
+import { shouldAutoCheckUpdates } from "./update-schedule";
 import { hasSeenWelcome } from "./welcome";
 import { startWelcomeTour } from "./welcome-tour";
 import {
@@ -46,6 +44,13 @@ import {
   loadKeymapOverrides,
   requiresDocumentCloseConfirmation,
 } from "./workbench-utils";
+
+// 非首屏关键路径的面板按需加载，缩小首包、让窗口与文件更快出现（编辑器保持同步加载以最快展示文件）。
+// 文件树/Git 面板始终挂载（CSS 收起），首次渲染即拉取各自 chunk，期间显示空占位，随后补齐。
+const ProjectPanel = lazy(() => import("./components/project-panel").then((m) => ({ default: m.ProjectPanel })));
+const GitPanel = lazy(() => import("./components/git-panel").then((m) => ({ default: m.GitPanel })));
+const SettingsPage = lazy(() => import("./components/settings").then((m) => ({ default: m.SettingsPage })));
+const CommandPalette = lazy(() => import("./components/command-palette").then((m) => ({ default: m.CommandPalette })));
 
 export function WorkbenchPage() {
   const document = useWorkbenchStore((state) => state.document);
@@ -192,7 +197,9 @@ export function WorkbenchPage() {
         };
 
         console.info("[norn] window close requested", diagnosticPayload);
-        void invoke("debug_log", { message: "window close requested", payload: diagnosticPayload }).catch(() => undefined);
+        void invoke("debug_log", { message: "window close requested", payload: diagnosticPayload }).catch(
+          () => undefined,
+        );
 
         event.preventDefault();
 
@@ -237,38 +244,60 @@ export function WorkbenchPage() {
       return;
     }
 
-    // 启动静默检查更新:仅在有新版时弹窗询问,无网/已最新都不打扰。
-    void checkForUpdates(true);
+    // 启动自动检查更新:延后到首屏之后再跑（不抢首屏），且仅在距上次检查满 24h 时才真正检查。
+    // 动态 import 把 updater/process 插件代码移出首屏关键包，节流命中时连这个 chunk 都不会加载。
+    const updateTimer = window.setTimeout(() => {
+      if (shouldAutoCheckUpdates()) {
+        void import("./check-updates").then((m) => m.checkForUpdates("startup"));
+      }
+    }, 2000);
 
-    invoke<string[]>("take_initial_open_files")
-      .then((paths) => {
-        paths.forEach((path) => {
-          requestFileOpenRef.current({ kind: "path", path, clearFolderView: true });
-        });
-      })
-      .catch(() => undefined);
+    // 从后台回到前台时，若距上次检查已超 24h，再自动检查一次（focus 频繁触发，但被 24h 门槛挡住）。
+    const onWindowFocus = () => {
+      if (shouldAutoCheckUpdates()) {
+        void import("./check-updates").then((m) => m.checkForUpdates("foreground"));
+      }
+    };
+    window.addEventListener("focus", onWindowFocus);
 
     let disposed = false;
     let unlisten: UnlistenFn | undefined;
 
-    listen<string[]>(nativeOpenFilesEvent, (event) => {
-      event.payload.forEach((path) => {
+    const openPaths = (paths: string[]) => {
+      paths.forEach((path) => {
         requestFileOpenRef.current({ kind: "path", path, clearFolderView: true });
       });
-    })
-      .then((cleanup) => {
+    };
+
+    // 先注册实时监听，再 take_initial_open_files——后者会把后端标记为 ready，之后到达的文件改走
+    // 实时事件。若顺序反了，ready 与监听之间到达的 Opened 文件会丢（冷启动竞态根源）。
+    void (async () => {
+      try {
+        const cleanup = await listen<string[]>(nativeOpenFilesEvent, (event) => openPaths(event.payload));
         if (disposed) {
           cleanup();
           return;
         }
         unlisten = cleanup;
-      })
-      .catch(() => {
+      } catch {
         unlisten = undefined;
-      });
+      }
+
+      try {
+        const initial = await invoke<string[]>("take_initial_open_files");
+        if (initial.length > 0) {
+          markPerf("initial-file-open"); // 文件关联冷启动：已拿到待打开文件并发起打开
+          openPaths(initial);
+        }
+      } catch {
+        // 忽略：非 Tauri 环境或无待打开文件。
+      }
+    })();
 
     return () => {
       disposed = true;
+      window.clearTimeout(updateTimer);
+      window.removeEventListener("focus", onWindowFocus);
       unlisten?.();
     };
   }, []);
@@ -338,12 +367,17 @@ export function WorkbenchPage() {
     openSettingsTool,
   };
 
-  const settingsPageNode = <SettingsPage onBack={() => setSettingsOpen(false)} showMacTitlebar={showMacTitlebar} />;
+  const settingsPageNode = (
+    <Suspense fallback={null}>
+      <SettingsPage onBack={() => setSettingsOpen(false)} showMacTitlebar={showMacTitlebar} />
+    </Suspense>
+  );
 
   return (
     <ActionsProvider deps={actionDeps}>
       <TooltipProvider delayDuration={250}>
         <WorkbenchActionsRuntime />
+        <AppNoticeDialog />
         <div
           className={cn(
             "h-full bg-transparent text-ui text-foreground",
@@ -425,63 +459,65 @@ export function WorkbenchPage() {
                   data-focus-zone="fileTree"
                   tabIndex={-1}
                 >
-                  <ProjectPanel
-                    activePath={document.path}
-                    selection={treeSelection}
-                    search={treeSearch}
-                    clipboard={fileTreeClipboard}
-                    contextMenu={fileTreeContextMenu}
-                    draggedNode={draggedTreeNode}
-                    dropTarget={dropTarget}
-                    folderView={folderView}
-                    leftPanelWidth={leftPanelWidth}
-                    onContextMenu={openFileTreeContextMenu}
-                    onCopyNode={copyTreeNode}
-                    onCutNode={cutTreeNode}
-                    onDragEnd={() => {
-                      setDraggedTreeNode(null);
-                      setDropTarget(null);
-                      dropTargetRef.current = null;
-                    }}
-                    onDragNode={setDraggedTreeNode}
-                    onDropNode={moveTreeNodeToDirectory}
-                    onDropTargetChange={(target) => {
-                      setDropTarget(target);
-                      dropTargetRef.current = target;
-                    }}
-                    onOpenFolder={openFolderPicker}
-                    onOpenRecentFolder={(path) => void openFolderView(path, "open-folder")}
-                    onOpenSettings={openSettingsTool}
-                    onOpenTreeFile={openTreeFile}
-                    onSelectTreeNode={selectTreeNode}
-                    onTreeKeyDown={handleTreeKeyDown}
-                    onTreeBlur={clearTreeSearch}
-                    onCopyPath={copyTreeNodePaths}
-                    onPasteNode={pasteTreeNode}
-                    onRefreshFolder={(path, scope = "main") => void refreshTreePath(scope, path)}
-                    onRequestCreateDirectory={(parentPath, scope = "main") =>
-                      openFileTreeNameDialog({ kind: "create-directory", parentPath, scope })
-                    }
-                    onRequestCreateFile={(parentPath, scope = "main") =>
-                      openFileTreeNameDialog({ kind: "create-file", parentPath, scope })
-                    }
-                    onRequestRenameNode={(node, scope = "main") =>
-                      openFileTreeNameDialog({ kind: "rename", node, scope })
-                    }
-                    onRequestTrashNode={requestTrashTreeNode}
-                    onRevealNode={revealTreeNodeInFileManager}
-                    onOpenTerminal={openTerminalAtNode}
-                    recentFolders={recentFolders}
-                    scratchFolder={scratchFolder}
-                    scratchFolderView={scratchFolderView}
-                    onToggleScratchDirectory={(node) => void toggleScratchDirectory(node)}
-                    onToggleScratchRootDirectory={toggleScratchRootDirectory}
-                    onToggleDirectory={toggleDirectory}
-                    onToggleRootDirectory={toggleRootDirectory}
-                    onExpandAll={expandAllDirectories}
-                    onCollapseAll={collapseAllDirectories}
-                    onRevealActiveFile={() => void revealActiveFile()}
-                  />
+                  <Suspense fallback={null}>
+                    <ProjectPanel
+                      activePath={document.path}
+                      selection={treeSelection}
+                      search={treeSearch}
+                      clipboard={fileTreeClipboard}
+                      contextMenu={fileTreeContextMenu}
+                      draggedNode={draggedTreeNode}
+                      dropTarget={dropTarget}
+                      folderView={folderView}
+                      leftPanelWidth={leftPanelWidth}
+                      onContextMenu={openFileTreeContextMenu}
+                      onCopyNode={copyTreeNode}
+                      onCutNode={cutTreeNode}
+                      onDragEnd={() => {
+                        setDraggedTreeNode(null);
+                        setDropTarget(null);
+                        dropTargetRef.current = null;
+                      }}
+                      onDragNode={setDraggedTreeNode}
+                      onDropNode={moveTreeNodeToDirectory}
+                      onDropTargetChange={(target) => {
+                        setDropTarget(target);
+                        dropTargetRef.current = target;
+                      }}
+                      onOpenFolder={openFolderPicker}
+                      onOpenRecentFolder={(path) => void openFolderView(path, "open-folder")}
+                      onOpenSettings={openSettingsTool}
+                      onOpenTreeFile={openTreeFile}
+                      onSelectTreeNode={selectTreeNode}
+                      onTreeKeyDown={handleTreeKeyDown}
+                      onTreeBlur={clearTreeSearch}
+                      onCopyPath={copyTreeNodePaths}
+                      onPasteNode={pasteTreeNode}
+                      onRefreshFolder={(path, scope = "main") => void refreshTreePath(scope, path)}
+                      onRequestCreateDirectory={(parentPath, scope = "main") =>
+                        openFileTreeNameDialog({ kind: "create-directory", parentPath, scope })
+                      }
+                      onRequestCreateFile={(parentPath, scope = "main") =>
+                        openFileTreeNameDialog({ kind: "create-file", parentPath, scope })
+                      }
+                      onRequestRenameNode={(node, scope = "main") =>
+                        openFileTreeNameDialog({ kind: "rename", node, scope })
+                      }
+                      onRequestTrashNode={requestTrashTreeNode}
+                      onRevealNode={revealTreeNodeInFileManager}
+                      onOpenTerminal={openTerminalAtNode}
+                      recentFolders={recentFolders}
+                      scratchFolder={scratchFolder}
+                      scratchFolderView={scratchFolderView}
+                      onToggleScratchDirectory={(node) => void toggleScratchDirectory(node)}
+                      onToggleScratchRootDirectory={toggleScratchRootDirectory}
+                      onToggleDirectory={toggleDirectory}
+                      onToggleRootDirectory={toggleRootDirectory}
+                      onExpandAll={expandAllDirectories}
+                      onCollapseAll={collapseAllDirectories}
+                      onRevealActiveFile={() => void revealActiveFile()}
+                    />
+                  </Suspense>
                 </div>
                 <PanelResizeHandle
                   max={leftPanelMaxWidth}
@@ -520,20 +556,22 @@ export function WorkbenchPage() {
                   data-focus-zone="git"
                   tabIndex={-1}
                 >
-                  <GitPanel
-                    folderView={folderView}
-                    gitWorkspace={gitWorkspace}
-                    onOpenDiff={(file) =>
-                      void gitActions.loadFileVersions(file).then((versions) => openDiff(file, versions))
-                    }
-                    onOpenCommitDiff={(hash, file) =>
-                      void gitActions
-                        .loadCommitFileVersions(hash, file)
-                        .then((versions) => openCommitDiff(hash, file, versions))
-                    }
-                    onOpenFile={(path, size) => requestFileOpen({ kind: "path", path, size })}
-                    onOpenFolder={(path) => void openFolderView(path, "open-folder")}
-                  />
+                  <Suspense fallback={null}>
+                    <GitPanel
+                      folderView={folderView}
+                      gitWorkspace={gitWorkspace}
+                      onOpenDiff={(file) =>
+                        void gitActions.loadFileVersions(file).then((versions) => openDiff(file, versions))
+                      }
+                      onOpenCommitDiff={(hash, file) =>
+                        void gitActions
+                          .loadCommitFileVersions(hash, file)
+                          .then((versions) => openCommitDiff(hash, file, versions))
+                      }
+                      onOpenFile={(path, size) => requestFileOpen({ kind: "path", path, size })}
+                      onOpenFolder={(path) => void openFolderView(path, "open-folder")}
+                    />
+                  </Suspense>
                 </div>
               </main>
               {showStatusBar ? (
@@ -665,11 +703,40 @@ function WorkbenchActionsRuntime() {
     let unlisten: UnlistenFn | undefined;
 
     listen<string>(nativeMenuEvent, (event) => {
-      if (event.payload === "menu-check-for-updates") {
-        void checkForUpdates();
+      const id = event.payload;
+
+      if (id === "menu-check-for-updates") {
+        void import("./check-updates").then((m) => m.checkForUpdates("manual"));
         return;
       }
-      const actionId = NATIVE_MENU_TO_ACTION[event.payload];
+      // 帮助菜单：外链类项用系统浏览器打开。
+      if (helpMenuUrls[id]) {
+        void invoke("open_external", { target: helpMenuUrls[id] }).catch(() => undefined);
+        return;
+      }
+      // 快捷键 → 打开设置页（含快捷键设置）。
+      if (id === "menu-keyboard-shortcuts") {
+        dispatch("view.settings");
+        return;
+      }
+      // 查看日志 → 在文件管理器里打开配置目录（startup-perf.log / settings.json 等所在处）。
+      if (id === "menu-view-logs") {
+        void invoke<string>("app_config_dir")
+          .then((dir) => invoke("reveal_in_file_manager", { path: dir }))
+          .catch(() => undefined);
+        return;
+      }
+      // 关于 → 应用内对话框显示名称 + 版本（WKWebView 里 window.alert 无效）。
+      if (id === "menu-about-norn") {
+        void invoke<string>("app_version")
+          .then((version) =>
+            useWorkbenchStore.getState().setAppNotice({ kind: "message", title: "关于 Norn", body: `版本 ${version}` }),
+          )
+          .catch(() => undefined);
+        return;
+      }
+
+      const actionId = NATIVE_MENU_TO_ACTION[id];
       if (actionId) dispatch(actionId);
     })
       .then((cleanup) => {
@@ -689,5 +756,9 @@ function WorkbenchActionsRuntime() {
     };
   }, [dispatch]);
 
-  return <CommandPalette />;
+  return (
+    <Suspense fallback={null}>
+      <CommandPalette />
+    </Suspense>
+  );
 }

@@ -18,6 +18,17 @@ export const nativeMenuCommands = {
   welcome: "menu-welcome",
 } as const;
 
+// 帮助菜单里「打开外链」类项 → 目标 URL。其余帮助项（快捷键→设置、查看日志→显示配置目录、
+// 关于→版本弹窗）在 workbench-page 的菜单监听里单独处理。改链接只动这里。
+const repoUrl = "https://github.com/duyl328/norn";
+export const helpMenuUrls: Record<string, string> = {
+  "menu-documentation": `${repoUrl}#readme`,
+  "menu-release-notes": `${repoUrl}/releases`,
+  "menu-report-issue": `${repoUrl}/issues/new`,
+  "menu-community": `${repoUrl}/discussions`,
+  "menu-privacy-statement": `${repoUrl}#readme`,
+};
+
 export const EDITOR_SCROLLBAR_SIZE = 18;
 export const EDITOR_MIN_THUMB_SIZE = 44;
 export const LARGE_FILE_CONFIRM_BYTES = 5 * 1024 * 1024;

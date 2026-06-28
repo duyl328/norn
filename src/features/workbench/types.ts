@@ -237,6 +237,15 @@ export type GitError = {
 /** 写操作后的临时提示条:成功(自带文案)或失败(带错误对象,供面板本地化)。 */
 export type GitNotice = { tone: "ok"; text: string } | { tone: "err"; error: GitError };
 
+/**
+ * 应用级模态提示（检查更新 / 关于 等）。WKWebView 里 window.alert/confirm 是 no-op，
+ * 这类反馈必须走应用内对话框（见 AppNoticeDialog）。
+ */
+export type AppNotice =
+  | { kind: "checking" }
+  | { kind: "message"; title: string; body?: string }
+  | { kind: "update"; version: string; body: string };
+
 export type FolderView = {
   rootPath: string;
   rootName: string;

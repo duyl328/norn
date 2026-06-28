@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { leftPanelDefaultWidth, rightPanelDefaultWidth, scratchPanelDefaultHeight } from "../constants";
 import { type AppSettings, DEFAULT_SETTINGS } from "../settings";
 import type {
+  AppNotice,
   FileTreeClipboard,
   FileTreeContextMenuState,
   FileTreeNameDialog,
@@ -120,6 +121,7 @@ export interface WorkbenchState {
   gitRefreshing: boolean;
   gitError: GitError | null;
   gitNotice: GitNotice | null;
+  appNotice: AppNotice | null;
   gitPendingOp: string | null;
   gitPanelMode: GitPanelMode;
   recentFolders: RecentFolder[];
@@ -137,6 +139,7 @@ export interface WorkbenchState {
   setGitRefreshing: (setter: StateSetter<boolean>) => void;
   setGitError: (setter: StateSetter<GitError | null>) => void;
   setGitNotice: (setter: StateSetter<GitNotice | null>) => void;
+  setAppNotice: (setter: StateSetter<AppNotice | null>) => void;
   setGitPendingOp: (setter: StateSetter<string | null>) => void;
   setGitPanelMode: (setter: StateSetter<GitPanelMode>) => void;
   setRecentFolders: (setter: StateSetter<RecentFolder[]>) => void;
@@ -268,6 +271,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   gitRefreshing: false,
   gitError: null,
   gitNotice: null,
+  appNotice: null,
   gitPendingOp: null,
   gitPanelMode: "commit",
   recentFolders: loadRecentFolders(),
@@ -293,6 +297,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({ gitRefreshing: resolveSetter(setter, state.gitRefreshing) })),
   setGitError: (setter) => set((state) => ({ gitError: resolveSetter(setter, state.gitError) })),
   setGitNotice: (setter) => set((state) => ({ gitNotice: resolveSetter(setter, state.gitNotice) })),
+  setAppNotice: (setter) => set((state) => ({ appNotice: resolveSetter(setter, state.appNotice) })),
   setGitPendingOp: (setter) => set((state) => ({ gitPendingOp: resolveSetter(setter, state.gitPendingOp) })),
   setGitPanelMode: (setter) => set((state) => ({ gitPanelMode: resolveSetter(setter, state.gitPanelMode) })),
   setRecentFolders: (setter) => set((state) => ({ recentFolders: resolveSetter(setter, state.recentFolders) })),
