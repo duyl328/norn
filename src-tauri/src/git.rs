@@ -1210,4 +1210,495 @@ mod tests {
             tauri::async_runtime::block_on(git_status(temp.path().to_string_lossy().into_owned()));
         assert!(result.is_err());
     }
+
+    // ----- 集成测试：对真实临时仓库逐个验证 IPC 命令 -----------------------
+    // 这些测试只验证现有逻辑，不改动任何业务代码。每个测试在独立的 tempdir 里
+    // 建仓，命令通过 block_on 直接调用（与上面的非仓库用例同模式）。
+
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    // 仅测试构建可见：让 `Result<_, GitError>` 能 unwrap / 打印失败信息。
+    // 不影响生产代码（GitError 本身仍不实现 Debug）。
+    impl std::fmt::Debug for GitError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "GitError({})", self.message)
+        }
+    }
+
+    /// 运行一条 git 命令，要求成功，返回 Output。
+    fn sh(dir: &Path, args: &[&str]) -> std::process::Output {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .expect("spawn git");
+        assert!(
+            out.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+        out
+    }
+
+    /// 运行 git 命令并返回 trim 后的 stdout。
+    fn sh_out(dir: &Path, args: &[&str]) -> String {
+        String::from_utf8_lossy(&sh(dir, args).stdout)
+            .trim()
+            .to_string()
+    }
+
+    /// 往工作区写文件（自动建父目录）。
+    fn write(dir: &Path, rel: &str, content: &str) {
+        let p = dir.join(rel);
+        if let Some(parent) = p.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(p, content).unwrap();
+    }
+
+    /// 读工作区文件内容。
+    fn read(dir: &Path, rel: &str) -> String {
+        std::fs::read_to_string(dir.join(rel)).unwrap()
+    }
+
+    /// 初始化一个隔离配置的仓库（默认分支 main，配好身份、关掉签名与钩子）。
+    fn repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("temp");
+        configure(dir.path());
+        dir
+    }
+
+    fn configure(p: &Path) {
+        sh(p, &["init", "-b", "main"]);
+        sh(p, &["config", "user.email", "tester@example.com"]);
+        sh(p, &["config", "user.name", "Tester"]);
+        sh(p, &["config", "commit.gpgsign", "false"]);
+        // 屏蔽可能存在的全局钩子，避免环境干扰提交。
+        sh(p, &["config", "core.hooksPath", "/dev/null"]);
+    }
+
+    fn ws(dir: &tempfile::TempDir) -> String {
+        dir.path().to_string_lossy().into_owned()
+    }
+
+    /// 用底层 git 直接造一条提交（测试夹具，非被测逻辑）。
+    fn commit_file(dir: &Path, rel: &str, content: &str, msg: &str) {
+        write(dir, rel, content);
+        sh(dir, &["add", "-A"]);
+        sh(dir, &["commit", "-m", msg]);
+    }
+
+    fn run<F: std::future::Future>(f: F) -> F::Output {
+        tauri::async_runtime::block_on(f)
+    }
+
+    // --- 仓库初始化 -------------------------------------------------------
+
+    #[test]
+    fn init_creates_repo() {
+        let dir = tempfile::tempdir().unwrap();
+        run(git_init(dir.path().to_string_lossy().into_owned())).unwrap();
+        assert!(dir.path().join(".git").exists());
+    }
+
+    // --- 状态 -------------------------------------------------------------
+
+    #[test]
+    fn status_reports_branch_and_changes() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "one\n", "init");
+        write(dir.path(), "a.txt", "one\ntwo\n"); // 修改已跟踪
+        write(dir.path(), "b.txt", "new\n"); // 未跟踪
+        let st = run(git_status(ws(&dir))).unwrap();
+        assert_eq!(st.branch.as_deref(), Some("main"));
+        assert!(!st.detached);
+        let a = st.changes.iter().find(|c| c.path == "a.txt").unwrap();
+        assert_eq!(a.status, "modified");
+        assert_eq!(a.additions, 1);
+        assert_eq!(a.deletions, 0);
+        let b = st.changes.iter().find(|c| c.path == "b.txt").unwrap();
+        assert_eq!(b.status, "untracked");
+    }
+
+    // --- 提交 -------------------------------------------------------------
+
+    #[test]
+    fn commit_creates_commit() {
+        let dir = repo();
+        write(dir.path(), "f.txt", "hi\n");
+        run(git_commit(ws(&dir), "first".into(), false, false, vec![])).unwrap();
+        assert_eq!(sh_out(dir.path(), &["log", "--oneline"]).lines().count(), 1);
+        assert_eq!(sh_out(dir.path(), &["log", "-1", "--pretty=%s"]), "first");
+    }
+
+    #[test]
+    fn commit_only_selected_files() {
+        let dir = repo();
+        commit_file(dir.path(), "base.txt", "b\n", "init");
+        write(dir.path(), "x.txt", "x\n");
+        write(dir.path(), "y.txt", "y\n");
+        run(git_commit(ws(&dir), "add x".into(), false, false, vec!["x.txt".into()])).unwrap();
+        let st = run(git_status(ws(&dir))).unwrap();
+        assert!(st
+            .changes
+            .iter()
+            .any(|c| c.path == "y.txt" && c.status == "untracked"));
+        assert!(!st.changes.iter().any(|c| c.path == "x.txt"));
+    }
+
+    #[test]
+    fn commit_nothing_errors_with_kind() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "a\n", "init");
+        let err = run(git_commit(ws(&dir), "noop".into(), false, false, vec![])).unwrap_err();
+        assert!(matches!(err.kind, GitErrorKind::NothingToCommit));
+    }
+
+    #[test]
+    fn commit_amend_rewrites_message() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "a\n", "orig msg");
+        write(dir.path(), "b.txt", "b\n");
+        run(git_commit(ws(&dir), "amended msg".into(), false, true, vec![])).unwrap();
+        assert_eq!(sh_out(dir.path(), &["log", "--oneline"]).lines().count(), 1);
+        assert_eq!(sh_out(dir.path(), &["log", "-1", "--pretty=%s"]), "amended msg");
+        // amend 应把新文件并入这一条提交。
+        assert!(sh_out(dir.path(), &["ls-files"]).contains("b.txt"));
+    }
+
+    // --- diff / 版本 ------------------------------------------------------
+
+    #[test]
+    fn file_diff_tracked_and_untracked() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "one\n", "init");
+        write(dir.path(), "a.txt", "one\ntwo\n");
+        let d = run(git_file_diff(ws(&dir), "a.txt".into())).unwrap();
+        assert!(d.contains("+two"), "tracked diff: {d}");
+        write(dir.path(), "u.txt", "fresh\n");
+        let d2 = run(git_file_diff(ws(&dir), "u.txt".into())).unwrap();
+        assert!(d2.contains("+fresh"), "untracked diff: {d2}");
+    }
+
+    #[test]
+    fn file_versions_head_vs_working() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "head\n", "init");
+        write(dir.path(), "a.txt", "work\n");
+        let v = run(git_file_versions(ws(&dir), "a.txt".into())).unwrap();
+        assert_eq!(v.original, "head\n");
+        assert_eq!(v.modified, "work\n");
+    }
+
+    #[test]
+    fn commit_file_versions_parent_vs_commit() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "v1\n", "c1");
+        commit_file(dir.path(), "a.txt", "v2\n", "c2");
+        let hash = sh_out(dir.path(), &["rev-parse", "HEAD"]);
+        let v = run(git_commit_file_versions(ws(&dir), hash, "a.txt".into())).unwrap();
+        assert_eq!(v.original, "v1\n");
+        assert_eq!(v.modified, "v2\n");
+    }
+
+    // --- ignore -----------------------------------------------------------
+
+    #[test]
+    fn ignore_path_appends_dedups_and_untracks() {
+        let dir = repo();
+        commit_file(dir.path(), "tracked.log", "x\n", "init");
+        run(git_ignore_path(ws(&dir), "*.log".into())).unwrap();
+        assert!(read(dir.path(), ".gitignore").contains("*.log"));
+        run(git_ignore_path(ws(&dir), "*.log".into())).unwrap(); // 第二次不应重复
+        assert_eq!(read(dir.path(), ".gitignore").matches("*.log").count(), 1);
+        // 已跟踪文件应被从索引移除（暂存的删除）。
+        let st = run(git_status(ws(&dir))).unwrap();
+        assert!(st
+            .changes
+            .iter()
+            .any(|c| c.path == "tracked.log" && c.status == "deleted"));
+    }
+
+    #[test]
+    fn ignored_files_lists_ignored() {
+        let dir = repo();
+        write(dir.path(), ".gitignore", "secret.txt\n");
+        write(dir.path(), "secret.txt", "x\n");
+        let list = run(git_ignored_files(ws(&dir))).unwrap();
+        assert!(list.iter().any(|f| f == "secret.txt"), "list: {list:?}");
+    }
+
+    // --- 冲突解决 ---------------------------------------------------------
+
+    #[test]
+    fn resolve_conflict_writes_and_stages() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "a\n", "init");
+        run(git_resolve_conflict(ws(&dir), "a.txt".into(), "resolved\n".into())).unwrap();
+        assert_eq!(read(dir.path(), "a.txt"), "resolved\n");
+        assert!(sh_out(dir.path(), &["diff", "--cached", "--name-only"]).contains("a.txt"));
+    }
+
+    // --- 分支 -------------------------------------------------------------
+
+    #[test]
+    fn branch_create_checkout_and_at() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "a\n", "c1");
+        run(git_create_branch(ws(&dir), "feature".into())).unwrap();
+        assert_eq!(sh_out(dir.path(), &["branch", "--show-current"]), "feature");
+        run(git_checkout(ws(&dir), "main".into())).unwrap();
+        assert_eq!(sh_out(dir.path(), &["branch", "--show-current"]), "main");
+        let hash = sh_out(dir.path(), &["rev-parse", "HEAD"]);
+        run(git_create_branch_at(ws(&dir), "fromhash".into(), hash)).unwrap();
+        assert_eq!(sh_out(dir.path(), &["branch", "--show-current"]), "fromhash");
+    }
+
+    #[test]
+    fn branches_reports_local_remote_current_and_track() {
+        let origin = tempfile::tempdir().unwrap();
+        sh(origin.path(), &["init", "--bare", "-b", "main"]);
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "1\n", "c1");
+        let o = origin.path().to_string_lossy().into_owned();
+        sh(dir.path(), &["remote", "add", "origin", o.as_str()]);
+        sh(dir.path(), &["push", "-u", "origin", "main"]);
+        sh(dir.path(), &["branch", "feature"]);
+        commit_file(dir.path(), "b.txt", "b\n", "c2"); // 让 main 领先 origin 一条
+        let br = run(git_branches(ws(&dir))).unwrap();
+        assert_eq!(br.current.as_deref(), Some("main"));
+        let main = br.local.iter().find(|b| b.name == "main").unwrap();
+        assert!(main.current);
+        assert_eq!(main.upstream.as_deref(), Some("origin/main"));
+        assert_eq!(main.ahead, 1);
+        assert!(br.local.iter().any(|b| b.name == "feature"));
+        assert!(br.remote.iter().any(|b| b.name == "origin/main"));
+    }
+
+    // --- 合并 / 进行中操作 ------------------------------------------------
+
+    #[test]
+    fn merge_fast_forward() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "a\n", "c1");
+        sh(dir.path(), &["checkout", "-b", "feature"]);
+        commit_file(dir.path(), "b.txt", "b\n", "c2");
+        sh(dir.path(), &["checkout", "main"]);
+        run(git_merge(ws(&dir), "feature".into())).unwrap();
+        assert!(dir.path().join("b.txt").exists());
+    }
+
+    #[test]
+    fn merge_conflict_pending_and_abort() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "base\n", "c1");
+        sh(dir.path(), &["checkout", "-b", "feature"]);
+        write(dir.path(), "a.txt", "feature\n");
+        sh(dir.path(), &["commit", "-am", "fc"]);
+        sh(dir.path(), &["checkout", "main"]);
+        write(dir.path(), "a.txt", "main\n");
+        sh(dir.path(), &["commit", "-am", "mc"]);
+        let err = run(git_merge(ws(&dir), "feature".into())).unwrap_err();
+        assert!(matches!(err.kind, GitErrorKind::Conflict));
+        assert_eq!(run(git_pending_op(ws(&dir))).unwrap(), "merge");
+        run(git_abort_op(ws(&dir), "merge".into())).unwrap();
+        assert_eq!(run(git_pending_op(ws(&dir))).unwrap(), "");
+    }
+
+    // --- 历史导航：签出 / 重置 / 还原 ------------------------------------
+
+    #[test]
+    fn checkout_commit_detaches() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "1\n", "c1");
+        let h1 = sh_out(dir.path(), &["rev-parse", "HEAD"]);
+        commit_file(dir.path(), "c.txt", "2\n", "c2");
+        run(git_checkout_commit(ws(&dir), h1)).unwrap();
+        let st = run(git_status(ws(&dir))).unwrap();
+        assert!(st.detached);
+        assert_eq!(st.branch, None);
+    }
+
+    #[test]
+    fn reset_hard_discards_to_commit() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "1\n", "c1");
+        let h1 = sh_out(dir.path(), &["rev-parse", "HEAD"]);
+        commit_file(dir.path(), "a.txt", "2\n", "c2");
+        run(git_reset(ws(&dir), h1.clone(), "hard".into())).unwrap();
+        assert_eq!(read(dir.path(), "a.txt"), "1\n");
+        assert_eq!(sh_out(dir.path(), &["rev-parse", "HEAD"]), h1);
+    }
+
+    #[test]
+    fn reset_soft_keeps_working_and_staged() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "1\n", "c1");
+        let h1 = sh_out(dir.path(), &["rev-parse", "HEAD"]);
+        commit_file(dir.path(), "a.txt", "2\n", "c2");
+        run(git_reset(ws(&dir), h1.clone(), "soft".into())).unwrap();
+        assert_eq!(sh_out(dir.path(), &["rev-parse", "HEAD"]), h1);
+        assert_eq!(read(dir.path(), "a.txt"), "2\n"); // 改动保留
+        assert!(sh_out(dir.path(), &["diff", "--cached", "--name-only"]).contains("a.txt"));
+    }
+
+    #[test]
+    fn revert_creates_inverse_commit() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "base\n", "c1");
+        commit_file(dir.path(), "a.txt", "base\nadded\n", "c2");
+        let h2 = sh_out(dir.path(), &["rev-parse", "HEAD"]);
+        run(git_revert(ws(&dir), h2)).unwrap();
+        assert_eq!(read(dir.path(), "a.txt"), "base\n");
+        assert_eq!(sh_out(dir.path(), &["log", "--oneline"]).lines().count(), 3);
+    }
+
+    // --- 远端：push / pull / fetch（本地裸仓库当 origin）-----------------
+
+    #[test]
+    fn push_pull_fetch_with_local_remote() {
+        let origin = tempfile::tempdir().unwrap();
+        sh(origin.path(), &["init", "--bare", "-b", "main"]);
+        let o = origin.path().to_string_lossy().into_owned();
+
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "1\n", "c1");
+        sh(dir.path(), &["remote", "add", "origin", o.as_str()]);
+        // 无 upstream → push_current 应回退到 `push -u origin main`。
+        run(git_push(ws(&dir))).unwrap();
+        assert_eq!(
+            sh_out(origin.path(), &["rev-parse", "main"]),
+            sh_out(dir.path(), &["rev-parse", "HEAD"])
+        );
+
+        run(git_fetch(ws(&dir))).unwrap();
+
+        // 第二个克隆推一条新提交，验证 pull 能拉回。
+        let two = tempfile::tempdir().unwrap();
+        let st = Command::new("git")
+            .args([
+                "clone",
+                o.as_str(),
+                two.path().to_string_lossy().as_ref(),
+            ])
+            .output()
+            .unwrap();
+        assert!(st.status.success(), "clone: {}", String::from_utf8_lossy(&st.stderr));
+        sh(two.path(), &["config", "user.email", "t2@example.com"]);
+        sh(two.path(), &["config", "user.name", "T2"]);
+        sh(two.path(), &["config", "commit.gpgsign", "false"]);
+        sh(two.path(), &["config", "core.hooksPath", "/dev/null"]);
+        commit_file(two.path(), "fromclone.txt", "c\n", "from clone2");
+        sh(two.path(), &["push"]);
+
+        run(git_pull(ws(&dir))).unwrap();
+        assert!(dir.path().join("fromclone.txt").exists());
+    }
+
+    // --- worktree ---------------------------------------------------------
+
+    #[test]
+    fn worktree_add_list_remove_prune() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "1\n", "c1");
+        let parent = tempfile::tempdir().unwrap();
+        let wt = parent.path().join("wt-feature").to_string_lossy().into_owned();
+
+        let abs = run(git_worktree_add(
+            ws(&dir),
+            wt.clone(),
+            "feature".into(),
+            true,
+            None,
+        ))
+        .unwrap();
+        assert!(PathBuf::from(&abs).join("a.txt").exists());
+
+        let list = run(git_worktrees(ws(&dir))).unwrap();
+        assert!(list.iter().any(|w| w.branch.as_deref() == Some("feature")));
+        assert!(list.iter().any(|w| w.is_current)); // 主工作区应标记为当前
+
+        run(git_worktree_remove(ws(&dir), wt.clone(), false)).unwrap();
+        run(git_worktree_prune(ws(&dir))).unwrap();
+        let list2 = run(git_worktrees(ws(&dir))).unwrap();
+        assert!(!list2.iter().any(|w| w.branch.as_deref() == Some("feature")));
+    }
+
+    // --- 提交列表 / 图谱 / 文件 ------------------------------------------
+
+    #[test]
+    fn recent_commits_limit_and_merge_flag() {
+        let dir = merged_history();
+        let commits = run(git_recent_commits(ws(&dir), 10)).unwrap();
+        assert!(commits.len() >= 4, "got {}", commits.len());
+        assert_eq!(commits[0].subject, "merge feature");
+        assert!(commits[0].is_merge);
+        assert_eq!(run(git_recent_commits(ws(&dir), 2)).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn log_reports_parents_and_merge() {
+        let dir = merged_history();
+        let log = run(git_log(ws(&dir), 10)).unwrap();
+        let merge = log.iter().find(|c| c.subject == "merge feature").unwrap();
+        assert!(merge.is_merge);
+        assert_eq!(merge.parents.len(), 2);
+    }
+
+    /// 造一段带合并提交的历史，供 recent_commits / log 复用。
+    fn merged_history() -> tempfile::TempDir {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "1\n", "c1");
+        sh(dir.path(), &["checkout", "-b", "feature"]);
+        commit_file(dir.path(), "b.txt", "b\n", "c2");
+        sh(dir.path(), &["checkout", "main"]);
+        commit_file(dir.path(), "c.txt", "c\n", "c3");
+        sh(dir.path(), &["merge", "--no-ff", "-m", "merge feature", "feature"]);
+        dir
+    }
+
+    #[test]
+    fn commit_files_status_and_stats() {
+        let dir = repo();
+        commit_file(dir.path(), "keep.txt", "k\n", "c1");
+        commit_file(dir.path(), "del.txt", "d\n", "add del");
+        write(dir.path(), "keep.txt", "k\nmore\n");
+        std::fs::remove_file(dir.path().join("del.txt")).unwrap();
+        write(dir.path(), "added.txt", "new\n");
+        sh(dir.path(), &["add", "-A"]);
+        sh(dir.path(), &["commit", "-m", "mix"]);
+        let h = sh_out(dir.path(), &["rev-parse", "HEAD"]);
+        let files = run(git_commit_files(ws(&dir), h)).unwrap();
+        let get = |p: &str| files.iter().find(|f| f.path == p).unwrap();
+        assert_eq!(get("keep.txt").status, "modified");
+        assert_eq!(get("keep.txt").additions, 1);
+        assert_eq!(get("del.txt").status, "deleted");
+        assert_eq!(get("added.txt").status, "added");
+    }
+
+    // --- 分支分叉 ---------------------------------------------------------
+
+    #[test]
+    fn branch_divergence_counts_ahead_behind() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "1\n", "c1");
+        sh(dir.path(), &["checkout", "-b", "feature"]);
+        commit_file(dir.path(), "f1.txt", "f1\n", "feat1");
+        commit_file(dir.path(), "f2.txt", "f2\n", "feat2");
+        sh(dir.path(), &["checkout", "main"]);
+        commit_file(dir.path(), "m1.txt", "m1\n", "main2");
+        // 显式 base，以及默认 base（应解析为 main）两种都验。
+        for base in [Some("main".to_string()), None] {
+            let div = run(git_branch_divergence(ws(&dir), "feature".into(), base)).unwrap();
+            assert_eq!(div.ahead_of_base, 2);
+            assert_eq!(div.behind_base, 1);
+            assert_eq!(div.base.as_deref(), Some("main"));
+            assert!(div.fork_point.is_some());
+            assert_eq!(div.own_commits.len(), 2);
+            assert_eq!(div.base_new_commits.len(), 1);
+        }
+    }
 }
