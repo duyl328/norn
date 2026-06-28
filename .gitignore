@@ -21,3 +21,4 @@ temp/
 # Playwright
 test-results/
 playwright-report/
+.idea/

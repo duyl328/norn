@@ -3232,7 +3232,7 @@
   }
 
   .git-graph-scroll {
-    @apply min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-1;
+    @apply min-h-0 flex-1 overflow-auto px-1 py-1;
   }
 
   .git-graph-inner {
