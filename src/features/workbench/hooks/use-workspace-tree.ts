@@ -22,7 +22,6 @@ import {
   collapseTreeNodesDeep,
   findTreeNode,
   flattenVisibleTreeRows,
-  getFileOpenId,
   getNativeFileOperationError,
   getParentPath,
   getPathName,
@@ -35,6 +34,7 @@ import {
   isTauriRuntime,
   moveTreeLead,
   orderedRange,
+  remapDocumentAfterMove,
   saveRecentFolders,
   toFileTreeNode,
 } from "../workbench-utils";
@@ -65,6 +65,7 @@ interface UseWorkspaceTreeParams {
 export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   const document = useWorkbenchStore((state) => state.document);
   const setDocument = useWorkbenchStore((state) => state.setDocument);
+  const setOpenDocuments = useWorkbenchStore((state) => state.setOpenDocuments);
   const setSaveState = useWorkbenchStore((state) => state.setSaveState);
   const leftPanelOpen = useWorkbenchStore((state) => state.leftPanelOpen);
   const setLeftPanelOpen = useWorkbenchStore((state) => state.setLeftPanelOpen);
@@ -793,15 +794,10 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
 
       await refreshNodeParent(node, dialogScope);
 
-      if (node.path === document.path) {
-        setDocument((currentDocument) => ({
-          ...currentDocument,
-          id: getFileOpenId(renamedEntry.path, renamedEntry.lastModified),
-          name: renamedEntry.name,
-          path: renamedEntry.path,
-          lastModified: renamedEntry.lastModified ?? currentDocument.lastModified,
-        }));
-      }
+      // 重命名节点可能是已打开文档本身或其祖先目录；document 与 openDocuments(标签列表) 都要同步，
+      // 否则切回旧标签会把路径退回旧值、后续保存写向已不存在的旧路径。
+      setDocument((currentDocument) => remapDocumentAfterMove(currentDocument, node.path, renamedEntry));
+      setOpenDocuments((docs) => docs.map((doc) => remapDocumentAfterMove(doc, node.path, renamedEntry)));
 
       closeFileTreeNameDialog();
     } catch (error) {
@@ -850,15 +846,9 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
           });
           await refreshNodeParent(node, scope);
 
-          if (node.path === document.path) {
-            setDocument((currentDocument) => ({
-              ...currentDocument,
-              id: getFileOpenId(movedEntry.path, movedEntry.lastModified),
-              name: movedEntry.name,
-              path: movedEntry.path,
-              lastModified: movedEntry.lastModified ?? currentDocument.lastModified,
-            }));
-          }
+          // 移动节点本身或其祖先目录；document 与 openDocuments 标签列表都要同步。
+          setDocument((currentDocument) => remapDocumentAfterMove(currentDocument, node.path, movedEntry));
+          setOpenDocuments((docs) => docs.map((doc) => remapDocumentAfterMove(doc, node.path, movedEntry)));
         } else {
           await invoke<NativeDirectoryEntry>("copy_path", {
             workspaceRoot,
@@ -985,15 +975,9 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
           });
           await refreshNodeParent(node, sourceScope);
 
-          if (node.path === document.path) {
-            setDocument((currentDocument) => ({
-              ...currentDocument,
-              id: getFileOpenId(movedEntry.path, movedEntry.lastModified),
-              name: movedEntry.name,
-              path: movedEntry.path,
-              lastModified: movedEntry.lastModified ?? currentDocument.lastModified,
-            }));
-          }
+          // 移动节点本身或其祖先目录；document 与 openDocuments 标签列表都要同步。
+          setDocument((currentDocument) => remapDocumentAfterMove(currentDocument, node.path, movedEntry));
+          setOpenDocuments((docs) => docs.map((doc) => remapDocumentAfterMove(doc, node.path, movedEntry)));
         } else {
           // 跨树(主 ↔ 临时,根目录不同)→ 复制到目标树。move_path 要求同根,故用只校验目标的 copy_external_paths;源保持不变。
           await invoke<NativeDirectoryEntry[]>("copy_external_paths", {

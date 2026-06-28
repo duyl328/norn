@@ -825,7 +825,7 @@ fn open_terminal_at(path: String) -> Result<(), String> {
             .arg(&directory)
             .spawn()
             .map_err(|error| format!("Unable to open Terminal: {error}"))?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]

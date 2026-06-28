@@ -683,6 +683,38 @@ export const isPathInsideOrEqual = (path: string, possibleParent: string) => {
 export const arePathsEqual = (a: string, b: string) =>
   a.replace(/\\/g, "/").replace(/\/+$/, "") === b.replace(/\\/g, "/").replace(/\/+$/, "");
 
+// 当祖先节点被重命名/移动（oldBase → newBase）时，把落在其下的某个路径重映射到新位置；
+// 不在其下时返回 null。用于让重命名/移动目录后仍打开的文档跟随到新路径。
+export const remapDescendantPath = (path: string, oldBase: string, newBase: string): string | null => {
+  if (!isPathInsideOrEqual(path, oldBase)) {
+    return null;
+  }
+  return newBase + path.slice(oldBase.length);
+};
+
+// 重命名/移动节点（oldBase → entry）后，把一个打开的文档重映射到新位置：文档可能是该节点
+// 本身（需同步 name/lastModified），也可能是其后代（仅改 path）。不受影响时原样返回同一引用，
+// 便于调用方对 document 与 openDocuments 列表一并 map，且 React 能跳过未变项。
+export const remapDocumentAfterMove = (
+  doc: WorkbenchDocument,
+  oldBase: string,
+  entry: { path: string; name: string; lastModified?: number | null },
+): WorkbenchDocument => {
+  const remappedPath = remapDescendantPath(doc.path, oldBase, entry.path);
+  if (!remappedPath) {
+    return doc;
+  }
+  const isSelf = arePathsEqual(oldBase, doc.path);
+  const lastModified = isSelf ? (entry.lastModified ?? doc.lastModified) : doc.lastModified;
+  return {
+    ...doc,
+    id: getFileOpenId(remappedPath, lastModified),
+    name: isSelf ? entry.name : doc.name,
+    path: remappedPath,
+    lastModified,
+  };
+};
+
 export const findTreeNode = (nodes: FileTreeNode[], path: string): FileTreeNode | undefined => {
   for (const node of nodes) {
     if (node.path === path) {

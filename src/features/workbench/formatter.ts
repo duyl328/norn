@@ -87,15 +87,39 @@ interface TidyOptions {
   trailing?: boolean;
   /** 连续空行收敛为一个。 */
   collapseBlank?: boolean;
+  /**
+   * 「保护行」掩码(按归一化后的行号对齐):为 true 的行是多行字符串/块注释内的字面内容,
+   * 去行尾空白与收敛空行都跳过它,避免静默改写字符串数据。由 buildProtectedMask 生成。
+   */
+  protectedLines?: boolean[];
 }
 
 /** 语言无关的空白整理:统一换行、去行尾空白、收敛空行、末尾恰好一个换行。不碰代码结构。 */
 export function tidy(text: string, opts: TidyOptions = {}): string {
-  const { trailing = true, collapseBlank = true } = opts;
-  let out = text.replace(/\r\n?/g, "\n");
-  if (trailing) out = out.replace(/[ \t]+$/gm, "");
-  if (collapseBlank) out = out.replace(/\n{3,}/g, "\n\n");
-  return out.replace(/\n*$/, "\n");
+  const { trailing = true, collapseBlank = true, protectedLines } = opts;
+  const normalized = text.replace(/\r\n?/g, "\n");
+  if (!trailing && !collapseBlank) {
+    return normalized.replace(/\n*$/, "\n");
+  }
+  const out: string[] = [];
+  let blankRun = 0;
+  const lines = normalized.split("\n");
+  for (let i = 0; i < lines.length; i++) {
+    if (protectedLines?.[i]) {
+      blankRun = 0;
+      out.push(lines[i]);
+      continue;
+    }
+    const line = trailing ? lines[i].replace(/[ \t]+$/, "") : lines[i];
+    if (collapseBlank && line === "") {
+      blankRun += 1;
+      if (blankRun > 1) continue; // 连续空行只保留一个
+    } else {
+      blankRun = 0;
+    }
+    out.push(line);
+  }
+  return out.join("\n").replace(/\n*$/, "\n");
 }
 
 function formatJson(text: string): string | null {
@@ -289,6 +313,64 @@ export function reindentTags(text: string, unit = "  "): string {
   return out.join("\n");
 }
 
+/**
+ * 标出哪些行落在多行字符串/块注释内部(其空白是字面数据,tidy 不得改写)。
+ * 覆盖:花括号族的反引号模板串与块注释、Python 三引号、YAML 块标量(`| / >`)。
+ * 其余语言无可靠扫描器,返回 undefined(tidy 退回原行为)。lines 须为归一化(\n)后的数组。
+ */
+function buildProtectedMask(lines: string[], ext: string): boolean[] | undefined {
+  const mask = new Array<boolean>(lines.length).fill(false);
+
+  if (BRACE_FAMILY.has(ext)) {
+    let mode: ScanMode = null;
+    for (let i = 0; i < lines.length; i++) {
+      const startInString = mode !== null;
+      mode = scanLine(lines[i], mode).mode;
+      // 行首或行尾落在多行串/块注释里 → 该行含字面内容,保护其行尾空白。
+      if (startInString || mode !== null) mask[i] = true;
+    }
+    return mask;
+  }
+
+  if (ext === "py" || ext === "python") {
+    let triple: '"""' | "'''" | null = null;
+    for (let i = 0; i < lines.length; i++) {
+      if (triple) {
+        mask[i] = true;
+        if (lines[i].includes(triple)) triple = null;
+        continue;
+      }
+      const open = /("""|''')/.exec(lines[i]);
+      // 同行未再次闭合才进入跨行三引号态。
+      if (open && !lines[i].slice(open.index + 3).includes(open[1])) {
+        triple = open[1] as '"""' | "'''";
+        mask[i] = true;
+      }
+    }
+    return mask;
+  }
+
+  if (ext === "yaml" || ext === "yml") {
+    // 块标量头:`key: |`、`- >-` 等;其后缩进更深(或空)的行都是字面内容。
+    const header = /(^|[:-]\s)[|>][+-]?\d*\s*(#.*)?$/;
+    let blockIndent: number | null = null;
+    for (let i = 0; i < lines.length; i++) {
+      const indent = lines[i].length - lines[i].replace(/^\s+/, "").length;
+      if (blockIndent !== null) {
+        if (lines[i].trim() === "" || indent > blockIndent) {
+          mask[i] = true;
+          continue;
+        }
+        blockIndent = null;
+      }
+      if (header.test(lines[i])) blockIndent = indent;
+    }
+    return mask;
+  }
+
+  return undefined;
+}
+
 /** 按扩展名选策略整理文本。ext 不含点(如 "ts"、"json")。无可整理改动时原样返回。 */
 export function formatText(text: string, ext: string): string {
   if (!text.trim()) return text;
@@ -299,12 +381,19 @@ export function formatText(text: string, ext: string): string {
     if (json !== null) return json;
     // 解析失败(注释/尾逗号)→ 退回 tidy,别动结构。
   }
-  if (BRACE_FAMILY.has(e)) return reindentBraces(tidy(text));
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  if (BRACE_FAMILY.has(e)) {
+    return reindentBraces(tidy(text, { protectedLines: buildProtectedMask(lines, e) }));
+  }
   // 标签族:不去行尾空白也不收敛空行(pre/textarea 里都是有意义内容),只统一换行+末尾换行。
   if (TAG_FAMILY.has(e)) return reindentTags(tidy(text, { trailing: false, collapseBlank: false }));
   if (INDENT_SENSITIVE.has(e)) {
     const keepTrailing = e === "md" || e === "markdown" || e === "mdx";
-    return tidy(text, { trailing: !keepTrailing, collapseBlank: !keepTrailing });
+    return tidy(text, {
+      trailing: !keepTrailing,
+      collapseBlank: !keepTrailing,
+      protectedLines: keepTrailing ? undefined : buildProtectedMask(lines, e),
+    });
   }
   return tidy(text);
 }

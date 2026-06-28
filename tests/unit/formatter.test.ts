@@ -74,3 +74,24 @@ describe("formatText: 缩进敏感语言只整理空白", () => {
     expect(formatText(src, "md")).toBe("line one  \nline two\n");
   });
 });
+
+describe("formatText: 保护多行字符串/注释内的字面空白(防保存时静默改写)", () => {
+  it("反引号模板串内的行尾空白与连续空行原样保留,模板外仍整理", () => {
+    const src = "const q = `\nkeep   \n\n\n\nme`;   \nconst x = 1;   ";
+    // 模板内空白/空行保留;含闭合反引号的行被保守保护(行尾空白也保留);纯代码行清理。
+    expect(formatText(src, "ts")).toBe("const q = `\nkeep   \n\n\n\nme`;   \nconst x = 1;\n");
+  });
+
+  it("Python 三引号串内的行尾空白保留,代码区清理", () => {
+    const src = 'def f():\n    s = """\n    a   \n\n\n\n    b\n    """   \n    return s   ';
+    // 串内 a/b 行与空行保留;含闭合 """ 的行保守保护;纯代码 return 行清理。
+    expect(formatText(src, "py")).toBe(
+      'def f():\n    s = """\n    a   \n\n\n\n    b\n    """   \n    return s\n',
+    );
+  });
+
+  it("YAML 块标量内的行尾空白与空行保留", () => {
+    const src = "text: |\n  line a   \n\n\n\n  line b\nother: 1   ";
+    expect(formatText(src, "yaml")).toBe("text: |\n  line a   \n\n\n\n  line b\nother: 1\n");
+  });
+});

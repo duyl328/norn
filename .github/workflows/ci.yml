@@ -61,11 +61,17 @@ jobs:
             file
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
 
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+
+      # rustfmt 不编译，可在产出前端构建产物前先跑
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
       - uses: pnpm/action-setup@v4
 
@@ -74,11 +80,15 @@ jobs:
           node-version: 20
           cache: pnpm
 
-      # tauri-build 需要 frontendDist（../dist）存在；先产出前端构建产物
+      # tauri-build 需要 frontendDist（../dist）存在；clippy/test 会编译 crate 触发 build.rs，
+      # 故须先产出前端构建产物
       - name: Build frontend (for tauri-build)
         run: |
           pnpm install --frozen-lockfile
           pnpm build
+
+      - name: Run clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 
       - name: Run Rust tests
         run: pnpm test:rust

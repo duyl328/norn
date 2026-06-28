@@ -147,6 +147,9 @@ pub struct GitWorktree {
 
 fn run_git(workspace: &Path, args: &[&str]) -> Result<std::process::Output, GitError> {
     let mut cmd = Command::new("git");
+    // 强制 C locale：classify() 靠英文 stderr 子串识别错误类型，本地化 git 会让
+    // IdentityMissing/NoUpstream/Conflict 等全部塌缩成 Io（含新分支首推无法回退 -u）。
+    cmd.env("LC_ALL", "C").env("LANG", "C");
     cmd.arg("-C").arg(workspace).args(args);
     match cmd.output() {
         Ok(output) => Ok(output),
@@ -156,6 +159,46 @@ fn run_git(workspace: &Path, args: &[&str]) -> Result<std::process::Output, GitE
         )),
         Err(error) => Err(GitError::new(GitErrorKind::Io, error.to_string())),
     }
+}
+
+/// 校验前端传入的 `file` 是工作区内的相对路径并返回其绝对路径，供文件读写使用
+/// （lib.rs 的文件命令有等价校验，git.rs 此前缺失）。两道防线：
+/// 1. 词法层先拒绝绝对路径与 `..`/盘符越界；
+/// 2. canonicalize 解析符号链接后确认真实落点仍在工作区内——堵住「工作区内 symlink 指向外部」。
+///    目标不存在（如已删除文件）时退回校验其父目录，保留「读已删除文件→空」的语义。
+fn workspace_file_path(workspace: &Path, file: &str) -> Result<PathBuf, GitError> {
+    use std::path::Component;
+    let escape = || GitError::new(GitErrorKind::Io, "路径越出工作区范围。");
+    let rel = Path::new(file);
+    let lexically_escapes = rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| matches!(c, Component::ParentDir | Component::Prefix(_)));
+    if lexically_escapes {
+        return Err(escape());
+    }
+    let joined = workspace.join(rel);
+    let root = workspace
+        .canonicalize()
+        .map_err(|error| GitError::new(GitErrorKind::Io, error.to_string()))?;
+    // 目标存在 → 直接 canonicalize；不存在 → 解析父目录再拼回文件名。
+    let resolved = match joined.canonicalize() {
+        Ok(real) => real,
+        Err(_) => {
+            let parent = joined.parent().ok_or_else(escape)?;
+            let parent_real = parent
+                .canonicalize()
+                .map_err(|error| GitError::new(GitErrorKind::Io, error.to_string()))?;
+            match joined.file_name() {
+                Some(name) => parent_real.join(name),
+                None => parent_real,
+            }
+        }
+    };
+    if !resolved.starts_with(&root) {
+        return Err(escape());
+    }
+    Ok(joined)
 }
 
 /// 运行 git 并要求成功，失败时把 stderr/stdout 映射成结构化错误。
@@ -395,6 +438,7 @@ pub async fn git_status(path: String) -> Result<GitStatusResult, GitError> {
 #[tauri::command]
 pub async fn git_file_diff(path: String, file: String) -> Result<String, GitError> {
     let workspace = PathBuf::from(path);
+    workspace_file_path(&workspace, &file)?;
     let diff = git_text(&workspace, &["diff", "HEAD", "--", &file])?;
     if !diff.trim().is_empty() {
         return Ok(diff);
@@ -426,7 +470,8 @@ pub async fn git_file_versions(path: String, file: String) -> Result<GitFileVers
         .filter(|output| output.status.success())
         .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
         .unwrap_or_default();
-    let modified = std::fs::read_to_string(workspace.join(&file)).unwrap_or_default();
+    let modified =
+        std::fs::read_to_string(workspace_file_path(&workspace, &file)?).unwrap_or_default();
     Ok(GitFileVersions { original, modified })
 }
 
@@ -440,7 +485,7 @@ pub async fn git_commit_file_versions(
 ) -> Result<GitFileVersions, GitError> {
     let workspace = PathBuf::from(path);
     let show = |spec: String| {
-        run_git(&workspace, &["show", &spec])
+        run_git(&workspace, &["show", "--end-of-options", &spec])
             .ok()
             .filter(|output| output.status.success())
             .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
@@ -518,7 +563,10 @@ pub async fn git_ignore_path(path: String, entry: String) -> Result<(), GitError
     // 已被跟踪的文件加进 .gitignore 不会生效。从索引移除(--cached 保留磁盘文件),
     // 它才会变成「未跟踪 + 被忽略」,落入底部已忽略区;暂存的删除随下次提交落定。
     // --ignore-unmatch:本就是未跟踪的新文件时不报错。
-    git_text(&workspace, &["rm", "-r", "--cached", "--ignore-unmatch", "--", rule])?;
+    git_text(
+        &workspace,
+        &["rm", "-r", "--cached", "--ignore-unmatch", "--", rule],
+    )?;
     Ok(())
 }
 
@@ -545,9 +593,13 @@ pub async fn git_ignored_files(path: String) -> Result<Vec<String>, GitError> {
 
 /// 写入解决冲突后的文件内容,并 git add 标记为已解决。
 #[tauri::command]
-pub async fn git_resolve_conflict(path: String, file: String, content: String) -> Result<(), GitError> {
+pub async fn git_resolve_conflict(
+    path: String,
+    file: String,
+    content: String,
+) -> Result<(), GitError> {
     let workspace = PathBuf::from(path);
-    std::fs::write(workspace.join(&file), content)
+    std::fs::write(workspace_file_path(&workspace, &file)?, content)
         .map_err(|error| GitError::new(GitErrorKind::Io, error.to_string()))?;
     git_text(&workspace, &["add", "--", &file])?;
     Ok(())
@@ -592,8 +644,15 @@ pub async fn git_create_branch(path: String, name: String) -> Result<(), GitErro
 
 /// 从指定提交新建并切换到分支(常用于把「分离 HEAD」固化成一条分支)。
 #[tauri::command]
-pub async fn git_create_branch_at(path: String, name: String, hash: String) -> Result<(), GitError> {
-    git_text(&PathBuf::from(path), &["switch", "-c", &name, &hash])?;
+pub async fn git_create_branch_at(
+    path: String,
+    name: String,
+    hash: String,
+) -> Result<(), GitError> {
+    git_text(
+        &PathBuf::from(path),
+        &["switch", "-c", &name, "--end-of-options", &hash],
+    )?;
     Ok(())
 }
 
@@ -601,7 +660,10 @@ pub async fn git_create_branch_at(path: String, name: String, hash: String) -> R
 /// 前端「合并进行中」横幅 + 中止按钮接管后续(已有逻辑)。能快进时即快进。
 #[tauri::command]
 pub async fn git_merge(path: String, branch: String) -> Result<(), GitError> {
-    git_text(&PathBuf::from(path), &["merge", "--no-edit", &branch])?;
+    git_text(
+        &PathBuf::from(path),
+        &["merge", "--no-edit", "--end-of-options", &branch],
+    )?;
     Ok(())
 }
 
@@ -639,7 +701,12 @@ pub async fn git_abort_op(path: String, op: String) -> Result<(), GitError> {
 /// 签出某个提交(分离 HEAD)。用于历史里「单独签出此节点」。
 #[tauri::command]
 pub async fn git_checkout_commit(path: String, hash: String) -> Result<(), GitError> {
-    git_text(&PathBuf::from(path), &["checkout", &hash])?;
+    // --detach + --end-of-options：明确按提交分离签出，避免 hash 被当作 flag 或 pathspec
+    // （如 hash="." 会丢弃工作区）。
+    git_text(
+        &PathBuf::from(path),
+        &["checkout", "--detach", "--end-of-options", &hash],
+    )?;
     Ok(())
 }
 
@@ -651,14 +718,20 @@ pub async fn git_reset(path: String, hash: String, mode: String) -> Result<(), G
         "hard" => "--hard",
         _ => "--mixed",
     };
-    git_text(&PathBuf::from(path), &["reset", flag, &hash])?;
+    git_text(
+        &PathBuf::from(path),
+        &["reset", flag, "--end-of-options", &hash],
+    )?;
     Ok(())
 }
 
 /// 还原某个提交(生成一条反向提交,不改写历史)。
 #[tauri::command]
 pub async fn git_revert(path: String, hash: String) -> Result<(), GitError> {
-    git_text(&PathBuf::from(path), &["revert", "--no-edit", &hash])?;
+    git_text(
+        &PathBuf::from(path),
+        &["revert", "--no-edit", "--end-of-options", &hash],
+    )?;
     Ok(())
 }
 
@@ -687,7 +760,12 @@ pub async fn git_worktrees(path: String) -> Result<Vec<GitWorktree>, GitError> {
     for worktree in worktrees.iter_mut() {
         worktree.is_current = here
             .as_ref()
-            .and_then(|h| PathBuf::from(&worktree.path).canonicalize().ok().map(|c| &c == h))
+            .and_then(|h| {
+                PathBuf::from(&worktree.path)
+                    .canonicalize()
+                    .ok()
+                    .map(|c| &c == h)
+            })
             .unwrap_or(false);
     }
     Ok(worktrees)
@@ -773,7 +851,11 @@ pub async fn git_worktree_add(
 
 /// 删除一个 worktree。force=true 时即使有未提交改动也强删(`--force`)。
 #[tauri::command]
-pub async fn git_worktree_remove(path: String, worktree_path: String, force: bool) -> Result<(), GitError> {
+pub async fn git_worktree_remove(
+    path: String,
+    worktree_path: String,
+    force: bool,
+) -> Result<(), GitError> {
     let mut args: Vec<&str> = vec!["worktree", "remove"];
     if force {
         args.push("--force");
@@ -973,7 +1055,14 @@ pub async fn git_commit_files(path: String, hash: String) -> Result<Vec<GitCommi
     let stats = git_commit_file_stats(&workspace, &hash)?;
     let text = git_text(
         &workspace,
-        &["show", &hash, "--name-status", "--format=", "-M"],
+        &[
+            "show",
+            "--name-status",
+            "--format=",
+            "-M",
+            "--end-of-options",
+            &hash,
+        ],
     )?;
     let mut files = Vec::new();
     for line in text.lines() {
@@ -985,7 +1074,7 @@ pub async fn git_commit_files(path: String, hash: String) -> Result<Vec<GitCommi
             continue;
         };
         // 普通项 "M\tpath"；重命名 "R100\told\tnew" → 取最后一段。
-        let path = parts.last().unwrap_or("").to_string();
+        let path = parts.next_back().unwrap_or("").to_string();
         if path.is_empty() {
             continue;
         }
@@ -1004,7 +1093,17 @@ fn git_commit_file_stats(
     workspace: &Path,
     hash: &str,
 ) -> Result<HashMap<String, (u32, u32)>, GitError> {
-    let text = git_text(workspace, &["show", hash, "--numstat", "--format=", "-M"])?;
+    let text = git_text(
+        workspace,
+        &[
+            "show",
+            "--numstat",
+            "--format=",
+            "-M",
+            "--end-of-options",
+            hash,
+        ],
+    )?;
     Ok(parse_commit_numstat(&text))
 }
 
@@ -1017,7 +1116,7 @@ fn parse_commit_numstat(text: &str) -> HashMap<String, (u32, u32)> {
         let mut parts = line.split('\t');
         let additions = parse_numstat_count(parts.next());
         let deletions = parse_numstat_count(parts.next());
-        let Some(path) = parts.last() else {
+        let Some(path) = parts.next_back() else {
             continue;
         };
         if path.is_empty() {
@@ -1121,7 +1220,13 @@ fn merge_base_ref(workspace: &Path, a: &str, b: &str) -> Option<GitCommitRef> {
     }
     let text = git_text(
         workspace,
-        &["show", "-s", "--pretty=format:%h%x1f%s%x1f%cr", &hash],
+        &[
+            "show",
+            "-s",
+            "--pretty=format:%h%x1f%s%x1f%cr",
+            "--end-of-options",
+            &hash,
+        ],
     )
     .ok()?;
     let fields: Vec<&str> = text.split('\u{1f}').collect();
@@ -1138,7 +1243,7 @@ mod tests {
 
     #[test]
     fn parses_branch_header_and_changes() {
-        let raw = "# branch.head main\0# branch.upstream origin/main\0# branch.ab +2 -1\01 .M N... 100644 100644 100644 aaa bbb src/app.tsx\0? new file.txt\0";
+        let raw = "# branch.head main\x00# branch.upstream origin/main\x00# branch.ab +2 -1\x001 .M N... 100644 100644 100644 aaa bbb src/app.tsx\x00? new file.txt\x00";
         let result = parse_status(raw.as_bytes());
         assert_eq!(result.branch.as_deref(), Some("main"));
         assert_eq!(result.upstream.as_deref(), Some("origin/main"));
@@ -1154,7 +1259,7 @@ mod tests {
     #[test]
     fn parses_rename_with_previous_path() {
         let raw =
-            "1 A. N... 0 100644 100644 0 aaa added.txt\02 R. N... 100644 100644 100644 aaa bbb R100 new/name.txt\0old/name.txt\0";
+            "1 A. N... 0 100644 100644 0 aaa added.txt\x002 R. N... 100644 100644 100644 aaa bbb R100 new/name.txt\x00old/name.txt\x00";
         let result = parse_status(raw.as_bytes());
         assert_eq!(result.changes.len(), 2);
         assert_eq!(result.changes[0].status, "added");
@@ -1340,7 +1445,14 @@ mod tests {
         commit_file(dir.path(), "base.txt", "b\n", "init");
         write(dir.path(), "x.txt", "x\n");
         write(dir.path(), "y.txt", "y\n");
-        run(git_commit(ws(&dir), "add x".into(), false, false, vec!["x.txt".into()])).unwrap();
+        run(git_commit(
+            ws(&dir),
+            "add x".into(),
+            false,
+            false,
+            vec!["x.txt".into()],
+        ))
+        .unwrap();
         let st = run(git_status(ws(&dir))).unwrap();
         assert!(st
             .changes
@@ -1362,9 +1474,19 @@ mod tests {
         let dir = repo();
         commit_file(dir.path(), "a.txt", "a\n", "orig msg");
         write(dir.path(), "b.txt", "b\n");
-        run(git_commit(ws(&dir), "amended msg".into(), false, true, vec![])).unwrap();
+        run(git_commit(
+            ws(&dir),
+            "amended msg".into(),
+            false,
+            true,
+            vec![],
+        ))
+        .unwrap();
         assert_eq!(sh_out(dir.path(), &["log", "--oneline"]).lines().count(), 1);
-        assert_eq!(sh_out(dir.path(), &["log", "-1", "--pretty=%s"]), "amended msg");
+        assert_eq!(
+            sh_out(dir.path(), &["log", "-1", "--pretty=%s"]),
+            "amended msg"
+        );
         // amend 应把新文件并入这一条提交。
         assert!(sh_out(dir.path(), &["ls-files"]).contains("b.txt"));
     }
@@ -1404,6 +1526,52 @@ mod tests {
         assert_eq!(v.modified, "v2\n");
     }
 
+    #[test]
+    fn file_commands_reject_workspace_escape() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "x\n", "init");
+        // 绝对路径与 .. 越界都应被拒绝，而非读/写工作区外的文件。
+        for bad in ["../escape.txt", "/etc/hosts"] {
+            assert!(
+                run(git_file_versions(ws(&dir), bad.into())).is_err(),
+                "versions {bad}"
+            );
+            assert!(
+                run(git_file_diff(ws(&dir), bad.into())).is_err(),
+                "diff {bad}"
+            );
+            assert!(
+                run(git_resolve_conflict(ws(&dir), bad.into(), "pwned".into())).is_err(),
+                "resolve {bad}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn file_commands_reject_symlink_escape() {
+        use std::os::unix::fs::symlink;
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(outside.path().join("secret.txt"), "secret\n").unwrap();
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "x\n", "init");
+        // 工作区内一个名为 link 的符号链接指向工作区外的真实文件。
+        symlink(outside.path().join("secret.txt"), dir.path().join("link")).unwrap();
+        // 词法上是合法相对路径，但 canonicalize 后落在工作区外 → 必须拒绝读/写。
+        assert!(run(git_file_versions(ws(&dir), "link".into())).is_err());
+        assert!(run(git_resolve_conflict(
+            ws(&dir),
+            "link".into(),
+            "pwned".into()
+        ))
+        .is_err());
+        // 工作区外的文件内容未被改写。
+        assert_eq!(
+            std::fs::read_to_string(outside.path().join("secret.txt")).unwrap(),
+            "secret\n"
+        );
+    }
+
     // --- ignore -----------------------------------------------------------
 
     #[test]
@@ -1437,7 +1605,12 @@ mod tests {
     fn resolve_conflict_writes_and_stages() {
         let dir = repo();
         commit_file(dir.path(), "a.txt", "a\n", "init");
-        run(git_resolve_conflict(ws(&dir), "a.txt".into(), "resolved\n".into())).unwrap();
+        run(git_resolve_conflict(
+            ws(&dir),
+            "a.txt".into(),
+            "resolved\n".into(),
+        ))
+        .unwrap();
         assert_eq!(read(dir.path(), "a.txt"), "resolved\n");
         assert!(sh_out(dir.path(), &["diff", "--cached", "--name-only"]).contains("a.txt"));
     }
@@ -1454,7 +1627,10 @@ mod tests {
         assert_eq!(sh_out(dir.path(), &["branch", "--show-current"]), "main");
         let hash = sh_out(dir.path(), &["rev-parse", "HEAD"]);
         run(git_create_branch_at(ws(&dir), "fromhash".into(), hash)).unwrap();
-        assert_eq!(sh_out(dir.path(), &["branch", "--show-current"]), "fromhash");
+        assert_eq!(
+            sh_out(dir.path(), &["branch", "--show-current"]),
+            "fromhash"
+        );
     }
 
     #[test]
@@ -1579,14 +1755,14 @@ mod tests {
         // 第二个克隆推一条新提交，验证 pull 能拉回。
         let two = tempfile::tempdir().unwrap();
         let st = Command::new("git")
-            .args([
-                "clone",
-                o.as_str(),
-                two.path().to_string_lossy().as_ref(),
-            ])
+            .args(["clone", o.as_str(), two.path().to_string_lossy().as_ref()])
             .output()
             .unwrap();
-        assert!(st.status.success(), "clone: {}", String::from_utf8_lossy(&st.stderr));
+        assert!(
+            st.status.success(),
+            "clone: {}",
+            String::from_utf8_lossy(&st.stderr)
+        );
         sh(two.path(), &["config", "user.email", "t2@example.com"]);
         sh(two.path(), &["config", "user.name", "T2"]);
         sh(two.path(), &["config", "commit.gpgsign", "false"]);
@@ -1605,7 +1781,11 @@ mod tests {
         let dir = repo();
         commit_file(dir.path(), "a.txt", "1\n", "c1");
         let parent = tempfile::tempdir().unwrap();
-        let wt = parent.path().join("wt-feature").to_string_lossy().into_owned();
+        let wt = parent
+            .path()
+            .join("wt-feature")
+            .to_string_lossy()
+            .into_owned();
 
         let abs = run(git_worktree_add(
             ws(&dir),
@@ -1656,7 +1836,10 @@ mod tests {
         commit_file(dir.path(), "b.txt", "b\n", "c2");
         sh(dir.path(), &["checkout", "main"]);
         commit_file(dir.path(), "c.txt", "c\n", "c3");
-        sh(dir.path(), &["merge", "--no-ff", "-m", "merge feature", "feature"]);
+        sh(
+            dir.path(),
+            &["merge", "--no-ff", "-m", "merge feature", "feature"],
+        );
         dir
     }
 

@@ -42,6 +42,8 @@ import {
   mergeTreeNodeState,
   normalizeEditorSearchHistory,
   normalizeQuickSearchHistory,
+  remapDescendantPath,
+  remapDocumentAfterMove,
   requiresDocumentCloseConfirmation,
   saveEditorSearchHistory,
   saveQuickSearchHistory,
@@ -118,6 +120,41 @@ describe("path helpers", () => {
     expect(arePathsEqual("/a/b", "/a/b/")).toBe(true);
     expect(arePathsEqual("C:\\a\\b", "C:/a/b")).toBe(true);
     expect(arePathsEqual("/a/b", "/a/c")).toBe(false);
+  });
+
+  it("remapDescendantPath rewrites self and descendants, ignores outsiders", () => {
+    // 节点自身被重命名/移动
+    expect(remapDescendantPath("/a/old", "/a/old", "/a/new")).toBe("/a/new");
+    // 祖先目录被重命名 → 落在其下的文档跟随
+    expect(remapDescendantPath("/a/old/sub/f.txt", "/a/old", "/a/new")).toBe("/a/new/sub/f.txt");
+    // 移动到别处
+    expect(remapDescendantPath("/a/dir/f.txt", "/a/dir", "/b/dir")).toBe("/b/dir/f.txt");
+    // 不在被改节点之下 → null（仅前缀相同也不算）
+    expect(remapDescendantPath("/a/other/f.txt", "/a/old", "/a/new")).toBeNull();
+    expect(remapDescendantPath("/a/oldish/f.txt", "/a/old", "/a/new")).toBeNull();
+  });
+
+  it("remapDocumentAfterMove 同步自身与后代文档,无关文档保持同一引用", () => {
+    const base = createUntitledDocument();
+    const selfDoc = { ...base, path: "/ws/a/old.ts", name: "old.ts" };
+    const childDoc = { ...base, path: "/ws/a/dir/f.ts", name: "f.ts" };
+    const outsideDoc = { ...base, path: "/ws/b/g.ts", name: "g.ts" };
+
+    // 文件本身被重命名:path + name + id 跟随
+    const renamed = remapDocumentAfterMove(selfDoc, "/ws/a/old.ts", { path: "/ws/a/new.ts", name: "new.ts" });
+    expect(renamed.path).toBe("/ws/a/new.ts");
+    expect(renamed.name).toBe("new.ts");
+    expect(renamed.id).not.toBe(selfDoc.id);
+
+    // 祖先目录被移动:后代 path 跟随,name 不变
+    const moved = remapDocumentAfterMove(childDoc, "/ws/a/dir", { path: "/ws/a/moved", name: "moved" });
+    expect(moved.path).toBe("/ws/a/moved/f.ts");
+    expect(moved.name).toBe("f.ts");
+
+    // 不在受影响范围:原样返回同一引用(便于 React 跳过更新)
+    expect(remapDocumentAfterMove(outsideDoc, "/ws/a/old.ts", { path: "/ws/a/new.ts", name: "new.ts" })).toBe(
+      outsideDoc,
+    );
   });
 
   it("getTreeAncestorDirectoryPaths returns ancestors from shallow to deep", () => {

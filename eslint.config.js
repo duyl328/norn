@@ -61,7 +61,8 @@ export default tseslint.config(
 
       // TS
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
-      "@typescript-eslint/no-explicit-any": "warn",
+      // 当前零违规，升为 error 防止 any 渗入（其余 warn 规则尚有存量，待清零后再收紧）。
+      "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/consistent-type-imports": [
         "warn",
         { prefer: "type-imports", fixStyle: "inline-type-imports" },
