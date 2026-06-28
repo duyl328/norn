@@ -1,6 +1,6 @@
 [package]
 name = "norn"
-version = "0.1.1"
+version = "0.1.4"
 description = "A lightweight code and Git workbench."
 authors = ["Norn contributors"]
 edition = "2021"
@@ -25,6 +25,11 @@ trash = "=5.2.3"
 notify-debouncer-mini = "0.4"
 ignore = "0.4"
 regex = "1"
+
+# 自动更新:updater 仅支持桌面端;process 用于更新装好后重启应用。
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 # 「复制为文件」:把文件引用写入系统剪贴板的原生格式(Windows CF_HDROP / macOS NSPasteboard)。
 # 仅 Windows+macOS 需要;Linux 退回写文件名文本,故不在此处引入(避免拉入 X11 构建依赖)。

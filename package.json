@@ -1,7 +1,7 @@
 {
   "name": "norn",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.4",
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "engines": {
@@ -27,7 +27,8 @@
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:coverage && pnpm build",
     "check:all": "pnpm check && pnpm test:rust && pnpm test:e2e",
     "ci:quick": "node scripts/local-ci.mjs quick",
-    "ci:full": "node scripts/local-ci.mjs full"
+    "ci:full": "node scripts/local-ci.mjs full",
+    "release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
@@ -47,6 +48,8 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-virtual": "^3.14.3",
     "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/plugin-process": "^2",
+    "@tauri-apps/plugin-updater": "^2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "driver.js": "^1.6.0",
