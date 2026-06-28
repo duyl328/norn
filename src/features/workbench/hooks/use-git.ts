@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import { translate, type TranslationKey } from "../i18n-dictionaries";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type {
   GitBranches,
@@ -18,9 +19,15 @@ const RECENT_COMMIT_LIMIT = 20;
 
 const repoPath = (): string | null => useWorkbenchStore.getState().folderView?.rootPath ?? null;
 
+/** store 外取本地化文案,用于写操作的默认成功提示。 */
+const t = (key: TranslationKey, params?: Record<string, string | number>): string =>
+  translate(useWorkbenchStore.getState().language, key, params);
+
 /** 拉取 status / branches / recent commits 写入 store。不抛错，错误进 gitError。 */
 // 用计数器维护 gitRefreshing:本地刷新与后台 fetch 可能重叠,首进置 true、全部结束才置 false,避免闪烁。
 let refreshInFlight = 0;
+// 防抖:fetch 走网络(~2s),期间重复点刷新不再叠加并发 fetch。
+let fetchInFlight = false;
 const beginRefresh = () => {
   if (refreshInFlight++ === 0) useWorkbenchStore.getState().setGitRefreshing(true);
 };
@@ -28,7 +35,7 @@ const endRefresh = () => {
   if (--refreshInFlight === 0) useWorkbenchStore.getState().setGitRefreshing(false);
 };
 
-export const refreshGit = async (options?: { fetch?: boolean }): Promise<void> => {
+export const refreshGit = async (options?: { fetch?: boolean; notify?: boolean }): Promise<void> => {
   const store = useWorkbenchStore.getState();
   const path = repoPath();
 
@@ -43,12 +50,26 @@ export const refreshGit = async (options?: { fetch?: boolean }): Promise<void> =
   beginRefresh();
   try {
     // git fetch 走网络(~2s),不能挡住本地状态读取。仅在显式请求时后台跑,完成后再刷新一次本地视图。
-    if (options?.fetch) {
+    if (options?.fetch && !fetchInFlight) {
+      fetchInFlight = true;
       beginRefresh(); // 持有到 fetch + 其后续刷新结束,刷新图标在整个同步期间保持转动
       void invoke("git_fetch", { path })
         .then(() => refreshGit())
-        .catch(() => undefined)
-        .finally(endRefresh);
+        .then(() => {
+          // 仅手动刷新时提示「已同步」,打开仓库时的自动 fetch 保持安静。
+          if (options?.notify) {
+            useWorkbenchStore.getState().setGitNotice({ tone: "ok", text: t("git.toastSynced") });
+          }
+        })
+        .catch((error) => {
+          if (options?.notify) {
+            useWorkbenchStore.getState().setGitNotice({ tone: "err", error: getGitError(error) });
+          }
+        })
+        .finally(() => {
+          fetchInFlight = false;
+          endRefresh();
+        });
     }
     const [status, branches, ignoredFiles, commits, pendingOp] = await Promise.all([
       invoke<GitStatus>("git_status", { path }),
@@ -80,6 +101,10 @@ const withBusy = async (run: (path: string) => Promise<unknown>, okMessage?: str
   }
 
   const store = useWorkbenchStore.getState();
+  // 防抖:已有写操作在跑时忽略重复触发,避免双击/快速连点叠加 git 命令。
+  if (store.gitBusy) {
+    return false;
+  }
   store.setGitBusy(true);
   store.setGitError(null);
   try {
@@ -100,13 +125,17 @@ const withBusy = async (run: (path: string) => Promise<unknown>, okMessage?: str
 };
 
 export const gitActions = {
-  refresh: () => refreshGit({ fetch: true }),
+  refresh: () => refreshGit({ fetch: true, notify: true }),
   commit: (message: string, push: boolean, files: string[] = [], amend = false) =>
-    withBusy((path) => invoke("git_commit", { path, message, push, amend, files })),
-  push: () => withBusy((path) => invoke("git_push", { path })),
+    withBusy(
+      (path) => invoke("git_commit", { path, message, push, amend, files }),
+      t(amend ? "git.toastAmended" : push ? "git.toastCommittedPushed" : "git.toastCommitted"),
+    ),
+  push: () => withBusy((path) => invoke("git_push", { path }), t("git.toastPushed")),
   resolveConflict: (file: string, content: string) =>
-    withBusy((path) => invoke("git_resolve_conflict", { path, file, content })),
-  addToGitignore: (entry: string) => withBusy((path) => invoke("git_ignore_path", { path, entry })),
+    withBusy((path) => invoke("git_resolve_conflict", { path, file, content }), t("git.toastConflictResolved", { file })),
+  addToGitignore: (entry: string) =>
+    withBusy((path) => invoke("git_ignore_path", { path, entry }), t("git.toastIgnored", { entry })),
   loadIgnored: async (): Promise<string[]> => {
     const path = repoPath();
     if (!path) {
@@ -119,8 +148,9 @@ export const gitActions = {
       return [];
     }
   },
-  pull: () => withBusy((path) => invoke("git_pull", { path })),
-  checkout: (branch: string) => withBusy((path) => invoke("git_checkout", { path, branch })),
+  pull: () => withBusy((path) => invoke("git_pull", { path }), t("git.toastPulled")),
+  checkout: (branch: string) =>
+    withBusy((path) => invoke("git_checkout", { path, branch }), t("git.toastSwitched", { branch })),
   checkoutCommit: (hash: string, okMessage?: string) =>
     withBusy((path) => invoke("git_checkout_commit", { path, hash }), okMessage),
   resetTo: (hash: string, mode: "soft" | "mixed" | "hard", okMessage?: string) =>
@@ -129,7 +159,8 @@ export const gitActions = {
     withBusy((path) => invoke("git_revert", { path, hash }), okMessage),
   merge: (branch: string, okMessage?: string) =>
     withBusy((path) => invoke("git_merge", { path, branch }), okMessage),
-  createBranch: (name: string) => withBusy((path) => invoke("git_create_branch", { path, name })),
+  createBranch: (name: string) =>
+    withBusy((path) => invoke("git_create_branch", { path, name }), t("git.toastBranchCreated", { name })),
   createBranchAt: (name: string, hash: string, okMessage?: string) =>
     withBusy((path) => invoke("git_create_branch_at", { path, name, hash }), okMessage),
   abortOp: (op: string, okMessage?: string) =>

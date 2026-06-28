@@ -452,7 +452,7 @@ pub async fn git_commit_file_versions(
 }
 
 #[tauri::command]
-pub fn git_commit(
+pub async fn git_commit(
     path: String,
     message: String,
     push: bool,
@@ -498,7 +498,7 @@ pub fn git_commit(
 
 /// 把一条规则追加进 .gitignore(去重、自动补换行、文件不存在则创建)。
 #[tauri::command]
-pub fn git_ignore_path(path: String, entry: String) -> Result<(), GitError> {
+pub async fn git_ignore_path(path: String, entry: String) -> Result<(), GitError> {
     let workspace = PathBuf::from(path);
     let gitignore = workspace.join(".gitignore");
     let rule = entry.trim();
@@ -506,16 +506,19 @@ pub fn git_ignore_path(path: String, entry: String) -> Result<(), GitError> {
         return Ok(());
     }
     let mut content = std::fs::read_to_string(&gitignore).unwrap_or_default();
-    if content.lines().any(|line| line.trim() == rule) {
-        return Ok(());
-    }
-    if !content.is_empty() && !content.ends_with('\n') {
+    if !content.lines().any(|line| line.trim() == rule) {
+        if !content.is_empty() && !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push_str(rule);
         content.push('\n');
+        std::fs::write(&gitignore, content)
+            .map_err(|error| GitError::new(GitErrorKind::Io, error.to_string()))?;
     }
-    content.push_str(rule);
-    content.push('\n');
-    std::fs::write(&gitignore, content)
-        .map_err(|error| GitError::new(GitErrorKind::Io, error.to_string()))?;
+    // 已被跟踪的文件加进 .gitignore 不会生效。从索引移除(--cached 保留磁盘文件),
+    // 它才会变成「未跟踪 + 被忽略」,落入底部已忽略区;暂存的删除随下次提交落定。
+    // --ignore-unmatch:本就是未跟踪的新文件时不报错。
+    git_text(&workspace, &["rm", "-r", "--cached", "--ignore-unmatch", "--", rule])?;
     Ok(())
 }
 
@@ -542,7 +545,7 @@ pub async fn git_ignored_files(path: String) -> Result<Vec<String>, GitError> {
 
 /// 写入解决冲突后的文件内容,并 git add 标记为已解决。
 #[tauri::command]
-pub fn git_resolve_conflict(path: String, file: String, content: String) -> Result<(), GitError> {
+pub async fn git_resolve_conflict(path: String, file: String, content: String) -> Result<(), GitError> {
     let workspace = PathBuf::from(path);
     std::fs::write(workspace.join(&file), content)
         .map_err(|error| GitError::new(GitErrorKind::Io, error.to_string()))?;
@@ -551,7 +554,7 @@ pub fn git_resolve_conflict(path: String, file: String, content: String) -> Resu
 }
 
 #[tauri::command]
-pub fn git_push(path: String) -> Result<(), GitError> {
+pub async fn git_push(path: String) -> Result<(), GitError> {
     push_current(&PathBuf::from(path))
 }
 
@@ -570,26 +573,26 @@ fn push_current(workspace: &Path) -> Result<(), GitError> {
 }
 
 #[tauri::command]
-pub fn git_pull(path: String) -> Result<(), GitError> {
+pub async fn git_pull(path: String) -> Result<(), GitError> {
     git_text(&PathBuf::from(path), &["pull"])?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn git_checkout(path: String, branch: String) -> Result<(), GitError> {
+pub async fn git_checkout(path: String, branch: String) -> Result<(), GitError> {
     git_text(&PathBuf::from(path), &["switch", &branch])?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn git_create_branch(path: String, name: String) -> Result<(), GitError> {
+pub async fn git_create_branch(path: String, name: String) -> Result<(), GitError> {
     git_text(&PathBuf::from(path), &["switch", "-c", &name])?;
     Ok(())
 }
 
 /// 从指定提交新建并切换到分支(常用于把「分离 HEAD」固化成一条分支)。
 #[tauri::command]
-pub fn git_create_branch_at(path: String, name: String, hash: String) -> Result<(), GitError> {
+pub async fn git_create_branch_at(path: String, name: String, hash: String) -> Result<(), GitError> {
     git_text(&PathBuf::from(path), &["switch", "-c", &name, &hash])?;
     Ok(())
 }
@@ -597,7 +600,7 @@ pub fn git_create_branch_at(path: String, name: String, hash: String) -> Result<
 /// 把指定分支合并进当前分支。冲突时 git 返回非零 → classify 归为 Conflict,
 /// 前端「合并进行中」横幅 + 中止按钮接管后续(已有逻辑)。能快进时即快进。
 #[tauri::command]
-pub fn git_merge(path: String, branch: String) -> Result<(), GitError> {
+pub async fn git_merge(path: String, branch: String) -> Result<(), GitError> {
     git_text(&PathBuf::from(path), &["merge", "--no-edit", &branch])?;
     Ok(())
 }
@@ -623,7 +626,7 @@ pub async fn git_pending_op(path: String) -> Result<String, GitError> {
 
 /// 中止进行中的 revert / merge / cherry-pick,回到操作前的状态。
 #[tauri::command]
-pub fn git_abort_op(path: String, op: String) -> Result<(), GitError> {
+pub async fn git_abort_op(path: String, op: String) -> Result<(), GitError> {
     let sub = match op.as_str() {
         "merge" => "merge",
         "cherry-pick" => "cherry-pick",
@@ -635,14 +638,14 @@ pub fn git_abort_op(path: String, op: String) -> Result<(), GitError> {
 
 /// 签出某个提交(分离 HEAD)。用于历史里「单独签出此节点」。
 #[tauri::command]
-pub fn git_checkout_commit(path: String, hash: String) -> Result<(), GitError> {
+pub async fn git_checkout_commit(path: String, hash: String) -> Result<(), GitError> {
     git_text(&PathBuf::from(path), &["checkout", &hash])?;
     Ok(())
 }
 
 /// 重置当前分支到某提交。mode: soft(保留改动+暂存)/mixed(保留改动)/hard(丢弃改动)。
 #[tauri::command]
-pub fn git_reset(path: String, hash: String, mode: String) -> Result<(), GitError> {
+pub async fn git_reset(path: String, hash: String, mode: String) -> Result<(), GitError> {
     let flag = match mode.as_str() {
         "soft" => "--soft",
         "hard" => "--hard",
@@ -654,13 +657,13 @@ pub fn git_reset(path: String, hash: String, mode: String) -> Result<(), GitErro
 
 /// 还原某个提交(生成一条反向提交,不改写历史)。
 #[tauri::command]
-pub fn git_revert(path: String, hash: String) -> Result<(), GitError> {
+pub async fn git_revert(path: String, hash: String) -> Result<(), GitError> {
     git_text(&PathBuf::from(path), &["revert", "--no-edit", &hash])?;
     Ok(())
 }
 
 #[tauri::command]
-pub fn git_init(path: String) -> Result<(), GitError> {
+pub async fn git_init(path: String) -> Result<(), GitError> {
     git_text(&PathBuf::from(path), &["init"])?;
     Ok(())
 }
@@ -731,7 +734,7 @@ fn flush_worktree(
 /// 新建 worktree,返回新工作区的绝对路径(供前端直接打开)。
 /// new_branch=true → 用 `-b <branch>` 从 base(默认当前 HEAD)建新分支;否则签出已有分支。
 #[tauri::command]
-pub fn git_worktree_add(
+pub async fn git_worktree_add(
     path: String,
     worktree_path: String,
     branch: String,
@@ -770,7 +773,7 @@ pub fn git_worktree_add(
 
 /// 删除一个 worktree。force=true 时即使有未提交改动也强删(`--force`)。
 #[tauri::command]
-pub fn git_worktree_remove(path: String, worktree_path: String, force: bool) -> Result<(), GitError> {
+pub async fn git_worktree_remove(path: String, worktree_path: String, force: bool) -> Result<(), GitError> {
     let mut args: Vec<&str> = vec!["worktree", "remove"];
     if force {
         args.push("--force");
@@ -782,7 +785,7 @@ pub fn git_worktree_remove(path: String, worktree_path: String, force: bool) -> 
 
 /// 清理已被手动删除目录的 worktree 登记项(`git worktree prune`)。
 #[tauri::command]
-pub fn git_worktree_prune(path: String) -> Result<(), GitError> {
+pub async fn git_worktree_prune(path: String) -> Result<(), GitError> {
     git_text(&PathBuf::from(path), &["worktree", "prune"])?;
     Ok(())
 }

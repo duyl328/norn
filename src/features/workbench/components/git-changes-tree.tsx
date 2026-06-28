@@ -68,6 +68,10 @@ function collectFiles(nodes: ChangeNode[]): string[] {
   return nodes.flatMap((node) => (node.kind === "file" ? [node.item.path] : collectFiles(node.children)));
 }
 
+function collectChanges(nodes: ChangeNode[]): GitChange[] {
+  return nodes.flatMap((node) => (node.kind === "file" ? [node.item] : collectChanges(node.children)));
+}
+
 type SharedProps = {
   isChecked: (path: string) => boolean;
   onContextMenu: (event: ReactMouseEvent, entry: string) => void;
@@ -100,6 +104,9 @@ function ChangeFolder({
   const files = collectFiles(node.children);
   const checkedCount = files.filter((path) => shared.isChecked(path)).length;
   const state: CheckState = checkedCount === 0 ? "off" : checkedCount === files.length ? "on" : "mix";
+  // 整个文件夹的改动都是删除(如加入 .gitignore 后的取消跟踪) → 划掉示意「提交后不再被追踪」。
+  const items = collectChanges(node.children);
+  const allRemoved = items.length > 0 && items.every((item) => item.status === "deleted");
 
   return (
     <>
@@ -112,7 +119,7 @@ function ChangeFolder({
         <button type="button" className="git-tree-folder-label" onClick={() => setOpen((value) => !value)}>
           {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
           <TreeIcon name={node.name} kind="directory" expanded={open} />
-          <span className="truncate">{node.name}</span>
+          <span className={cn("truncate", allRemoved && "text-muted-foreground line-through")}>{node.name}</span>
         </button>
       </div>
       {open ? <ChangeNodes nodes={node.children} depth={depth + 1} {...shared} /> : null}
@@ -144,7 +151,14 @@ function ChangeFile({
         title={t("git.openDiffTitle", { path: change.path })}
       >
         <TreeIcon name={node.name} kind="file" />
-        <span className="min-w-0 flex-1 truncate text-ui-md">{node.name}</span>
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-ui-md",
+            change.status === "deleted" && "text-muted-foreground line-through",
+          )}
+        >
+          {node.name}
+        </span>
         <span className="git-tree-file-trailing">
           {change.additions ? <span className="status-additions">+{change.additions}</span> : null}
           {change.deletions ? <span className="status-deletions">−{change.deletions}</span> : null}

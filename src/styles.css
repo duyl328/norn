@@ -2543,9 +2543,9 @@
     @apply text-ui-md leading-5 text-muted-foreground;
   }
 
-  /* 写操作后的临时提示条:浮在面板底部居中,所有模式可见。实心背景保证可读。 */
+  /* 写操作后的临时提示条:浮在面板右上角(避开右侧竖排标签),所有模式可见。实心背景保证可读。 */
   .git-toast {
-    @apply pointer-events-auto absolute bottom-2 left-2 right-9 z-20 flex items-start gap-2 rounded-[8px] border p-2 text-ui-md leading-5 shadow-tool;
+    @apply pointer-events-auto absolute right-9 top-2 z-20 flex max-w-[20rem] items-start gap-2 rounded-[8px] border p-2 text-ui-md leading-5 shadow-tool;
     background: hsl(var(--popover));
     animation: status-goto-line-pop 160ms cubic-bezier(0.16, 1, 0.3, 1);
   }

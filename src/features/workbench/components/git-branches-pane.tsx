@@ -49,6 +49,13 @@ export function GitBranchesPane({ onOpenWorktree }: { onOpenWorktree: (path: str
     void gitActions.checkout(localName ?? branch.name).finally(() => setCheckingOut(null));
   };
 
+  // 拉取/推送走网络(几秒),在按钮上转圈,避免「点完没反应像卡死」。
+  const [syncing, setSyncing] = useState<"pull" | "push" | null>(null);
+  const handleSync = (op: "pull" | "push") => {
+    setSyncing(op);
+    void (op === "pull" ? gitActions.pull() : gitActions.push()).finally(() => setSyncing(null));
+  };
+
   // 合并:点按钮→确认对话框→把目标分支合并进当前分支。冲突由「合并进行中」横幅接管。
   const [mergeTarget, setMergeTarget] = useState<string | null>(null);
   const confirmMerge = () => {
@@ -129,9 +136,13 @@ export function GitBranchesPane({ onOpenWorktree }: { onOpenWorktree: (path: str
           variant="ghost"
           disabled={gitBusy || detached}
           title={detached ? t("git.pullPushDisabledDetached") : undefined}
-          onClick={() => void gitActions.pull()}
+          onClick={() => handleSync("pull")}
         >
-          <ArrowDownToLine className="h-3.5 w-3.5" />
+          {syncing === "pull" ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <ArrowDownToLine className="h-3.5 w-3.5" />
+          )}
           {t("git.pull")}
         </Button>
         <Button
@@ -140,9 +151,13 @@ export function GitBranchesPane({ onOpenWorktree }: { onOpenWorktree: (path: str
           variant="ghost"
           disabled={gitBusy || detached}
           title={detached ? t("git.pullPushDisabledDetached") : undefined}
-          onClick={() => void gitActions.push()}
+          onClick={() => handleSync("push")}
         >
-          <ArrowUpFromLine className="h-3.5 w-3.5" />
+          {syncing === "push" ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <ArrowUpFromLine className="h-3.5 w-3.5" />
+          )}
           {t("git.push")}
         </Button>
       </div>

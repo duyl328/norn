@@ -61,7 +61,7 @@ const RefreshButton = ({ busy }: { busy: boolean }) => {
       variant="ghost"
       className="git-toolbar-button"
       onClick={() => void gitActions.refresh()}
-      disabled={busy}
+      disabled={busy || refreshing}
     >
       <RefreshCw className={cn("h-3.5 w-3.5", (busy || refreshing) && "animate-spin")} />
       {t("git.refresh")}
@@ -323,7 +323,8 @@ function GitIgnoredSection({ onOpenFile }: { onOpenFile: (path: string, size?: n
   const { t } = useI18n();
   const rootPath = useWorkbenchStore((state) => state.folderView?.rootPath ?? null);
   const items = useWorkbenchStore((state) => state.gitIgnoredFiles);
-  const [open, setOpen] = useState(false);
+  // 默认展开:每个忽略目录已折叠成单行(node_modules/、.idea/),展开也就几行,直接可见更直观。
+  const [open, setOpen] = useState(true);
 
   if (items.length === 0 || !rootPath) {
     return null;
