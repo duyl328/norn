@@ -5,6 +5,7 @@ dist
 dist-ssr
 coverage
 src-tauri/target
+latest.json
 .DS_Store
 *.local
 *.log

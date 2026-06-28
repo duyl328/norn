@@ -2642,6 +2642,8 @@ pub fn run() {
             emit_open_files(app, collect_open_file_args(args));
         }))
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(FsWatchState::default())
         .manage(PendingOpenFilesState(Mutex::new(initial_open_files)))
         .on_menu_event(|app, event| {

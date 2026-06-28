@@ -11,6 +11,7 @@ import { getActiveEditorView } from "./actions/active-editor";
 import { openGoToLineRequestEvent } from "./actions/editor-actions";
 import { type ActionDeps, ActionsProvider, useActions } from "./actions/use-actions";
 import { useKeybindings } from "./actions/use-keybindings";
+import { checkForUpdates } from "./check-updates";
 import { CommandPalette } from "./components/command-palette";
 import { SaveConflictDialog, UnsavedChangesDialog } from "./components/dialogs";
 import { EditorSurface } from "./components/editor-surface";
@@ -235,6 +236,9 @@ export function WorkbenchPage() {
     if (!isTauriRuntime()) {
       return;
     }
+
+    // 启动静默检查更新:仅在有新版时弹窗询问,无网/已最新都不打扰。
+    void checkForUpdates(true);
 
     invoke<string[]>("take_initial_open_files")
       .then((paths) => {
@@ -661,6 +665,10 @@ function WorkbenchActionsRuntime() {
     let unlisten: UnlistenFn | undefined;
 
     listen<string>(nativeMenuEvent, (event) => {
+      if (event.payload === "menu-check-for-updates") {
+        void checkForUpdates();
+        return;
+      }
       const actionId = NATIVE_MENU_TO_ACTION[event.payload];
       if (actionId) dispatch(actionId);
     })
