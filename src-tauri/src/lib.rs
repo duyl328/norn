@@ -258,16 +258,27 @@ fn debug_log(message: String, payload: serde_json::Value) {
 
 #[tauri::command]
 fn destroy_current_window(window: tauri::WebviewWindow) -> Result<(), String> {
-    let label = window.label().to_string();
-    match window.destroy() {
-        Ok(()) => {
-            eprintln!("[norn] destroyed window: {label}");
-            Ok(())
-        }
-        Err(error) => {
+    // macOS:关最后一个窗口不退进程,改为隐藏 —— 保留 WebView 常驻内存,再次打开走
+    // Reopen/单实例的 show() 即可秒出,绕开冷启动(进程拉起 + WebKit 框架 page-in)。
+    // 进程仍可由 Cmd+Q / 菜单 Quit(PredefinedMenuItem::quit,走原生退出)真正结束。
+    #[cfg(target_os = "macos")]
+    {
+        window.hide().map_err(|error| {
+            eprintln!("[norn] failed to hide window {}: {error}", window.label());
+            error.to_string()
+        })?;
+        return Ok(());
+    }
+    // 其它平台保持「关窗即退」的惯例。
+    #[cfg(not(target_os = "macos"))]
+    {
+        let label = window.label().to_string();
+        window.destroy().map_err(|error| {
             eprintln!("[norn] failed to destroy window {label}: {error}");
-            Err(error.to_string())
-        }
+            error.to_string()
+        })?;
+        eprintln!("[norn] destroyed window: {label}");
+        Ok(())
     }
 }
 
@@ -2718,6 +2729,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            // 已有进程(可能窗口已隐藏)时再次启动:先唤回窗口,再处理待打开文件。
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
             emit_open_files(app, collect_open_file_args(args));
         }))
         .plugin(tauri_plugin_shell::init())
@@ -2847,6 +2863,15 @@ pub fn run() {
         .expect("error while building norn")
         .run(|app, event| {
             let _ = (&app, &event);
+
+            // macOS:点 Dock 图标(应用在跑但窗口已隐藏)触发 Reopen → 把主窗口 show 回来。
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
 
             #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
             if let tauri::RunEvent::Opened { urls } = event {

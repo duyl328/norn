@@ -1,6 +1,6 @@
 [package]
 name = "norn"
-version = "0.1.7"
+version = "0.1.8"
 description = "A lightweight code and Git workbench."
 authors = ["Norn contributors"]
 edition = "2021"
@@ -38,3 +38,12 @@ clipboard-rs = "0.2"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+# 发布构建优化:缩小二进制体积,直接减少冷启动时需从磁盘 page-in 的量。
+# strip 去掉 ~4MB 符号表;lto + codegen-units=1 + opt-level="s" 压缩代码段。
+# 代价是构建更慢(发版才用,可接受);不改 panic 行为(保留 unwind)。
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+opt-level = "s"
