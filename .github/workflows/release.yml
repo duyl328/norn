@@ -1,0 +1,67 @@
+name: Release
+
+# 推送 v* tag 时触发。tag 即版本号（请先用 pnpm tauri 的版本递增逻辑或手动把
+# package.json / tauri.conf.json / Cargo.toml 三处版本号同步成与 tag 一致，再打 tag）。
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    permissions:
+      contents: write # 创建 Release、上传产物
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest # Apple Silicon → darwin-aarch64
+            args: "--target aarch64-apple-darwin"
+            rust-target: aarch64-apple-darwin
+          - platform: windows-latest # → windows-x86_64
+            args: ""
+            rust-target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # tauri-action 会跑 beforeBuildCommand(pnpm build) 构建前端，再 tauri build 出包，
+      # 然后把 dmg/.app.tar.gz/.sig（mac）与 -setup.exe/.sig（win）上传到对应 tag 的 Release，
+      # 并合并各平台条目生成同一个 latest.json（updater endpoint 指向它）。
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          # ponytail: 这条换密钥公告是一次性的，发完 0.2.1 后改回 "Norn ${{ github.ref_name }}"
+          releaseBody: |
+            Norn ${{ github.ref_name }}
+
+            ⚠️ 更新器签名密钥已轮换。0.2.1 之前的版本无法自动更新，请手动下载本页安装包重新安装。
+            Updater signing key has been rotated. Versions before 0.2.1 cannot auto-update — please download and reinstall manually.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
