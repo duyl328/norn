@@ -23,7 +23,9 @@ const bumpVersion = () => {
   console.log(`[tauri-runner] 版本号已递增为 ${next}`);
 };
 
-if (args[0] === "build") {
+// CI(GitHub Actions)里版本号由 tag 决定，绝不能再自动 bump，否则产物名与
+// tauri-action 预期的版本对不上("No artifacts found")。仅本地构建时递增。
+if (args[0] === "build" && !process.env.CI) {
   bumpVersion();
 }
 
