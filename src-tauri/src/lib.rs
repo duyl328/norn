@@ -251,6 +251,41 @@ fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+#[derive(serde::Serialize)]
+struct AboutInfo {
+    version: &'static str,
+    /// 构建时间(Unix 秒),由 build.rs 注入;0 = 未知。前端用 new Date 格式化。
+    build_time: u64,
+    os: &'static str,
+    arch: &'static str,
+}
+
+/// 「关于 Norn」弹窗信息:版本 / 构建时间 / 平台。
+#[tauri::command]
+fn about_info() -> AboutInfo {
+    AboutInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        build_time: env!("BUILD_TIMESTAMP").parse().unwrap_or(0),
+        os: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
+    }
+}
+
+/// 读取系统代理(若已启用),格式 `http://host:port`;未启用 / 读取失败返回 None。
+/// 供前端把更新请求经 check({ proxy }) 走系统代理:reqwest 默认不读 Windows 系统代理,
+/// 用户挂"系统代理模式"的 VPN 时,更新器会绕过代理直连 GitHub 而失败。
+#[tauri::command]
+fn system_proxy() -> Option<String> {
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let sp = sysproxy::Sysproxy::get_system_proxy().ok()?;
+        if sp.enable && !sp.host.is_empty() {
+            return Some(format!("http://{}:{}", sp.host, sp.port));
+        }
+    }
+    None
+}
+
 #[tauri::command]
 fn debug_log(message: String, payload: serde_json::Value) {
     eprintln!("[norn] {message}: {payload}");
@@ -2790,6 +2825,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_version,
+            about_info,
+            system_proxy,
             debug_log,
             destroy_current_window,
             take_initial_open_files,
