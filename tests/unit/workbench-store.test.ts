@@ -20,7 +20,7 @@ describe("useWorkbenchStore", () => {
     const state = useWorkbenchStore.getState();
     expect(state.document).toBe(initialDocument);
     expect(state.openDocuments).toEqual([initialDocument]);
-    expect(state.document.name).toBe("Untitled.txt");
+    expect(state.document.name).toBe("Untitled");
     expect(state.document.content).toBe("");
     expect(state.document.isUntitled).toBe(true);
     expect(state.leftPanelOpen).toBe(false);

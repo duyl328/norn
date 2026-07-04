@@ -466,7 +466,7 @@ describe("document creation helpers", () => {
 
     expect(document.isUntitled).toBe(true);
     expect(document.content).toBe("");
-    expect(document.name).toBe("Untitled.txt");
+    expect(document.name).toBe("Untitled");
     expect(document.id).toMatch(/^untitled-/);
   });
 
