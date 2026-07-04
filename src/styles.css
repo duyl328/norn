@@ -4078,12 +4078,23 @@
     color: inherit;
   }
 
+  /* !important:CodeMirror 内置主题按「亮色」渲染,其聚焦态选区默认色(浅紫 #d7d4f0)
+     选择器比这里更具体,暗色下会盖成一片白。用 !important 让主题感知的 --primary 取胜。 */
   .codemirror-shell .cm-selectionBackground {
-    background-color: hsl(var(--primary) / 0.22);
+    background-color: hsl(var(--primary) / 0.22) !important;
   }
 
   .codemirror-shell .cm-focused .cm-selectionBackground {
-    background-color: hsl(var(--primary) / 0.32);
+    background-color: hsl(var(--primary) / 0.32) !important;
+  }
+
+  /* 暗色下 --primary 更亮但底更深,选区需更高不透明度才醒目。 */
+  .dark .codemirror-shell .cm-selectionBackground {
+    background-color: hsl(var(--primary) / 0.3) !important;
+  }
+
+  .dark .codemirror-shell .cm-focused .cm-selectionBackground {
+    background-color: hsl(var(--primary) / 0.45) !important;
   }
 
   .editor-scrollbar {
