@@ -3777,6 +3777,40 @@
     padding: var(--settings-main-top-padding) clamp(36px, 7vw, 120px) 72px;
   }
 
+  /* 切 tab 时内容上下滑入 + 淡入,复用 Git 面板同款缓动曲线,方向随 data-dir。 */
+  .settings-content-anim {
+    animation: settings-slide-in 560ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .settings-content-anim[data-dir="up"] {
+    animation-name: settings-slide-in-up;
+  }
+
+  @keyframes settings-slide-in {
+    from {
+      opacity: 0;
+      transform: translateY(80px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes settings-slide-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(-80px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .settings-content-anim {
+      animation: none;
+    }
+  }
+
   .settings-panel {
     @apply mx-auto grid w-full max-w-[780px] gap-8;
   }

@@ -69,6 +69,9 @@ const settingsGroups: Array<{
   },
 ];
 
+// 侧栏从上到下的扁平顺序,用来判断切换方向(往下的 tab → 内容从下方滑入,往上则反之)。
+const settingsTabOrder = settingsGroups.flatMap((group) => group.items.map((item) => item.id));
+
 export function SettingsPage({
   onBack,
   showMacTitlebar,
@@ -78,8 +81,18 @@ export function SettingsPage({
 }) {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<SettingsTabId>("general");
+  const [slideDir, setSlideDir] = useState<"down" | "up">("down");
   const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(settingsSidebarDefaultWidth);
   const [settingsResizing, setSettingsResizing] = useState(false);
+
+  const switchSettingsTab = (nextTab: SettingsTabId) => {
+    if (nextTab === activeTab) {
+      return;
+    }
+
+    setSlideDir(settingsTabOrder.indexOf(nextTab) >= settingsTabOrder.indexOf(activeTab) ? "down" : "up");
+    setActiveTab(nextTab);
+  };
 
   const resizeSettingsSidebarWithKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const keyDeltas: Record<string, number> = {
@@ -170,7 +183,7 @@ export function SettingsPage({
                       className={cn("settings-nav-item", activeTab === item.id && "settings-nav-item-active")}
                       key={item.id}
                       type="button"
-                      onClick={() => setActiveTab(item.id)}
+                      onClick={() => switchSettingsTab(item.id)}
                     >
                       <Icon className="h-4 w-4" />
                       <span>{t(item.labelKey)}</span>
@@ -194,7 +207,10 @@ export function SettingsPage({
           tabIndex={0}
         />
         <main className="settings-main">
-          <SettingsContent activeTab={activeTab} />
+          {/* key 变化重挂内容 → 触发 CSS 入场动画,方向随侧栏上下切换而变。 */}
+          <div key={activeTab} className="settings-content-anim" data-dir={slideDir}>
+            <SettingsContent activeTab={activeTab} />
+          </div>
         </main>
       </div>
     </div>

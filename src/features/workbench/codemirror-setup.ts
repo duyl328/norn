@@ -21,6 +21,7 @@ import {
   rectangularSelection,
 } from "@codemirror/view";
 
+import { cjkWordSelect } from "./editor-cjk-word-select";
 import {
   altClickToggleCaret,
   occurrenceHistory,
@@ -159,6 +160,7 @@ export const createCodeMirrorExtensions = (
   EditorState.allowMultipleSelections.of(true),
   EditorView.clickAddsSelectionRange.of((event) => event.altKey),
   altClickToggleCaret,
+  cjkWordSelect, // 双击中文按词典分词选「词语」,而非整串连续汉字
   rectangularSelection(),
   // 长行换行:走 compartment,可在不重建编辑器的前提下随设置开关(见 editor-surface)。
   lineWrappingCompartment.of(lineWrapping ? EditorView.lineWrapping : []),

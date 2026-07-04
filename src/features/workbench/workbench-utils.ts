@@ -1119,8 +1119,8 @@ export const saveEditorLineWrapping = (enabled: boolean) => {
 
 export const createUntitledDocument = (): WorkbenchDocument => ({
   id: createDocumentId("untitled"),
-  name: "Untitled.txt",
-  path: "Untitled.txt",
+  name: "Untitled",
+  path: "Untitled",
   content: "",
   savedContent: "",
   encoding: "utf-8",
