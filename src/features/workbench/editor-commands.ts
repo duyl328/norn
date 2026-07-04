@@ -7,7 +7,7 @@ import {
   type StateCommand,
   StateField,
 } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { type Command, EditorView, keymap } from "@codemirror/view";
 
 // 区域扫描上限:括号配对最多向两侧各扫这么多字符,避免超大文件里全文扫描。
 const REGION_SCAN_LIMIT = 10000;
@@ -290,3 +290,40 @@ export const altClickToggleCaret = EditorView.domEventHandlers({
     return true;
   },
 });
+
+/**
+ * 无选中时把光标所在整行(含行尾换行)作为选区返回;有任一选区非空则返回 null(不介入)。
+ * 纯函数,便于测试;每行只取一次(多光标落同一行时去重)。
+ */
+export const lineWiseSelection = (state: EditorState): EditorSelection | null => {
+  if (state.selection.ranges.some((range) => !range.empty)) {
+    return null;
+  }
+
+  const seenLines = new Set<number>();
+  const ranges: SelectionRange[] = [];
+  for (const range of state.selection.ranges) {
+    const line = state.doc.lineAt(range.head);
+    if (seenLines.has(line.number)) continue;
+    seenLines.add(line.number);
+    ranges.push(EditorSelection.range(line.from, Math.min(state.doc.length, line.to + 1)));
+  }
+  return EditorSelection.create(ranges);
+};
+
+/**
+ * 复制/剪切时若无选中,先选中光标所在整行,再让浏览器原生 copy/cut 带着整行选区继续。
+ * 返回 false 且不 preventDefault:不吞按键,keydown 之后浏览器照常触发 copy/cut。
+ */
+const selectLineBeforeClipboard: Command = (view) => {
+  const selection = lineWiseSelection(view.state);
+  if (!selection) return false; // 有选中:原样复制/剪切选区
+  view.dispatch({ selection });
+  return false;
+};
+
+// 注意:不能走带 preventDefault:true 的 action keymap,否则原生 copy/cut 事件不再触发。
+export const copyCutWholeLineWhenEmpty = keymap.of([
+  { key: "Mod-c", run: selectLineBeforeClipboard },
+  { key: "Mod-x", run: selectLineBeforeClipboard },
+]);

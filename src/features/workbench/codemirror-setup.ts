@@ -24,6 +24,7 @@ import {
 import { cjkWordSelect } from "./editor-cjk-word-select";
 import {
   altClickToggleCaret,
+  copyCutWholeLineWhenEmpty,
   occurrenceHistory,
   selectionHistory,
 } from "./editor-commands";
@@ -161,6 +162,7 @@ export const createCodeMirrorExtensions = (
   EditorView.clickAddsSelectionRange.of((event) => event.altKey),
   altClickToggleCaret,
   cjkWordSelect, // 双击中文按词典分词选「词语」,而非整串连续汉字
+  copyCutWholeLineWhenEmpty, // 无选中时 Ctrl/Cmd+C、Ctrl/Cmd+X 先选中整行再复制/剪切
   rectangularSelection(),
   // 长行换行:走 compartment,可在不重建编辑器的前提下随设置开关(见 editor-surface)。
   lineWrappingCompartment.of(lineWrapping ? EditorView.lineWrapping : []),
