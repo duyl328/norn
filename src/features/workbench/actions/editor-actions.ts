@@ -26,7 +26,7 @@ import {
 import type { Extension } from "@codemirror/state";
 import { type Command, type KeyBinding, keymap } from "@codemirror/view";
 
-import { expandSelection, shrinkSelection, unselectLastOccurrence } from "../editor-commands";
+import { expandSelection, jumpBack, jumpForward, shrinkSelection, unselectLastOccurrence } from "../editor-commands";
 import { openFind, openReplace } from "../editor-search-panel";
 import { formatText } from "../formatter";
 import { useWorkbenchStore } from "../store/workbench-store";
@@ -79,6 +79,20 @@ export const EDITOR_ACTIONS: readonly EditorActionDef[] = [
     command: findPrevious,
   },
   { id: "editor.gotoLine", title: "action.editor.gotoLine", category: "action.category.navigate", keys: ["Ctrl+G"], command: requestGoToLine },
+  {
+    id: "editor.navigateBack",
+    title: "action.editor.navigateBack",
+    category: "action.category.navigate",
+    keys: ["Mod+Alt+["],
+    command: jumpBack,
+  },
+  {
+    id: "editor.navigateForward",
+    title: "action.editor.navigateForward",
+    category: "action.category.navigate",
+    keys: ["Mod+Alt+]"],
+    command: jumpForward,
+  },
   {
     id: "editor.selectNextOccurrence",
     title: "action.editor.selectNextOccurrence",

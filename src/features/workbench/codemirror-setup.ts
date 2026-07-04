@@ -25,6 +25,8 @@ import { cjkWordSelect } from "./editor-cjk-word-select";
 import {
   altClickToggleCaret,
   copyCutWholeLineWhenEmpty,
+  jumpHistoryField,
+  mouseNavButtons,
   occurrenceHistory,
   selectionHistory,
 } from "./editor-commands";
@@ -163,6 +165,7 @@ export const createCodeMirrorExtensions = (
   altClickToggleCaret,
   cjkWordSelect, // 双击中文按词典分词选「词语」,而非整串连续汉字
   copyCutWholeLineWhenEmpty, // 无选中时 Ctrl/Cmd+C、Ctrl/Cmd+X 先选中整行再复制/剪切
+  mouseNavButtons, // 鼠标侧键(后退/前进)= 跳转历史后退/前进
   rectangularSelection(),
   // 长行换行:走 compartment,可在不重建编辑器的前提下随设置开关(见 editor-surface)。
   lineWrappingCompartment.of(lineWrapping ? EditorView.lineWrapping : []),
@@ -179,6 +182,7 @@ export const createCodeMirrorExtensions = (
   search({ top: true, createPanel: createEditorSearchPanel }),
   selectionHistory, // Ctrl+Shift+W 缩选所需的扩选历史栈
   occurrenceHistory, // Alt+Shift+J 取消选中所需的加选历史栈
+  jumpHistoryField, // 光标跳转历史(后退/前进)所需的点击位置栈
   keymapExtension,
   languageCompartment.of([]),
   ...createSmartOverlayExtension(document.content.length),

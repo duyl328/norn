@@ -5,6 +5,7 @@ import {
   type Extension,
   type SelectionRange,
   type StateCommand,
+  StateEffect,
   StateField,
 } from "@codemirror/state";
 import { type Command, EditorView, keymap } from "@codemirror/view";
@@ -327,3 +328,85 @@ export const copyCutWholeLineWhenEmpty = keymap.of([
   { key: "Mod-c", run: selectLineBeforeClipboard },
   { key: "Mod-x", run: selectLineBeforeClipboard },
 ]);
+
+// ── 光标跳转历史(IDE 的「后退 / 前进」)────────────────────────────────
+// 只记录鼠标点击造成的跨行跳转,按点击先后串成一条历史;后退/前进沿它移动光标。
+const JUMP_HISTORY_MAX = 60; // 上限,防无限增长;超出丢弃最早的
+const JUMP_MIN_LINE_GAP = 1; // 跨行才算一次跳转,同行微调不入历史
+
+type JumpHistory = { positions: number[]; index: number };
+
+// 标记「这是后退/前进导航本身」的事务:只挪 index,不产生新历史点。
+const setJumpIndex = StateEffect.define<number>();
+
+export const jumpHistoryField = StateField.define<JumpHistory>({
+  create: () => ({ positions: [], index: -1 }),
+  update(value, tr) {
+    let positions = value.positions;
+    // 文档变更 → 把已记录位置随改动映射,避免编辑后跳到错位。
+    if (tr.docChanged) positions = positions.map((pos) => tr.changes.mapPos(pos, 1));
+
+    for (const effect of tr.effects) {
+      if (effect.is(setJumpIndex)) return { positions, index: effect.value };
+    }
+
+    // 仅记录鼠标点击(select.pointer)造成的选区变化。
+    if (!tr.isUserEvent("select.pointer") || !tr.selection) {
+      return positions === value.positions ? value : { positions, index: value.index };
+    }
+
+    const newPos = tr.state.selection.main.head;
+    const newLine = tr.state.doc.lineAt(newPos).number;
+    // 基准:历史当前项,否则跳转前的位置。
+    const baseRaw = positions[value.index] ?? tr.startState.selection.main.head;
+    const baseLine = tr.state.doc.lineAt(Math.min(Math.max(baseRaw, 0), tr.state.doc.length)).number;
+    if (Math.abs(newLine - baseLine) < JUMP_MIN_LINE_GAP) {
+      return positions === value.positions ? value : { positions, index: value.index };
+    }
+
+    // 从历史中部再跳 → 丢弃「前进」分支;首跳 → 先把跳转前的位置作为起点入栈。
+    let next = positions.slice(0, value.index + 1);
+    if (next.length === 0) next = [tr.startState.selection.main.head];
+    next.push(newPos);
+    if (next.length > JUMP_HISTORY_MAX) next = next.slice(next.length - JUMP_HISTORY_MAX);
+    return { positions: next, index: next.length - 1 };
+  },
+});
+
+const jumpTo = (view: EditorView, targetIndex: number): boolean => {
+  const history = view.state.field(jumpHistoryField, false);
+  if (!history || targetIndex < 0 || targetIndex >= history.positions.length || targetIndex === history.index) {
+    return false;
+  }
+  const pos = Math.min(history.positions[targetIndex], view.state.doc.length);
+  view.dispatch({
+    selection: EditorSelection.cursor(pos),
+    effects: setJumpIndex.of(targetIndex),
+    scrollIntoView: true,
+  });
+  view.focus();
+  return true;
+};
+
+/** 后退到上一个点击位置。 */
+export const jumpBack: Command = (view) => jumpTo(view, (view.state.field(jumpHistoryField, false)?.index ?? 0) - 1);
+
+/** 前进到下一个点击位置(需先后退过)。 */
+export const jumpForward: Command = (view) => jumpTo(view, (view.state.field(jumpHistoryField, false)?.index ?? -1) + 1);
+
+// 鼠标侧键:button 3 = 后退键,button 4 = 前进键,映射到跳转历史的后退/前进。
+export const mouseNavButtons = EditorView.domEventHandlers({
+  mousedown(event, view) {
+    if (event.button === 3) {
+      jumpBack(view);
+      event.preventDefault();
+      return true;
+    }
+    if (event.button === 4) {
+      jumpForward(view);
+      event.preventDefault();
+      return true;
+    }
+    return false;
+  },
+});
