@@ -891,6 +891,24 @@ export function useDocumentSession() {
     setSaveState((currentState) => (currentState === "saving" ? currentState : "idle"));
   };
 
+  // 编辑「告一段落」时(窗口失焦 / 切到后台)自动保存当前文档,而非每次改动都存。
+  // 仅存磁盘上已存在、可编辑、有改动、无冲突的文件;未命名/空文件不在此处理。
+  const autoSaveActiveDocument = () => {
+    const state = useWorkbenchStore.getState();
+    const doc = state.document;
+    if (
+      doc.isUntitled ||
+      !isAbsolutePath(doc.path) ||
+      doc.mode !== "editable" ||
+      state.saveConflict ||
+      state.saveState === "saving" ||
+      !isDocumentDirty(doc)
+    ) {
+      return;
+    }
+    void saveDocument();
+  };
+
   useEffect(() => {
     if (!isTauriRuntime()) {
       return;
@@ -903,11 +921,16 @@ export function useDocumentSession() {
       void checkCurrentDocumentOnDisk();
       void checkOpenDocumentsOnDisk();
     };
+    const handleBlur = () => {
+      autoSaveActiveDocument();
+    };
     const handleVisibilityChange = () => {
-      if (!globalThis.document.hidden) {
-        void checkCurrentDocumentOnDisk();
-        void checkOpenDocumentsOnDisk();
+      if (globalThis.document.hidden) {
+        autoSaveActiveDocument();
+        return;
       }
+      void checkCurrentDocumentOnDisk();
+      void checkOpenDocumentsOnDisk();
     };
     const intervalId = window.setInterval(() => {
       void checkCurrentDocumentOnDisk();
@@ -915,6 +938,7 @@ export function useDocumentSession() {
     }, 1500);
 
     window.addEventListener("focus", handleFocus);
+    window.addEventListener("blur", handleBlur);
     globalThis.document.addEventListener("visibilitychange", handleVisibilityChange);
     listen<string[]>(workspaceFsChangeEvent, (event) => {
       const parentPath = getParentPath(document.path);
@@ -945,6 +969,7 @@ export function useDocumentSession() {
       disposed = true;
       window.clearInterval(intervalId);
       window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("blur", handleBlur);
       globalThis.document.removeEventListener("visibilitychange", handleVisibilityChange);
       unlisten?.();
     };
