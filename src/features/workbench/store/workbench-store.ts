@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 import { leftPanelDefaultWidth, rightPanelDefaultWidth, scratchPanelDefaultHeight } from "../constants";
-import { type AppSettings, DEFAULT_SETTINGS } from "../settings";
+import { type AppSettings, CURRENT_SETTINGS_VERSION, DEFAULT_SETTINGS } from "../settings";
 import type {
   AppNotice,
   FileTreeClipboard,
@@ -253,8 +253,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
     set((state) => ({ quickSearchHistory: resolveSetter(setter, state.quickSearchHistory) })),
   setCommandPaletteOpen: (setter) =>
     set((state) => ({ commandPaletteOpen: resolveSetter(setter, state.commandPaletteOpen) })),
-  setKeymapOverrides: (setter) =>
-    set((state) => ({ keymapOverrides: resolveSetter(setter, state.keymapOverrides) })),
+  setKeymapOverrides: (setter) => set((state) => ({ keymapOverrides: resolveSetter(setter, state.keymapOverrides) })),
 
   // ---------------------------------------------------------------------------
   // workspace
@@ -289,12 +288,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   setGitStatus: (setter) => set((state) => ({ gitStatus: resolveSetter(setter, state.gitStatus) })),
   setGitBranches: (setter) => set((state) => ({ gitBranches: resolveSetter(setter, state.gitBranches) })),
   bumpGitRefreshVersion: () => set((state) => ({ gitRefreshVersion: state.gitRefreshVersion + 1 })),
-  setGitIgnoredFiles: (setter) =>
-    set((state) => ({ gitIgnoredFiles: resolveSetter(setter, state.gitIgnoredFiles) })),
-  setGitRecentCommits: (setter) => set((state) => ({ gitRecentCommits: resolveSetter(setter, state.gitRecentCommits) })),
+  setGitIgnoredFiles: (setter) => set((state) => ({ gitIgnoredFiles: resolveSetter(setter, state.gitIgnoredFiles) })),
+  setGitRecentCommits: (setter) =>
+    set((state) => ({ gitRecentCommits: resolveSetter(setter, state.gitRecentCommits) })),
   setGitBusy: (setter) => set((state) => ({ gitBusy: resolveSetter(setter, state.gitBusy) })),
-  setGitRefreshing: (setter) =>
-    set((state) => ({ gitRefreshing: resolveSetter(setter, state.gitRefreshing) })),
+  setGitRefreshing: (setter) => set((state) => ({ gitRefreshing: resolveSetter(setter, state.gitRefreshing) })),
   setGitError: (setter) => set((state) => ({ gitError: resolveSetter(setter, state.gitError) })),
   setGitNotice: (setter) => set((state) => ({ gitNotice: resolveSetter(setter, state.gitNotice) })),
   setAppNotice: (setter) => set((state) => ({ appNotice: resolveSetter(setter, state.appNotice) })),
@@ -335,6 +333,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
 
 /** 从 store 扁平 prefs 收集成可序列化的 AppSettings(持久化 / 导出用)。 */
 export const collectSettings = (state: WorkbenchState): AppSettings => ({
+  schemaVersion: CURRENT_SETTINGS_VERSION,
   language: state.language,
   theme: state.theme,
   editor: {

@@ -25,9 +25,11 @@ const zh = {
   "settings.general.tabSize.title": "Tab 宽度",
   "settings.general.tabSize.description": "一个缩进等于几个空格,影响显示与缩进键。",
   "settings.general.formatOnSave.title": "保存时整理",
-  "settings.general.formatOnSave.description": "保存前按文件类型整理缩进与空白(JSON / 花括号 / 标签 / 空白),不改变语义。",
-  "settings.general.restoreWorkspace.title": "启动后恢复上次工作区",
-  "settings.general.restoreWorkspace.description": "下次打开时自动恢复最近使用的文件夹。",
+  "settings.general.formatOnSave.description":
+    "保存前按文件类型整理缩进与空白(JSON / 花括号 / 标签 / 空白),不改变语义。",
+  "settings.general.restoreWorkspace.title": "启动后恢复上次会话",
+  "settings.general.restoreWorkspace.description":
+    "下次打开时自动恢复上次的文件夹、所有标签页(含顺序)以及每个标签页的光标、滚动位置和查找框。未保存的草稿始终会恢复。",
   "settings.general.statusBar.title": "显示底部状态栏",
   "settings.general.statusBar.description": "展示当前文件、编码和 Git 状态。",
   "settings.permissions.description": "管理 Norn 对文件、命令和系统能力的访问方式。",
@@ -37,7 +39,8 @@ const zh = {
   "settings.permissions.git.description": "允许在当前工作区内读取 Git 状态和分支信息。",
   "settings.permissions.crossDirectory.title": "跨目录写入",
   "settings.permissions.crossDirectory.description": "需要单独确认后才允许写入工作区外的路径。",
-  "settings.shortcuts.description": "点击某条的键位按钮，按下新组合即可改键；重复键位会自动从原命令解绑。Esc 取消录制。",
+  "settings.shortcuts.description":
+    "点击某条的键位按钮，按下新组合即可改键；重复键位会自动从原命令解绑。Esc 取消录制。",
   "settings.appearance.description": "控制主题、编辑器字号和面板的显示方式。",
   "settings.appearance.theme.title": "主题",
   "settings.appearance.theme.description": "跟随系统会随操作系统的明暗自动切换。",
@@ -49,7 +52,8 @@ const zh = {
   "settings.appearance.lineWrapping.title": "长行自动换行",
   "settings.appearance.lineWrapping.description": "超出宽度的长行自动折到下一行显示，不再横向滚动。",
   "settings.appearance.resizeHints.title": "显示面板调节提示",
-  "settings.appearance.resizeHints.description": "常驻显示左右面板之间的淡色拖拽区域。关闭后仍可拖动，鼠标移入时显示反馈。",
+  "settings.appearance.resizeHints.description":
+    "常驻显示左右面板之间的淡色拖拽区域。关闭后仍可拖动，鼠标移入时显示反馈。",
   "settings.data.description": "把设置与快捷键打包成一个文件,在多台设备间搬运同一套习惯。",
   "settings.data.export": "导出设置…",
   "settings.data.import": "导入设置…",
@@ -244,7 +248,7 @@ const zh = {
   "git.readyDescription": "打开文件夹后即可检测 Git 仓库。",
   "git.createRepo": "创建 Git 仓库",
   "git.operationIncomplete": "操作未完成",
-  "git.error.identityMissing": "请先配置 Git 身份：git config --global user.name \"你的名字\" 与 user.email \"邮箱\"。",
+  "git.error.identityMissing": '请先配置 Git 身份：git config --global user.name "你的名字" 与 user.email "邮箱"。',
   "git.error.authFailed": "鉴权失败，请检查 Git 凭证或 SSH key 后重试。",
   "git.error.noUpstream": "当前分支没有上游分支，推送时已尝试 origin。",
   "git.error.nothingToCommit": "没有可提交的改动。",
@@ -268,7 +272,8 @@ const zh = {
   "git.newBranch": "新建分支",
   "git.merge": "合并",
   "git.mergeTitle": ({ source }) => `将 ${source} 合并进当前分支`,
-  "git.mergeConfirm": ({ source, current }) => `将分支「${source}」合并进当前分支「${current}」？若有冲突可在合并进行中横幅里中止。`,
+  "git.mergeConfirm": ({ source, current }) =>
+    `将分支「${source}」合并进当前分支「${current}」？若有冲突可在合并进行中横幅里中止。`,
   "git.mergeButtonTitle": ({ source }) => `合并 ${source} 进当前分支`,
   "git.merged": ({ source }) => `已合并 ${source}`,
   "git.newWorktree": "新建工作树",
@@ -424,14 +429,16 @@ const zh = {
   "editor.unableSave": "无法保存此文件。",
   "editor.originalDeletedSaveAs": "原文件已被删除。请选择新位置保存。",
   "editor.changedOutside": "此文件已在 Norn 外部更改。",
-  "editor.changedOutsideWithLocalEdits": "此文件在磁盘上发生了更改，同时编辑器中也有本地修改。请选择磁盘版本或保留编辑器版本。",
+  "editor.changedOutsideWithLocalEdits":
+    "此文件在磁盘上发生了更改，同时编辑器中也有本地修改。请选择磁盘版本或保留编辑器版本。",
   "editor.deletedOnDisk": "此文件已在磁盘上删除。请将编辑器版本另存到其他位置，或关闭此标签页。",
   "editor.changedUnsupported": ({ name }) => `${name} 已在磁盘上更改，且无法再作为支持的文本打开。`,
   "editor.unsupportedEncoding": ({ name }) => `${name} 无法以支持的文本编码打开。`,
   "editor.largeFileConfirm": ({ size }) => `此文件大小为 ${size}。要以文本方式打开吗？`,
   "editor.largeFileOmittedBefore": "[大文件浏览模式已省略更早内容]",
   "editor.largeFileOmittedAfter": "[大文件浏览模式已省略后续内容]",
-  "editor.largeFileModeBanner": ({ size }) => `大文件浏览模式${size ? ` (${size})` : ""}。此视图为只读，仅显示已加载的文本范围。`,
+  "editor.largeFileModeBanner": ({ size }) =>
+    `大文件浏览模式${size ? ` (${size})` : ""}。此视图为只读，仅显示已加载的文本范围。`,
   "status.gitBranchesTitle": "查看和切换 Git 分支",
   "status.lines": ({ count }) => `${count} 行`,
   "status.files": ({ count }) => `${count} 个文件`,
@@ -472,7 +479,8 @@ const en: Record<keyof typeof zh, TranslationValue> = {
   "settings.tab.advanced": "Advanced",
   "settings.general.description": "Adjust Norn's core behavior and default workflow.",
   "settings.general.language.title": "Interface language",
-  "settings.general.language.description": "Switch application UI copy. More areas will be moved into translation resources over time.",
+  "settings.general.language.description":
+    "Switch application UI copy. More areas will be moved into translation resources over time.",
   "settings.general.language.zh": "简体中文",
   "settings.general.language.en": "English",
   "settings.general.tabSize.title": "Tab width",
@@ -480,8 +488,9 @@ const en: Record<keyof typeof zh, TranslationValue> = {
   "settings.general.formatOnSave.title": "Format on save",
   "settings.general.formatOnSave.description":
     "Normalize indentation and whitespace before saving by file type without changing semantics.",
-  "settings.general.restoreWorkspace.title": "Restore last workspace on launch",
-  "settings.general.restoreWorkspace.description": "Automatically reopen the most recently used folder next time.",
+  "settings.general.restoreWorkspace.title": "Restore last session on launch",
+  "settings.general.restoreWorkspace.description":
+    "Reopen the last folder, all tabs (in order), and each tab's cursor, scroll position and search box next time. Unsaved drafts are always restored.",
   "settings.general.statusBar.title": "Show bottom status bar",
   "settings.general.statusBar.description": "Show current file, encoding, and Git status.",
   "settings.permissions.description": "Manage how Norn accesses files, commands, and system capabilities.",
@@ -490,8 +499,10 @@ const en: Record<keyof typeof zh, TranslationValue> = {
   "settings.permissions.git.title": "Git command permissions",
   "settings.permissions.git.description": "Allow reading Git status and branch information in the current workspace.",
   "settings.permissions.crossDirectory.title": "Cross-directory writes",
-  "settings.permissions.crossDirectory.description": "Require separate confirmation before writing outside the workspace.",
-  "settings.shortcuts.description": "Click a key binding, then press the new shortcut. Duplicate shortcuts are automatically unbound from the previous command. Esc cancels recording.",
+  "settings.permissions.crossDirectory.description":
+    "Require separate confirmation before writing outside the workspace.",
+  "settings.shortcuts.description":
+    "Click a key binding, then press the new shortcut. Duplicate shortcuts are automatically unbound from the previous command. Esc cancels recording.",
   "settings.appearance.description": "Control theme, editor font size, and panel display.",
   "settings.appearance.theme.title": "Theme",
   "settings.appearance.theme.description": "System follows the operating system light or dark appearance.",
@@ -501,9 +512,11 @@ const en: Record<keyof typeof zh, TranslationValue> = {
   "settings.appearance.fontSize.title": "Editor font size",
   "settings.appearance.fontSize.description": "Text size in the editor.",
   "settings.appearance.lineWrapping.title": "Wrap long lines",
-  "settings.appearance.lineWrapping.description": "Wrap long lines to the next visual line instead of horizontal scrolling.",
+  "settings.appearance.lineWrapping.description":
+    "Wrap long lines to the next visual line instead of horizontal scrolling.",
   "settings.appearance.resizeHints.title": "Show panel resize hints",
-  "settings.appearance.resizeHints.description": "Always show subtle drag zones between side panels. Dragging still works when hidden, with feedback on hover.",
+  "settings.appearance.resizeHints.description":
+    "Always show subtle drag zones between side panels. Dragging still works when hidden, with feedback on hover.",
   "settings.data.description": "Package settings and shortcuts into one file to move the same habits between devices.",
   "settings.data.export": "Export Settings…",
   "settings.data.import": "Import Settings…",
@@ -516,8 +529,10 @@ const en: Record<keyof typeof zh, TranslationValue> = {
   "settings.data.configFile": "Config file",
   "settings.data.storageLocation": "Storage location",
   "settings.data.browserLocalStorage": "Browser local storage",
-  "settings.data.note": "Exports include theme, editor and UI preferences, plus custom shortcuts. Recent folders, search history, and other local state are not exported.",
-  "settings.git.description": "Git detection uses the current folder opened on the left. You can also check whether the Git command is available.",
+  "settings.data.note":
+    "Exports include theme, editor and UI preferences, plus custom shortcuts. Recent folders, search history, and other local state are not exported.",
+  "settings.git.description":
+    "Git detection uses the current folder opened on the left. You can also check whether the Git command is available.",
   "settings.git.detecting": "Detecting",
   "settings.git.available": "Available",
   "settings.git.unavailable": "Unavailable",
@@ -546,7 +561,8 @@ const en: Record<keyof typeof zh, TranslationValue> = {
   "settings.shortcuts.unbound": "Unbound",
   "settings.shortcuts.resetDefault": "Restore default",
   "settings.shortcuts.primitivesTitle": "Editor primitives (read-only)",
-  "settings.shortcuts.primitivesDescription": "These are CodeMirror's base editing keys. They are not remappable here and only show which keys are occupied.",
+  "settings.shortcuts.primitivesDescription":
+    "These are CodeMirror's base editing keys. They are not remappable here and only show which keys are occupied.",
   "settings.stepper.decrease": "Decrease",
   "settings.stepper.increase": "Increase",
   "common.cancel": "Cancel",
@@ -656,7 +672,8 @@ const en: Record<keyof typeof zh, TranslationValue> = {
   "dialogs.conflict.saveEditorAs": "Save Editor As",
   "dialogs.conflict.useEditor": "Use Editor",
   "welcome.intro.title": "Welcome to Norn",
-  "welcome.intro.desc": "Norn is keyboard-first, and many strong features live in shortcuts. Take a minute to follow the highlights through the most useful entry points.",
+  "welcome.intro.desc":
+    "Norn is keyboard-first, and many strong features live in shortcuts. Take a minute to follow the highlights through the most useful entry points.",
   "welcome.search.title": "Search: files & commands",
   "welcome.search.desc": ({ palette, goToFile }) =>
     `Click here or press ${goToFile} to quick-open a file by name; press ${palette} for the command palette to find any action or setting — the gateway when you can't recall a shortcut.`,
@@ -699,7 +716,8 @@ const en: Record<keyof typeof zh, TranslationValue> = {
   "git.readyDescription": "Open a folder to detect its Git repository.",
   "git.createRepo": "Create Git Repository",
   "git.operationIncomplete": "Operation incomplete",
-  "git.error.identityMissing": "Configure Git identity first: git config --global user.name \"Your Name\" and user.email \"email\".",
+  "git.error.identityMissing":
+    'Configure Git identity first: git config --global user.name "Your Name" and user.email "email".',
   "git.error.authFailed": "Authentication failed. Check Git credentials or SSH key and try again.",
   "git.error.noUpstream": "The current branch has no upstream. Push tried origin.",
   "git.error.nothingToCommit": "There are no changes to commit.",
@@ -723,7 +741,8 @@ const en: Record<keyof typeof zh, TranslationValue> = {
   "git.newBranch": "New Branch",
   "git.merge": "Merge",
   "git.mergeTitle": ({ source }) => `Merge ${source} into current branch`,
-  "git.mergeConfirm": ({ source, current }) => `Merge branch "${source}" into the current branch "${current}"? On conflict you can abort from the in-progress banner.`,
+  "git.mergeConfirm": ({ source, current }) =>
+    `Merge branch "${source}" into the current branch "${current}"? On conflict you can abort from the in-progress banner.`,
   "git.mergeButtonTitle": ({ source }) => `Merge ${source} into current branch`,
   "git.merged": ({ source }) => `Merged ${source}`,
   "git.newWorktree": "New Worktree",
@@ -885,8 +904,7 @@ const en: Record<keyof typeof zh, TranslationValue> = {
   "editor.changedOutsideWithLocalEdits":
     "This file changed on disk while you also have local edits. Choose the disk version or keep the editor version.",
   "editor.deletedOnDisk": "This file was deleted on disk. Save the editor version somewhere else, or close this tab.",
-  "editor.changedUnsupported": ({ name }) =>
-    `${name} changed on disk and can no longer be opened as supported text.`,
+  "editor.changedUnsupported": ({ name }) => `${name} changed on disk and can no longer be opened as supported text.`,
   "editor.unsupportedEncoding": ({ name }) => `${name} cannot be opened as a supported text encoding.`,
   "editor.largeFileConfirm": ({ size }) => `This file is ${size}. Open it as text?`,
   "editor.largeFileOmittedBefore": "[Earlier content omitted in large file browsing mode]",
@@ -920,11 +938,7 @@ export type TranslationKey = keyof typeof zh;
 
 const dictionaries: Record<AppLanguage, Record<TranslationKey, TranslationValue>> = { en, zh };
 
-export function translate(
-  language: AppLanguage,
-  key: TranslationKey,
-  params: Record<string, string | number> = {},
-) {
+export function translate(language: AppLanguage, key: TranslationKey, params: Record<string, string | number> = {}) {
   const entry = dictionaries[language][key] ?? zh[key];
   return typeof entry === "function" ? entry(params) : entry;
 }

@@ -406,6 +406,8 @@ export type WorkbenchDocument = {
   encodingCandidates?: TextEncodingCandidate[];
   hasBom?: boolean;
   isUntitled?: boolean;
+  // 会话恢复:已存盘文件的占位 tab,内容尚未从磁盘读入;挂载后按 path 就地填充,读失败(被删)则移除。
+  pendingRestore?: boolean;
   mode?: "editable" | "large-readonly" | "diff";
   // diff 模式:并排对照的两个完整版本(原始 HEAD / 修改后工作区)。
   diff?: { original: string; modified: string };

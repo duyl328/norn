@@ -1,3 +1,4 @@
+import { openSearchPanel } from "@codemirror/search";
 import { Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { Plus, X } from "lucide-react";
@@ -27,6 +28,7 @@ import {
 import { useEditorTabs } from "../hooks/use-editor-tabs";
 import { useI18n } from "../i18n";
 import { markPerf } from "../perf-marks";
+import { getTabViewState, registerActiveViewCapture, setTabViewState, type TabViewState } from "../session";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type { EditorScrollbarOrientation, EditorScrollMetrics, WorkbenchDocument } from "../types";
 import {
@@ -61,6 +63,36 @@ const scrollMetricsEqual = (a: EditorScrollMetrics, b: EditorScrollMetrics) =>
   a.shellWidth === b.shellWidth;
 
 const editorDocumentKey = (doc: WorkbenchDocument) => `${doc.id}:${doc.name}`;
+
+// 抓取当前视图的 per-tab 状态(光标/选区、滚动、查找框是否展开),用于切 tab / 退出时保存。
+const captureViewState = (view: EditorView): TabViewState => {
+  const selection = view.state.selection.main;
+  return {
+    anchor: selection.anchor,
+    head: selection.head,
+    scrollTop: view.scrollDOM.scrollTop,
+    scrollLeft: view.scrollDOM.scrollLeft,
+    searchOpen: Boolean(view.dom.querySelector(".cm-norn-search")),
+  };
+};
+
+// 把保存的 per-tab 状态还原进(已 setState 的)视图。滚动要等布局完成后再设,故放 rAF。
+const applyViewState = (view: EditorView, state: TabViewState | undefined): void => {
+  if (!state) return;
+  const length = view.state.doc.length;
+  view.dispatch({
+    selection: { anchor: Math.min(state.anchor, length), head: Math.min(state.head, length) },
+    annotations: Transaction.addToHistory.of(false),
+  });
+  if (state.searchOpen && !view.dom.querySelector(".cm-norn-search")) {
+    openSearchPanel(view);
+  }
+  const { scrollTop, scrollLeft } = state;
+  window.requestAnimationFrame(() => {
+    view.scrollDOM.scrollTop = scrollTop;
+    view.scrollDOM.scrollLeft = scrollLeft;
+  });
+};
 
 export function EditorSurface({
   document,
@@ -149,6 +181,8 @@ export function EditorSurface({
   // 记录视图当前已装载的文档键(id+name)。建视图时置为初始文档;切文档效应据此跳过「已是当前文档」
   // 的重复装载(含 StrictMode 开发期的二次挂载),只在真正换文档时 setState。
   const loadedDocKeyRef = useRef<string | null>(null);
+  // 视图当前已装载文档的 id:切文档时用它作为「切走的那个 tab」的 key,把其视图状态存进会话表。
+  const loadedDocIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     tRef.current = t;
@@ -276,12 +310,21 @@ export function EditorSurface({
 
     const view = new EditorView({ parent, state: buildEditorState(documentRef.current) });
     loadedDocKeyRef.current = editorDocumentKey(documentRef.current);
+    loadedDocIdRef.current = documentRef.current.id;
 
     viewRef.current = view;
     markPerf("editor-created"); // CodeMirror 实例已建好，文件文本此刻已可见
     setActiveEditorView(view);
     scrollDOMRef.current = view.scrollDOM;
     setHighlightWarning(null);
+
+    // 会话恢复:活动 tab 的视图状态只在切走时才落表,退出前由此回调把当前活动 tab 也刷进去。
+    registerActiveViewCapture(() => {
+      const current = viewRef.current;
+      if (current) setTabViewState(documentRef.current.id, captureViewState(current));
+    });
+    // 首个文档若有上次会话保存的视图状态(恢复启动),还原光标/滚动/查找框。
+    applyViewState(view, getTabViewState(documentRef.current.id));
 
     const head = view.state.selection.main.head;
     const line = view.state.doc.lineAt(head);
@@ -310,6 +353,7 @@ export function EditorSurface({
 
       resizeObserver.disconnect();
       view.scrollDOM.removeEventListener("scroll", updateScrollMetrics);
+      registerActiveViewCapture(null);
       view.destroy();
       if (viewRef.current === view) {
         setActiveEditorView(null);
@@ -317,6 +361,7 @@ export function EditorSurface({
       viewRef.current = null;
       scrollDOMRef.current = null;
       loadedDocKeyRef.current = null;
+      loadedDocIdRef.current = null;
     };
   }, [editorContainerMounted, buildEditorState, applyHighlight]);
 
@@ -330,11 +375,18 @@ export function EditorSurface({
     if (loadedDocKeyRef.current === key) {
       return; // 已是当前文档(初次挂载 / StrictMode 二次挂载),无需换 state。
     }
+    // 先把「切走的那个 tab」的视图状态(光标/滚动/查找框)存进会话表,回到它时能复原。
+    if (loadedDocIdRef.current) {
+      setTabViewState(loadedDocIdRef.current, captureViewState(view));
+    }
     loadedDocKeyRef.current = key;
+    loadedDocIdRef.current = document.id;
 
     view.setState(buildEditorState(document));
     scrollDOMRef.current = view.scrollDOM;
     setHighlightWarning(null);
+    // 恢复「切入的这个 tab」上次留下的视图状态。
+    applyViewState(view, getTabViewState(document.id));
 
     const head = view.state.selection.main.head;
     const line = view.state.doc.lineAt(head);
@@ -354,6 +406,9 @@ export function EditorSurface({
 
     const anchor = Math.min(view.state.selection.main.anchor, document.content.length);
     const head = Math.min(view.state.selection.main.head, document.content.length);
+    // 会话恢复:活动 tab 是「已存盘文件占位」,此刻磁盘内容刚填入(空→有内容)。填完后再还原上次的
+    // 光标/滚动/查找框(必须在这次内容 dispatch 之后,否则会被本次选区钳制覆盖)。
+    const wasEmptyRestore = view.state.doc.length === 0 && document.content.length > 0;
 
     suppressChangeRef.current = true;
     try {
@@ -365,7 +420,11 @@ export function EditorSurface({
     } finally {
       suppressChangeRef.current = false;
     }
-  }, [document.content]);
+
+    if (wasEmptyRestore) {
+      applyViewState(view, getTabViewState(document.id));
+    }
+  }, [document.content, document.id]);
 
   // 设置里切换长行换行时,只重配置 compartment,不重建编辑器(保留光标/滚动/撤销栈)。
   useEffect(() => {

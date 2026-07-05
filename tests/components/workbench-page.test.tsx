@@ -75,6 +75,7 @@ const resetStore = (document: WorkbenchDocument, openDocuments: WorkbenchDocumen
   });
 
 beforeEach(() => {
+  window.localStorage.clear(); // 会话恢复默认开启 + persistSession 写 localStorage,清掉避免测试间串味
   invokeMock.mockReset();
   invokeMock.mockImplementation(async (cmd: string) => {
     if (cmd === "scratch_folder") return { name: "scratch", path: "/mock/scratch" };

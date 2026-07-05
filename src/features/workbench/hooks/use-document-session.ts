@@ -14,6 +14,13 @@ import {
 import { deleteDraft, writeDraft } from "../drafts";
 import { formatText } from "../formatter";
 import { translate } from "../i18n-dictionaries";
+import {
+  buildSessionSnapshot,
+  flushActiveViewState,
+  saveSession,
+  type SessionSnapshot,
+  setTabViewState,
+} from "../session";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type {
   NativeDirectoryEntry,
@@ -1042,7 +1049,99 @@ export function useDocumentSession() {
         return false;
       }
     }
+    persistSession();
     return true;
+  };
+
+  // 会话快照:记录打开的文件夹、所有可恢复 tab(顺序)、活动 tab 及每个 tab 的视图状态。失焦/切后台/退出时写。
+  const persistSession = () => {
+    flushActiveViewState(); // 先把当前活动 tab 的光标/滚动/查找框刷进视图状态表
+    const state = useWorkbenchStore.getState();
+    saveSession(
+      buildSessionSnapshot({
+        openDocuments: state.openDocuments,
+        activeId: state.document.id,
+        folderPath: state.folderView?.rootPath ?? null,
+      }),
+    );
+  };
+
+  // 启动恢复:占位 tab 读盘失败(文件被删)时移除;若删到一个不剩,补一个空白未命名,避免编辑区为空。
+  const dropRestoredTab = (id: string) => {
+    const remaining = useWorkbenchStore.getState().openDocuments.filter((doc) => doc.id !== id);
+    const nextDocuments = remaining.length > 0 ? remaining : [createUntitledDocument()];
+    setOpenDocuments(nextDocuments);
+    setDocument((current) => (current.id === id ? nextDocuments[0] : current));
+  };
+
+  // 把「已存盘占位」tab 的内容读盘就地填入(保持 tab 位置与 id 不变)。二进制/超大/被删则移除该 tab。
+  const fillRestoredTab = async (id: string, path: string) => {
+    try {
+      const inspection = await invoke<NativeTextFileInspection>("inspect_text_file", { path });
+      if (inspection.isBinary || !inspection.isText || inspection.size > LARGE_FILE_READONLY_BYTES) {
+        dropRestoredTab(id);
+        return;
+      }
+      const file = await invoke<NativeTextFile>("read_text_file", { path });
+      const patch = (doc: WorkbenchDocument): WorkbenchDocument => ({
+        ...doc,
+        name: file.name,
+        content: file.content,
+        savedContent: file.content,
+        size: file.size,
+        lastModified: file.lastModified ?? undefined,
+        encoding: file.encoding,
+        encodingLabel: file.encodingLabel,
+        encodingCandidates: file.encodingCandidates,
+        hasBom: file.hasBom,
+        mode: "editable",
+        pendingRestore: undefined,
+      });
+      updateOpenDocumentById(id, patch);
+      setDocument((current) => (current.id === id ? patch(current) : current));
+    } catch {
+      dropRestoredTab(id); // 文件已被外部删除等 → 悄悄丢弃该 tab
+    }
+  };
+
+  // 按上次会话重建 tab 列表(保持顺序):草稿 tab 复用首帧已种入的草稿文档,已存盘 tab 先放占位再逐个读盘。
+  const restoreSessionTabs = async (session: SessionSnapshot) => {
+    if (session.tabs.length === 0) {
+      return;
+    }
+    for (const tab of session.tabs) {
+      if (tab.view) setTabViewState(tab.id, tab.view); // 视图状态回填内存表,供还原光标/滚动/查找框
+    }
+    const existing = useWorkbenchStore.getState().openDocuments;
+    const restored: WorkbenchDocument[] = [];
+    for (const tab of session.tabs) {
+      if (tab.path) {
+        restored.push({
+          id: tab.id,
+          name: tab.name ?? getPathName(tab.path),
+          path: tab.path,
+          content: "",
+          savedContent: "",
+          isUntitled: false,
+          mode: "editable",
+          pendingRestore: true,
+        });
+      } else {
+        const draftDocument = existing.find((doc) => doc.id === tab.id);
+        if (draftDocument) restored.push(draftDocument); // 草稿内容已由 main.tsx 首帧种入
+      }
+    }
+    if (restored.length === 0) {
+      return;
+    }
+    const active = restored.find((doc) => doc.id === session.activeId) ?? restored[0];
+    setOpenDocuments(restored);
+    setDocument(active);
+    for (const placeholder of restored) {
+      if (placeholder.pendingRestore && placeholder.path) {
+        await fillRestoredTab(placeholder.id, placeholder.path);
+      }
+    }
   };
 
   useEffect(() => {
@@ -1059,10 +1158,12 @@ export function useDocumentSession() {
     };
     const handleBlur = () => {
       persistActiveDocument();
+      persistSession();
     };
     const handleVisibilityChange = () => {
       if (globalThis.document.hidden) {
         persistActiveDocument();
+        persistSession();
         return;
       }
       void checkCurrentDocumentOnDisk();
@@ -1164,5 +1265,6 @@ export function useDocumentSession() {
     updateDocumentContent,
     changeDocumentEncoding,
     persistAllForQuit,
+    restoreSessionTabs,
   };
 }

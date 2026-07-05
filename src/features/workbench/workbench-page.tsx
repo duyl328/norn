@@ -33,7 +33,8 @@ import { useSettingsRuntime } from "./hooks/use-settings-runtime";
 import { useWorkspaceTree } from "./hooks/use-workspace-tree";
 import { markPerf } from "./perf-marks";
 import { isMac, isWindows } from "./platform";
-import { loadSettings } from "./settings";
+import { loadSession } from "./session";
+import { DEFAULT_SETTINGS, loadSettings } from "./settings";
 import { useWorkbenchStore } from "./store/workbench-store";
 import { shouldAutoCheckUpdates } from "./update-schedule";
 import { hasSeenWelcome } from "./welcome";
@@ -116,6 +117,7 @@ export function WorkbenchPage() {
     updateDocumentContent,
     changeDocumentEncoding,
     persistAllForQuit,
+    restoreSessionTabs,
   } = useDocumentSession();
 
   const goToLine = (line: number, column = 1) => {
@@ -327,19 +329,21 @@ export function WorkbenchPage() {
     openFileTreeContextMenu,
   } = useWorkspaceTree({ requestFileOpen });
 
-  // 启动恢复上次工作区:若开启且当前无打开的文件夹,打开最近文件夹。只跑一次。
+  // 启动恢复上次会话:开启时恢复上次的文件夹 + 全部 tab(顺序)+ 每个 tab 的光标/滚动/查找框。只跑一次。
+  // 草稿内容已由 main.tsx 首帧种入(不受此开关影响);此处补齐文件夹、已存盘 tab、tab 顺序与视图状态。
   const restoredWorkspaceRef = useRef(false);
   useEffect(() => {
     if (restoredWorkspaceRef.current) return;
     restoredWorkspaceRef.current = true;
     void loadSettings().then((stored) => {
-      if (!stored?.ui.restoreLastWorkspace) return;
+      if (!(stored?.ui.restoreLastWorkspace ?? DEFAULT_SETTINGS.ui.restoreLastWorkspace)) return;
       const state = useWorkbenchStore.getState();
-      if (state.folderView) return;
-      const recent = state.recentFolders[0];
-      if (recent) void openFolderView(recent.path, "open-folder");
+      const session = loadSession();
+      const folderPath = session?.folderPath ?? state.recentFolders[0]?.path;
+      if (folderPath && !state.folderView) void openFolderView(folderPath, "open-folder");
+      if (session) void restoreSessionTabs(session);
     });
-  }, [openFolderView]);
+  }, [openFolderView, restoreSessionTabs]);
 
   // action 系统的回调来源:全部复用上面的 hook 输出,不重写业务逻辑。
   const actionDeps: ActionDeps = {

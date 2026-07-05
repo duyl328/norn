@@ -8,6 +8,7 @@ import { App } from "@/app";
 import { buildRestoredDocuments, listDrafts } from "@/features/workbench/drafts";
 import { markPerf } from "@/features/workbench/perf-marks";
 import { applyPlatformClass } from "@/features/workbench/platform";
+import { loadSession, setTabViewState } from "@/features/workbench/session";
 import { useWorkbenchStore } from "@/features/workbench/store/workbench-store";
 
 markPerf("js-eval"); // 入口 JS 开始执行（首屏关键包已下载并进入解析/执行）
@@ -29,6 +30,12 @@ const root = document.getElementById("root");
 
 if (!root) {
   throw new Error("Root element #root was not found.");
+}
+
+// 会话视图状态(光标/选区、滚动、查找框)先同步种进内存表(localStorage,无需 IPC),
+// 让编辑器一挂载就能还原活动 tab 上次停留的位置,而不是先到顶部再跳。
+for (const tab of loadSession()?.tabs ?? []) {
+  if (tab.view) setTabViewState(tab.id, tab.view);
 }
 
 // 首帧渲染前先把上次未保存的草稿种进 store,让编辑器一出生就带着草稿内容(不再异步载入 → 不闪)。

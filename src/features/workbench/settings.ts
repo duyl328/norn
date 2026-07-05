@@ -7,7 +7,11 @@ import { isTauriRuntime } from "./workbench-utils";
  * 存到 appConfigDir/settings.json(浏览器开发回退 localStorage)。
  * 机器本地状态(最近文件夹、搜索历史)不在此处,留在 localStorage,不参与导出。
  */
+// 配置 schema 版本。老配置(会话恢复功能之前)没有此字段 → loadSettings 据此做一次性迁移。
+export const CURRENT_SETTINGS_VERSION = 1;
+
 export interface AppSettings {
+  schemaVersion: number;
   language: AppLanguage;
   theme: "system" | "light" | "dark";
   editor: {
@@ -26,10 +30,11 @@ export interface AppSettings {
 export type AppLanguage = "zh" | "en";
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  schemaVersion: CURRENT_SETTINGS_VERSION,
   language: "zh",
   theme: "system",
   editor: { fontSize: 13, tabSize: 2, lineWrapping: false, formatOnSave: false },
-  ui: { showStatusBar: true, resizeHandleHints: false, restoreLastWorkspace: false },
+  ui: { showStatusBar: true, resizeHandleHints: false, restoreLastWorkspace: true },
 };
 
 export const FONT_SIZE_MIN = 9;
@@ -41,8 +46,7 @@ const SETTINGS_FILE = "settings.json";
 const SETTINGS_LS_KEY = "norn.settings";
 const KEYBINDINGS_FILE = "keybindings.json";
 
-const bool = (value: unknown, fallback: boolean): boolean =>
-  typeof value === "boolean" ? value : fallback;
+const bool = (value: unknown, fallback: boolean): boolean => (typeof value === "boolean" ? value : fallback);
 
 const clampInt = (value: unknown, min: number, max: number, fallback: number): number => {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
@@ -61,6 +65,7 @@ export function mergeSettings(raw: unknown): AppSettings {
   const theme: AppSettings["theme"] =
     r.theme === "light" || r.theme === "dark" || r.theme === "system" ? r.theme : DEFAULT_SETTINGS.theme;
   return {
+    schemaVersion: typeof r.schemaVersion === "number" ? r.schemaVersion : CURRENT_SETTINGS_VERSION,
     language: language(r.language),
     theme,
     editor: {
@@ -103,7 +108,15 @@ export async function loadSettings(): Promise<AppSettings | null> {
   }
   if (!raw) return null;
   try {
-    return mergeSettings(JSON.parse(raw));
+    const parsed = JSON.parse(raw) as { schemaVersion?: unknown };
+    const merged = mergeSettings(parsed);
+    // 一次性迁移:会话恢复功能之前的配置没有 schemaVersion,其 restoreLastWorkspace 是旧默认(关)。
+    // 按新默认打开(用户要「上次的文件夹/文件自动恢复」),并写回打上版本戳;之后尊重用户的显式开关。
+    if (typeof parsed?.schemaVersion !== "number") {
+      merged.ui.restoreLastWorkspace = true;
+      void saveSettings(merged);
+    }
+    return merged;
   } catch {
     return DEFAULT_SETTINGS;
   }
