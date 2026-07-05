@@ -13,6 +13,7 @@ import {
   clamp,
   collapseTreeNodeDeep,
   collapseTreeNodesDeep,
+  countContentCharacters,
   createUntitledDocument,
   findTreeNode,
   flattenVisibleTreeRows,
@@ -507,5 +508,19 @@ describe("editor search history", () => {
 
     window.localStorage.setItem("norn.editorSearchHistory", "not json");
     expect(loadEditorSearchHistory()).toEqual([]);
+  });
+});
+
+describe("countContentCharacters", () => {
+  it("counts each CJK char as one, excludes whitespace and punctuation", () => {
+    expect(countContentCharacters("你好，世界！")).toBe(4); // ，！不计,4 个汉字
+    expect(countContentCharacters("hello, world")).toBe(10); // 逗号/空格不计
+    expect(countContentCharacters("a b\nc\td")).toBe(4);
+    expect(countContentCharacters("")).toBe(0);
+  });
+
+  it("counts an astral emoji as one code point (not its UTF-16 length of 2)", () => {
+    expect("👍".length).toBe(2); // UTF-16 长度是 2
+    expect(countContentCharacters("👍x")).toBe(2); // 但按码点计是 1 + 1
   });
 });

@@ -2935,6 +2935,11 @@
     @apply border-border/70 bg-muted/80 text-foreground;
   }
 
+  /* 只读指标(大小/字符/行):次要信息,弱化且不换行 */
+  .status-file-metrics {
+    @apply whitespace-nowrap text-muted-foreground;
+  }
+
   .status-encoding-trigger,
   .status-line-ending-trigger,
   .status-cursor-position,

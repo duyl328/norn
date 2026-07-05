@@ -460,6 +460,9 @@ const zh = {
   "status.lineEnding.change": "切换换行符",
   "status.lineEnding.label": "换行符",
   "status.readonlyRange": "只读范围",
+  "status.metrics.chars": ({ count }) => `${count} 字符`,
+  "status.metrics.lines": ({ count }) => `${count} 行`,
+  "status.metrics.title": ({ size, chars, lines }) => `${size} 字节 · ${chars} 字符(不含空白与标点) · ${lines} 行`,
 } satisfies Record<string, TranslationValue>;
 
 const en: Record<keyof typeof zh, TranslationValue> = {
@@ -932,6 +935,10 @@ const en: Record<keyof typeof zh, TranslationValue> = {
   "status.lineEnding.change": "Change line ending",
   "status.lineEnding.label": "Line ending",
   "status.readonlyRange": "Read-only range",
+  "status.metrics.chars": ({ count }) => `${count} chars`,
+  "status.metrics.lines": ({ count }) => `${count} lines`,
+  "status.metrics.title": ({ size, chars, lines }) =>
+    `${size} bytes · ${chars} chars (excl. whitespace & punctuation) · ${lines} lines`,
 };
 
 export type TranslationKey = keyof typeof zh;

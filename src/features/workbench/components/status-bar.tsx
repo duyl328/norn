@@ -15,7 +15,14 @@ import { buildFileTree, type FileTreeNode } from "../change-tree";
 import { useI18n } from "../i18n";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type { GitChange, GitWorkspaceState, TextEncodingOption, WorkbenchDocument } from "../types";
-import { getDocumentLines, getPathDisplayIcon, getTailPath, textEncodingOptions } from "../workbench-utils";
+import {
+  countContentCharacters,
+  formatFileSize,
+  getDocumentLines,
+  getPathDisplayIcon,
+  getTailPath,
+  textEncodingOptions,
+} from "../workbench-utils";
 import { GitBranchMenu } from "./git-branch-menu";
 
 type LineEnding = "crlf" | "lf";
@@ -79,6 +86,15 @@ export function StatusBar({
 }) {
   const { t } = useI18n();
   const totalLines = getDocumentLines(document).length;
+  // 底部只读指标:文件大小 / 字符数 / 行数。按 content 记忆,避免每次光标移动都全量重算。
+  const charCount = useMemo(() => countContentCharacters(document.content), [document.content]);
+  const byteSize = useMemo(
+    () =>
+      document.mode === "large-readonly"
+        ? (document.size ?? 0) // 大文件只读是窗口切片,内容不完整 → 用磁盘实际大小
+        : new TextEncoder().encode(document.content).length,
+    [document.content, document.mode, document.size],
+  );
   const documentPathLabel = getTailPath(document.path, 34);
   const lineEnding = getLineEnding(document.content);
   const encodingLabel = document.encodingLabel ?? "UTF-8";
@@ -219,6 +235,17 @@ export function StatusBar({
             />
           </form>
         ) : null}
+        <span
+          className="status-token status-file-metrics"
+          title={t("status.metrics.title", {
+            size: byteSize,
+            chars: charCount.toLocaleString(),
+            lines: totalLines.toLocaleString(),
+          })}
+        >
+          {formatFileSize(byteSize)} · {t("status.metrics.chars", { count: charCount.toLocaleString() })} ·{" "}
+          {t("status.metrics.lines", { count: totalLines.toLocaleString() })}
+        </span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button

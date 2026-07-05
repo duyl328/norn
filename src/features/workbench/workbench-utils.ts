@@ -483,6 +483,17 @@ export const formatFileSize = (size?: number) => {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+// 字符数:按 Unicode 码点计(每个汉字 / emoji 记 1),排除空白与标点符号
+// (用户要求:不统计标点符号,汉字每个占一个字符)。for...of 天然按码点迭代。
+export const countContentCharacters = (content: string): number => {
+  let count = 0;
+  for (const character of content) {
+    if (/\s/u.test(character) || /\p{P}/u.test(character)) continue;
+    count += 1;
+  }
+  return count;
+};
+
 export const getNativeSaveError = (error: unknown): NativeSaveError => {
   if (error && typeof error === "object") {
     return error as NativeSaveError;
