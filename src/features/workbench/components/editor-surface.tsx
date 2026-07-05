@@ -1,4 +1,4 @@
-import { Compartment, EditorState, StateEffect, Transaction } from "@codemirror/state";
+import { Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { Plus, X } from "lucide-react";
 import {
@@ -6,6 +6,7 @@ import {
   lazy,
   type PointerEvent as ReactPointerEvent,
   Suspense,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -46,6 +47,20 @@ const DiffView = lazy(() => import("./diff-view").then((m) => ({ default: m.Diff
 // 标签被相邻更高层标签遮挡超过该比例(%)才算「真正进入折叠」,显示堆叠边框;
 // 低于此则按普通标签渲染。避免首/尾标签稍一滚动就常驻折叠边框。
 const stackFrameMinCover = 14;
+
+// 滚动测量值逐字段比较:全等则复用旧对象让 React 跳过重渲染,切断测量→重渲染→再测量的抖动环。
+const scrollMetricsEqual = (a: EditorScrollMetrics, b: EditorScrollMetrics) =>
+  a.clientHeight === b.clientHeight &&
+  a.clientWidth === b.clientWidth &&
+  a.gutterWidth === b.gutterWidth &&
+  a.scrollHeight === b.scrollHeight &&
+  a.scrollLeft === b.scrollLeft &&
+  a.scrollTop === b.scrollTop &&
+  a.scrollWidth === b.scrollWidth &&
+  a.shellHeight === b.shellHeight &&
+  a.shellWidth === b.shellWidth;
+
+const editorDocumentKey = (doc: WorkbenchDocument) => `${doc.id}:${doc.name}`;
 
 export function EditorSurface({
   document,
@@ -126,6 +141,91 @@ export function EditorSurface({
     });
   }, [keymapOverrides]);
 
+  // 切文档「不重建视图」的稳定引用:建视图只用初始文档(documentRef),tRef 供高亮兜底文案取当前语言。
+  const documentRef = useRef(document);
+  const tRef = useRef(t);
+  const updateScrollMetricsRef = useRef<() => void>(() => {});
+  const highlightTokenRef = useRef(0);
+  // 记录视图当前已装载的文档键(id+name)。建视图时置为初始文档;切文档效应据此跳过「已是当前文档」
+  // 的重复装载(含 StrictMode 开发期的二次挂载),只在真正换文档时 setState。
+  const loadedDocKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    tRef.current = t;
+  }, [t]);
+
+  // documentRef 始终指向当前文档:仅在「建视图」重新运行时(diff↔可编辑 切换致编辑器容器重挂)用来
+  // 取该建哪个文档。普通切文档不重跑建视图,故此处每次渲染后同步即可,不影响持久视图。
+  useEffect(() => {
+    documentRef.current = document;
+  });
+
+  // 编辑器容器只在非 diff 模式渲染;以此为「建视图」的门槛:进入 diff 销毁视图,离开 diff 重建。
+  const editorContainerMounted = document.mode !== "diff";
+
+  // 按某文档构建完整编辑器 state(含全部扩展 + 滚动/光标 updateListener)。
+  // 切文档时用它 view.setState —— 复用同一 DOM,不销毁重建,故不再「文字消失又出现」;
+  // 新 state 自带干净撤销栈/选区,与旧的「重建视图」行为一致。
+  const buildEditorState = useCallback(
+    (doc: WorkbenchDocument) =>
+      EditorState.create({
+        doc: doc.content,
+        extensions: [
+          createCodeMirrorExtensions(
+            languageCompartmentRef.current,
+            lineWrapCompartmentRef.current,
+            tabSizeCompartmentRef.current,
+            doc,
+            (content) => {
+              if (!suppressChangeRef.current) {
+                onChangeRef.current(content);
+              }
+            },
+            keymapCompartmentRef.current.of(buildEditorKeymapExtension(keymapOverridesRef.current)),
+            useWorkbenchStore.getState().editorLineWrapping,
+            useWorkbenchStore.getState().editorTabSize,
+          ),
+          EditorView.updateListener.of((update) => {
+            updateScrollMetricsRef.current();
+            if (update.selectionSet || update.docChanged) {
+              const head = update.state.selection.main.head;
+              const line = update.state.doc.lineAt(head);
+              onCursorChangeRef.current({ line: line.number, column: head - line.from + 1 });
+            }
+          }),
+        ],
+      }),
+    [],
+  );
+
+  // 异步按文件类型加载高亮并 reconfigure;token 防止旧文档的异步结果落到已切走的新文档上。
+  const applyHighlight = useCallback((view: EditorView, doc: WorkbenchDocument) => {
+    const token = (highlightTokenRef.current += 1);
+    const mode =
+      doc.mode === "large-readonly" ||
+      (typeof doc.size === "number" && doc.size > FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES)
+        ? ({ kind: "plain-text", label: "Plain Text", reason: "large-file" } as const)
+        : resolveHighlightMode(doc);
+
+    loadHighlightExtensions(mode)
+      .then((extensions) => {
+        if (highlightTokenRef.current !== token || viewRef.current !== view) {
+          return;
+        }
+        setHighlightWarning(null);
+        view.dispatch({ effects: languageCompartmentRef.current.reconfigure(extensions) });
+      })
+      .catch((highlightError) => {
+        if (highlightTokenRef.current !== token || viewRef.current !== view) {
+          return;
+        }
+        setHighlightWarning(tRef.current("editor.highlightFallback", { language: mode.label }));
+        view.dispatch({ effects: languageCompartmentRef.current.reconfigure([]) });
+        console.error("Failed to load editor highlighting", highlightError);
+      });
+  }, []);
+
+  // 建视图:整个组件生命周期只建一次(deps []),之后切文档只换 state、不销毁 DOM。
   useEffect(() => {
     const parent = editorElementRef.current;
     const frame = editorFrameRef.current;
@@ -134,73 +234,13 @@ export function EditorSurface({
       return;
     }
 
-    const view = new EditorView({
-      parent,
-      state: EditorState.create({
-        doc: document.content,
-        extensions: createCodeMirrorExtensions(
-          languageCompartmentRef.current,
-          lineWrapCompartmentRef.current,
-          tabSizeCompartmentRef.current,
-          document,
-          (content) => {
-            if (!suppressChangeRef.current) {
-              onChangeRef.current(content);
-            }
-          },
-          keymapCompartmentRef.current.of(buildEditorKeymapExtension(keymapOverridesRef.current)),
-          useWorkbenchStore.getState().editorLineWrapping,
-          useWorkbenchStore.getState().editorTabSize,
-        ),
-      }),
-    });
-
-    viewRef.current = view;
-    markPerf("editor-created"); // CodeMirror 实例已建好，文件文本此刻已可见
-    setActiveEditorView(view);
-    scrollDOMRef.current = view.scrollDOM;
-    setHighlightWarning(null);
-    const reportCursor = () => {
-      const head = view.state.selection.main.head;
-      const line = view.state.doc.lineAt(head);
-      onCursorChangeRef.current({ line: line.number, column: head - line.from + 1 });
-    };
-    reportCursor();
-
-    let isCurrentDocument = true;
-
-    const mode =
-      document.mode === "large-readonly" ||
-      (typeof document.size === "number" && document.size > FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES)
-        ? ({ kind: "plain-text", label: "Plain Text", reason: "large-file" } as const)
-        : resolveHighlightMode(document);
-
-    loadHighlightExtensions(mode)
-      .then((extensions) => {
-        if (!isCurrentDocument || viewRef.current !== view) {
-          return;
-        }
-
-        setHighlightWarning(null);
-        view.dispatch({
-          effects: languageCompartmentRef.current.reconfigure(extensions),
-        });
-      })
-      .catch((highlightError) => {
-        if (!isCurrentDocument || viewRef.current !== view) {
-          return;
-        }
-
-        setHighlightWarning(t("editor.highlightFallback", { language: mode.label }));
-        view.dispatch({
-          effects: languageCompartmentRef.current.reconfigure([]),
-        });
-        console.error("Failed to load editor highlighting", highlightError);
-      });
-
     let animationFrame: number | null = null;
 
     const readScrollMetrics = () => {
+      const view = viewRef.current;
+      if (!view) {
+        return emptyEditorScrollMetrics;
+      }
       const gutterElement = view.scrollDOM.querySelector(".cm-gutters") as HTMLElement | null;
       const frameRect = frame.getBoundingClientRect();
 
@@ -224,22 +264,30 @@ export function EditorSurface({
 
       animationFrame = window.requestAnimationFrame(() => {
         animationFrame = null;
-        setScrollMetrics(readScrollMetrics());
+        // 只在数值真变了才 setState:测量值不变就返回旧对象,React 跳过重渲染。
+        // 否则每次测量都产生新对象 → 重渲染 → 可能再触发测量,形成「Measure loop restarted」抖动/闪烁。
+        setScrollMetrics((previous) => {
+          const next = readScrollMetrics();
+          return scrollMetricsEqual(previous, next) ? previous : next;
+        });
       });
     };
+    updateScrollMetricsRef.current = updateScrollMetrics;
 
-    view.dispatch({
-      effects: StateEffect.appendConfig.of(
-        EditorView.updateListener.of((update) => {
-          updateScrollMetrics();
-          if (update.selectionSet || update.docChanged) {
-            const head = update.state.selection.main.head;
-            const line = update.state.doc.lineAt(head);
-            onCursorChangeRef.current({ line: line.number, column: head - line.from + 1 });
-          }
-        }),
-      ),
-    });
+    const view = new EditorView({ parent, state: buildEditorState(documentRef.current) });
+    loadedDocKeyRef.current = editorDocumentKey(documentRef.current);
+
+    viewRef.current = view;
+    markPerf("editor-created"); // CodeMirror 实例已建好，文件文本此刻已可见
+    setActiveEditorView(view);
+    scrollDOMRef.current = view.scrollDOM;
+    setHighlightWarning(null);
+
+    const head = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(head);
+    onCursorChangeRef.current({ line: line.number, column: head - line.from + 1 });
+
+    applyHighlight(view, documentRef.current);
 
     const resizeObserver = new ResizeObserver(updateScrollMetrics);
     resizeObserver.observe(frame);
@@ -252,21 +300,15 @@ export function EditorSurface({
       resizeObserver.observe(gutterElement);
     }
 
-    const mutationObserver = new MutationObserver(updateScrollMetrics);
-    mutationObserver.observe(parent, { childList: true, characterData: true, subtree: true });
-
     view.scrollDOM.addEventListener("scroll", updateScrollMetrics, { passive: true });
     updateScrollMetrics();
 
     return () => {
-      isCurrentDocument = false;
-
       if (animationFrame !== null) {
         window.cancelAnimationFrame(animationFrame);
       }
 
       resizeObserver.disconnect();
-      mutationObserver.disconnect();
       view.scrollDOM.removeEventListener("scroll", updateScrollMetrics);
       view.destroy();
       if (viewRef.current === view) {
@@ -274,8 +316,34 @@ export function EditorSurface({
       }
       viewRef.current = null;
       scrollDOMRef.current = null;
+      loadedDocKeyRef.current = null;
     };
-  }, [document.id, document.name, t]);
+  }, [editorContainerMounted, buildEditorState, applyHighlight]);
+
+  // 切文档:把新文档 state 换进已存在的视图(复用 DOM),不重建 → 无闪烁。首个文档由「建视图」处理。
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) {
+      return;
+    }
+    const key = editorDocumentKey(document);
+    if (loadedDocKeyRef.current === key) {
+      return; // 已是当前文档(初次挂载 / StrictMode 二次挂载),无需换 state。
+    }
+    loadedDocKeyRef.current = key;
+
+    view.setState(buildEditorState(document));
+    scrollDOMRef.current = view.scrollDOM;
+    setHighlightWarning(null);
+
+    const head = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(head);
+    onCursorChangeRef.current({ line: line.number, column: head - line.from + 1 });
+
+    applyHighlight(view, document);
+    updateScrollMetricsRef.current();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 id/name 变(切文档)时换 state
+  }, [document.id, document.name]);
 
   useEffect(() => {
     const view = viewRef.current;

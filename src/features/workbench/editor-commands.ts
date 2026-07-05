@@ -10,6 +10,8 @@ import {
 } from "@codemirror/state";
 import { type Command, EditorView, keymap } from "@codemirror/view";
 
+import { cjkWordRangeAt } from "./editor-cjk-word-select";
+
 // 区域扫描上限:括号配对最多向两侧各扫这么多字符,避免超大文件里全文扫描。
 const REGION_SCAN_LIMIT = 10000;
 
@@ -96,10 +98,16 @@ const collectCandidates = (state: EditorState, range: SelectionRange): Selection
   const candidates: SelectionRange[] = [];
   const push = (from: number, to: number) => candidates.push(EditorSelection.range(from, to));
 
-  // 词
-  const word = state.wordAt(range.head) ?? (range.empty ? null : state.wordAt(range.from));
-  if (word) {
-    push(word.from, word.to);
+  // 词:CJK 走分词(与双击一致,只选一个词而非整串连续汉字),其余用 charCategorizer。
+  const headLine = state.doc.lineAt(range.head);
+  const cjkWord = cjkWordRangeAt(headLine.text, range.head - headLine.from);
+  if (cjkWord) {
+    push(headLine.from + cjkWord[0], headLine.from + cjkWord[1]);
+  } else {
+    const word = state.wordAt(range.head) ?? (range.empty ? null : state.wordAt(range.from));
+    if (word) {
+      push(word.from, word.to);
+    }
   }
 
   // 引号:先「引号内」,再「含引号」
@@ -392,7 +400,8 @@ const jumpTo = (view: EditorView, targetIndex: number): boolean => {
 export const jumpBack: Command = (view) => jumpTo(view, (view.state.field(jumpHistoryField, false)?.index ?? 0) - 1);
 
 /** 前进到下一个点击位置(需先后退过)。 */
-export const jumpForward: Command = (view) => jumpTo(view, (view.state.field(jumpHistoryField, false)?.index ?? -1) + 1);
+export const jumpForward: Command = (view) =>
+  jumpTo(view, (view.state.field(jumpHistoryField, false)?.index ?? -1) + 1);
 
 // 鼠标侧键:button 3 = 后退键,button 4 = 前进键,映射到跳转历史的后退/前进。
 export const mouseNavButtons = EditorView.domEventHandlers({

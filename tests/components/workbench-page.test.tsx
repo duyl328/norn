@@ -94,7 +94,7 @@ describe("WorkbenchPage close protection", () => {
       </I18nProvider>,
     );
 
-  it("blocks native window close and focuses the first unsaved document", async () => {
+  it("auto-saves dirty documents then closes the window without prompting", async () => {
     const clean = makeDoc({ id: "clean", name: "clean.ts", content: "x", savedContent: "x" });
     const dirty = makeDoc({ id: "dirty", name: "dirty.ts", content: "changed", savedContent: "old" });
     resetStore(clean, [clean, dirty]);
@@ -107,12 +107,37 @@ describe("WorkbenchPage close protection", () => {
 
     act(() => handler(event));
 
-    const state = useWorkbenchStore.getState();
+    // 不再阻塞退出:先把脏文件存盘,再关窗,不弹确认框。
     expect(event.preventDefault).toHaveBeenCalled();
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("destroy_current_window"));
+    expect(invokeMock).toHaveBeenCalledWith("save_text_file", expect.objectContaining({ content: "changed" }));
+    expect(useWorkbenchStore.getState().pendingCloseDocument).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps the window open when auto-save reports a conflict", async () => {
+    const clean = makeDoc({ id: "clean", name: "clean.ts", content: "x", savedContent: "x" });
+    const dirty = makeDoc({ id: "dirty", name: "dirty.ts", content: "changed", savedContent: "old" });
+    resetStore(clean, [clean, dirty]);
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "save_text_file") throw { kind: "modified", message: "changed outside" };
+      if (cmd === "scratch_folder") return { name: "scratch", path: "/mock/scratch" };
+      if (cmd === "list_directory") return [];
+      return [];
+    });
+
+    renderWorkbenchPage();
+
+    await waitFor(() => expect(onCloseRequestedMock).toHaveBeenCalled());
+    const handler = onCloseRequestedMock.mock.calls[0]?.[0] as (event: { preventDefault: () => void }) => void;
+    const event = { preventDefault: vi.fn() };
+
+    act(() => handler(event));
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    await waitFor(() => expect(useWorkbenchStore.getState().saveConflict?.path).toBe(dirty.path));
     expect(invokeMock).not.toHaveBeenCalledWith("destroy_current_window");
-    expect(state.document.id).toBe("dirty");
-    expect(state.pendingCloseDocument?.id).toBe("dirty");
-    expect(screen.getByRole("dialog")).toHaveTextContent("未保存的更改");
+    expect(useWorkbenchStore.getState().document.id).toBe("dirty");
   });
 
   it("allows native window close when no document needs confirmation", async () => {
@@ -128,7 +153,7 @@ describe("WorkbenchPage close protection", () => {
     act(() => handler(event));
 
     expect(event.preventDefault).toHaveBeenCalled();
-    expect(invokeMock).toHaveBeenCalledWith("destroy_current_window");
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("destroy_current_window"));
     expect(useWorkbenchStore.getState().pendingCloseDocument).toBeNull();
   });
 
@@ -160,7 +185,7 @@ describe("WorkbenchPage close protection", () => {
     act(() => handler(event));
 
     expect(event.preventDefault).toHaveBeenCalled();
-    expect(invokeMock).toHaveBeenCalledWith("destroy_current_window");
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("destroy_current_window"));
     expect(useWorkbenchStore.getState().pendingCloseDocument).toBeNull();
   });
 
@@ -183,7 +208,7 @@ describe("WorkbenchPage close protection", () => {
 
     expect(() => act(() => handler(event))).not.toThrow();
     expect(event.preventDefault).toHaveBeenCalled();
-    expect(invokeMock).toHaveBeenCalledWith("destroy_current_window");
+    await waitFor(() => expect(invokeMock).toHaveBeenCalledWith("destroy_current_window"));
     expect(useWorkbenchStore.getState().pendingCloseDocument).toBeNull();
   });
 

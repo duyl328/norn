@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { invoke } from "@tauri-apps/api/core";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useDocumentSession } from "@/features/workbench/hooks/use-document-session";
@@ -166,7 +166,7 @@ describe("document store operations", () => {
     expect(state.saveState).toBe("idle");
   });
 
-  it("closes clean documents immediately and asks before closing dirty documents", () => {
+  it("closes clean documents immediately and auto-saves dirty on-disk documents on close", async () => {
     const clean = makeDoc({ id: "a", content: "x", savedContent: "x" });
     const other = makeDoc({ id: "b", name: "b.ts" });
     resetStore(clean, [clean, other]);
@@ -177,24 +177,59 @@ describe("document store operations", () => {
 
     const dirty = makeDoc({ id: "c", content: "changed", savedContent: "orig" });
     resetStore(dirty, [dirty]);
+    invokeMock.mockResolvedValue({
+      path: dirty.path,
+      name: "c.ts",
+      lastModified: 1,
+      size: 7,
+      encoding: "utf-8",
+      encodingLabel: "UTF-8",
+      hasBom: false,
+    });
+
     act(() => result.current.requestCloseDocument(dirty));
-    const state = useWorkbenchStore.getState();
-    expect(state.pendingCloseDocument?.id).toBe("c");
-    expect(state.openDocuments).toHaveLength(1);
+
+    // 已有本地归宿的脏文件:静默存盘后关闭,不再弹确认框。
+    await waitFor(() => expect(useWorkbenchStore.getState().openDocuments.some((d) => d.id === "c")).toBe(false));
+    expect(invokeMock).toHaveBeenCalledWith("save_text_file", expect.objectContaining({ content: "changed" }));
+    expect(useWorkbenchStore.getState().pendingCloseDocument).toBeNull();
   });
 
-  it("focuses dirty background documents before asking how to close them", () => {
+  it("auto-saves dirty background documents on close instead of asking", async () => {
     const active = makeDoc({ id: "active", name: "active.ts", content: "x", savedContent: "x" });
     const dirty = makeDoc({ id: "dirty", name: "dirty.ts", content: "changed", savedContent: "old" });
     resetStore(active, [active, dirty]);
+    invokeMock.mockResolvedValue({
+      path: dirty.path,
+      name: "dirty.ts",
+      lastModified: 1,
+      size: 7,
+      encoding: "utf-8",
+      encodingLabel: "UTF-8",
+      hasBom: false,
+    });
     const { result } = renderHook(() => useDocumentSession());
 
     act(() => result.current.requestCloseDocument(dirty));
 
-    const state = useWorkbenchStore.getState();
-    expect(state.document.id).toBe("dirty");
-    expect(state.pendingCloseDocument?.id).toBe("dirty");
-    expect(state.openDocuments.map((d) => d.id)).toEqual(["active", "dirty"]);
+    await waitFor(() => expect(useWorkbenchStore.getState().openDocuments.map((d) => d.id)).toEqual(["active"]));
+    expect(invokeMock).toHaveBeenCalledWith("save_text_file", expect.objectContaining({ content: "changed" }));
+    expect(useWorkbenchStore.getState().pendingCloseDocument).toBeNull();
+    expect(useWorkbenchStore.getState().document.id).toBe("active");
+  });
+
+  it("keeps dirty on-disk documents open when auto-save fails on close", async () => {
+    const dirty = makeDoc({ id: "dirty", name: "dirty.ts", content: "changed", savedContent: "old" });
+    resetStore(dirty, [dirty]);
+    invokeMock.mockRejectedValueOnce({ kind: "modified", message: "changed outside" });
+    const { result } = renderHook(() => useDocumentSession());
+
+    act(() => result.current.requestCloseDocument(dirty));
+
+    await waitFor(() => expect(useWorkbenchStore.getState().saveConflict?.path).toBe(dirty.path));
+    expect(useWorkbenchStore.getState().openDocuments.map((d) => d.id)).toEqual(["dirty"]);
+    expect(useWorkbenchStore.getState().document.id).toBe("dirty");
+    expect(useWorkbenchStore.getState().pendingCloseDocument).toBeNull();
   });
 
   it("closes empty untitled documents without confirmation", () => {
@@ -217,11 +252,11 @@ describe("document store operations", () => {
     expect(state.openDocuments.map((d) => d.id)).toEqual(["b"]);
   });
 
-  it("asks before closing non-empty untitled documents", () => {
+  it("asks before closing a non-empty untitled tab (no saved local file yet)", () => {
     const untitled = makeDoc({
       id: "untitled",
-      name: "Untitled.txt",
-      path: "Untitled.txt",
+      name: "Untitled",
+      path: "Untitled",
       content: "draft",
       savedContent: "",
       isUntitled: true,
@@ -231,6 +266,7 @@ describe("document store operations", () => {
 
     act(() => result.current.requestCloseDocument(untitled));
 
+    // 关这个 tab = 要丢掉它,先弹框让用户决定(保存 / 放弃),不能直接关。
     const state = useWorkbenchStore.getState();
     expect(state.pendingCloseDocument?.id).toBe("untitled");
     expect(state.openDocuments).toHaveLength(1);

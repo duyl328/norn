@@ -2248,6 +2248,68 @@ fn write_config_file(app: tauri::AppHandle, name: String, contents: String) -> R
     Ok(())
 }
 
+// 未命名草稿:存于 appConfigDir/drafts/<id>.json,给「未保存文件」在退出/崩溃后可恢复。
+// id 必须是单纯文件名基础:禁止分隔符与 ..,防路径穿越。
+fn draft_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>, id: &str) -> Result<PathBuf, String> {
+    if id.is_empty()
+        || id.contains('/')
+        || id.contains('\\')
+        || id.contains("..")
+        || id.contains('\0')
+    {
+        return Err(format!("Invalid draft id: {id}"));
+    }
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| format!("Unable to resolve app config directory: {error}"))?;
+    Ok(dir.join("drafts").join(format!("{id}.json")))
+}
+
+#[tauri::command]
+fn write_draft(app: tauri::AppHandle, id: String, contents: String) -> Result<(), String> {
+    let path = draft_path(&app, &id)?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Unable to create drafts directory: {error}"))?;
+    }
+    fs::write(&path, contents).map_err(|error| format!("Unable to write draft: {error}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_draft(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let path = draft_path(&app, &id)?;
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("Unable to delete draft: {error}")),
+    }
+}
+
+#[tauri::command]
+fn list_drafts(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let dir = match draft_path(&app, "_")?.parent() {
+        Some(parent) => parent.to_path_buf(),
+        None => return Ok(Vec::new()),
+    };
+    let entries = match fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(format!("Unable to read drafts directory: {error}")),
+    };
+    let mut drafts = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some("json") {
+            if let Ok(contents) = fs::read_to_string(&path) {
+                drafts.push(contents);
+            }
+        }
+    }
+    Ok(drafts)
+}
+
 /// 由前端主题设置驱动原生窗口外观:"light"/"dark" 固定,其它(system/null)跟随系统。
 /// 不固定窗口主题时,webview 的 prefers-color-scheme 才会反映真实系统明暗。
 #[tauri::command]
@@ -2825,6 +2887,9 @@ pub fn run() {
             write_keybindings,
             read_config_file,
             write_config_file,
+            write_draft,
+            delete_draft,
+            list_drafts,
             set_window_theme,
             set_app_language,
             app_config_dir,

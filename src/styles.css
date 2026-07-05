@@ -2942,6 +2942,11 @@
     @apply min-w-[3.25rem] justify-center rounded-[3px] px-1;
   }
 
+  /* 关闭后焦点回到触发按钮,去掉浏览器默认蓝色聚焦框(用 [data-state=open] 态表达激活即可) */
+  .status-token-button:focus-visible {
+    @apply outline-none ring-0;
+  }
+
   .status-encoding-trigger[data-state="open"],
   .status-line-ending-trigger[data-state="open"],
   .status-changes-trigger[data-state="open"] {
@@ -3987,6 +3992,11 @@
     @apply min-w-0 overflow-hidden;
     --editor-scrollbar-size: 18px;
     height: 100%;
+    /* 让编辑器独占一个合成层:文字光栅被 GPU 缓存,相邻 tab 的 :hover 重绘不会连带把编辑器文字
+       重新光栅化(WKWebView 里「邻元素重绘冲刷本层」会表现为文字闪一下)。contain:paint 再加一道
+       绘制隔离。视口尺寸固定,纹理不随文档变大,内存安全。 */
+    transform: translateZ(0);
+    contain: paint;
   }
 
   .codemirror-shell .cm-editor {

@@ -11,6 +11,7 @@ import {
   SUPER_LARGE_FILE_BYTES,
   workspaceFsChangeEvent,
 } from "../constants";
+import { deleteDraft, writeDraft } from "../drafts";
 import { formatText } from "../formatter";
 import { translate } from "../i18n-dictionaries";
 import { useWorkbenchStore } from "../store/workbench-store";
@@ -21,6 +22,7 @@ import type {
   NativeTextFileInspection,
   NativeTextFileRange,
   PendingFileOpen,
+  SaveConflict,
   TextEncodingOption,
   WorkbenchDocument,
 } from "../types";
@@ -36,7 +38,6 @@ import {
   isAbsolutePath,
   isDocumentDirty,
   isTauriRuntime,
-  requiresDocumentCloseConfirmation,
   upsertOpenDocument,
 } from "../workbench-utils";
 
@@ -81,6 +82,16 @@ export function useDocumentSession() {
     setSaveState("saved");
   };
 
+  const focusFailedAutoSaveDocument = (failedDocument: WorkbenchDocument) => {
+    const state = useWorkbenchStore.getState();
+    if (state.document.id === failedDocument.id) {
+      return;
+    }
+
+    const fresh = state.openDocuments.find((openDocument) => openDocument.id === failedDocument.id) ?? failedDocument;
+    activateDocument(fresh);
+  };
+
   const activateOpenedDocument = (nextDocument: WorkbenchDocument) => {
     setDocument(nextDocument);
     setOpenDocuments((currentDocuments) => {
@@ -97,12 +108,7 @@ export function useDocumentSession() {
   };
 
   // 在中间编辑区以只读标签打开并排 diff。conflict 时由编辑区切到冲突解决视图。
-  const openDiffDoc = (
-    id: string,
-    name: string,
-    file: string,
-    versions: { original: string; modified: string },
-  ) => {
+  const openDiffDoc = (id: string, name: string, file: string, versions: { original: string; modified: string }) => {
     const conflict = hasConflictMarkers(versions.modified);
     activateDocument({
       id,
@@ -118,7 +124,12 @@ export function useDocumentSession() {
 
   // 工作区改动:HEAD ↔ 工作区。同一文件复用同一标签。
   const openDiff = (file: string, versions: { original: string; modified: string }) => {
-    openDiffDoc(`diff:${file}`, `${getPathName(file)}${hasConflictMarkers(versions.modified) ? " · 冲突" : " · diff"}`, file, versions);
+    openDiffDoc(
+      `diff:${file}`,
+      `${getPathName(file)}${hasConflictMarkers(versions.modified) ? " · 冲突" : " · diff"}`,
+      file,
+      versions,
+    );
   };
 
   // 历史提交里某文件的改动:父提交 ↔ 该提交。按 提交+文件 复用标签。
@@ -127,6 +138,11 @@ export function useDocumentSession() {
   };
 
   const closeDocument = (targetDocument: WorkbenchDocument) => {
+    // 走到 closeDocument 关闭未命名文件 = 用户已明确决定丢弃它(空文件 / 弹框里选了「不保存」),删掉草稿。
+    // 「退出软件后下次恢复」的草稿由退出流程 / 编辑期缓存写入,不经这里。
+    if (targetDocument.isUntitled) {
+      void deleteDraft(targetDocument.id);
+    }
     const nextDocuments = openDocuments.filter((openDocument) => openDocument.id !== targetDocument.id);
 
     if (nextDocuments.length === 0) {
@@ -150,27 +166,52 @@ export function useDocumentSession() {
   };
 
   const requestCloseDocument = (targetDocument: WorkbenchDocument) => {
-    if (requiresDocumentCloseConfirmation(targetDocument)) {
-      activateDocument(targetDocument);
-      setPendingCloseDocument(targetDocument);
+    // 取最新内容(刚编辑完就关时,传入的对象可能略旧)。
+    const latest =
+      useWorkbenchStore.getState().openDocuments.find((openDocument) => openDocument.id === targetDocument.id) ??
+      targetDocument;
+
+    // 有磁盘冲突:切到该文档让冲突框浮现,交用户解决;解决后再关会正常关闭。不静默覆盖或丢弃。
+    if (latest.diskConflict || (saveConflict && latest.id === document.id)) {
+      activateDocument(latest);
       return;
     }
 
-    closeDocument(targetDocument);
+    // 已有本地归宿的脏文件:静默存盘后关闭(有自动保存了,不再弹框)。
+    if (!latest.isUntitled && isAbsolutePath(latest.path) && latest.mode === "editable" && isDocumentDirty(latest)) {
+      void autoSaveDiskDocument(latest).then((saved) => {
+        if (saved) {
+          closeDocument(latest);
+          return;
+        }
+
+        focusFailedAutoSaveDocument(latest);
+      });
+      return;
+    }
+
+    // 未命名且有内容(还没有本地文件):关这个 tab = 要丢掉它,得让用户先决定(保存 / 放弃),不能直接关。
+    // 注意:整个软件退出走的是另一条路(persistAllForQuit + 下次启动恢复),不在此拦截。
+    if (latest.isUntitled && latest.content.trim() !== "") {
+      activateDocument(latest);
+      setPendingCloseDocument(latest);
+      return;
+    }
+
+    // 干净文件 / 空的未命名:直接关闭。
+    closeDocument(latest);
   };
 
   const saveAndClosePendingDocument = async () => {
     const targetDocument = pendingCloseDocument;
-
     if (!targetDocument) {
       return;
     }
 
     activateDocument(targetDocument);
     const savedDocument = await saveDocument();
-
     if (!savedDocument) {
-      return;
+      return; // 保存被取消 / 失败:保持打开
     }
 
     setPendingCloseDocument(null);
@@ -179,14 +220,12 @@ export function useDocumentSession() {
 
   const saveAsAndClosePendingDocument = async () => {
     const targetDocument = pendingCloseDocument;
-
     if (!targetDocument) {
       return;
     }
 
     activateDocument(targetDocument);
     const savedDocument = await saveDocumentAs(targetDocument.content);
-
     if (!savedDocument) {
       return;
     }
@@ -206,6 +245,10 @@ export function useDocumentSession() {
   };
 
   const applySavedDocument = (savedFile: NativeSavedTextFile, content: string): WorkbenchDocument => {
+    // 未命名文件落盘成真实文件后,清掉它的草稿缓存(已有归宿,不再需要恢复)。
+    if (document.isUntitled) {
+      void deleteDraft(document.id);
+    }
     const shouldPreserveDocumentId = !document.isUntitled && arePathsEqual(document.path, savedFile.path);
     const nextDocument = {
       ...document,
@@ -891,22 +934,115 @@ export function useDocumentSession() {
     setSaveState((currentState) => (currentState === "saving" ? currentState : "idle"));
   };
 
-  // 编辑「告一段落」时(窗口失焦 / 切到后台)自动保存当前文档,而非每次改动都存。
-  // 仅存磁盘上已存在、可编辑、有改动、无冲突的文件;未命名/空文件不在此处理。
-  const autoSaveActiveDocument = () => {
-    const state = useWorkbenchStore.getState();
-    const doc = state.document;
+  // 静默自动保存某个「已存盘」文档:直接写盘,再按 id 就地更新 savedContent/mtime。
+  // 不走 saveDocument —— 后者会跑格式化、重建整份文档对象、清冲突/错误态,触发编辑器重渲染(闪一下);
+  // 这里只改元数据、不动 id/name/content,编辑器完全不受影响。任何文档(含非活动)都能存。
+  const autoSaveDiskDocument = async (doc: WorkbenchDocument): Promise<boolean> => {
     if (
       doc.isUntitled ||
       !isAbsolutePath(doc.path) ||
       doc.mode !== "editable" ||
-      state.saveConflict ||
-      state.saveState === "saving" ||
+      doc.diskConflict ||
       !isDocumentDirty(doc)
     ) {
+      return !doc.diskConflict;
+    }
+    // 活动文档若正处于冲突态,交给冲突流程,别静默覆盖。
+    const store = useWorkbenchStore.getState();
+    if (store.saveConflict && store.document.id === doc.id) {
+      return false;
+    }
+
+    const content = doc.content;
+    try {
+      const saved = await invoke<NativeSavedTextFile>("save_text_file", {
+        path: doc.path,
+        content,
+        expectedLastModified: doc.lastModified ?? null,
+        force: false,
+        encoding: doc.encoding ?? "utf-8",
+        hasBom: doc.hasBom ?? false,
+      });
+      // 始终同步 mtime(让磁盘监听认得这是我们自己的写,不误判为外部改动);
+      // savedContent 仅在期间未再编辑时才标记为已保存,否则保持脏、下次再存。
+      const patch = (target: WorkbenchDocument): WorkbenchDocument =>
+        target.id !== doc.id
+          ? target
+          : {
+              ...target,
+              lastModified: saved.lastModified ?? target.lastModified,
+              size: saved.size,
+              savedContent: target.content === content ? content : target.savedContent,
+            };
+      updateOpenDocumentById(doc.id, patch);
+      setDocument((current) => patch(current));
+      return true;
+    } catch (error) {
+      const saveError = getNativeSaveError(error);
+      const conflict: SaveConflict = {
+        content,
+        diskMissing: saveError.kind === "deleted" ? true : undefined,
+        lastModified: doc.lastModified,
+        message: saveError.message ?? t("editor.unableSave"),
+        path: doc.path,
+      };
+
+      setSaveState("idle");
+      if (useWorkbenchStore.getState().document.id === doc.id) {
+        setSaveConflict(conflict);
+      } else {
+        updateOpenDocumentById(doc.id, (currentDocument) => ({ ...currentDocument, diskConflict: conflict }));
+      }
+      return false;
+    }
+  };
+
+  // 未命名文件(只在内存里)缓存成草稿;空文件不缓存并清掉旧草稿。
+  const cacheUntitledDraft = (doc: WorkbenchDocument) => {
+    if (!doc.isUntitled || doc.mode !== "editable") {
       return;
     }
-    void saveDocument();
+    if (doc.content.trim() === "") {
+      void deleteDraft(doc.id);
+      return;
+    }
+    void writeDraft({ id: doc.id, name: doc.name, content: doc.content, encoding: doc.encoding, hasBom: doc.hasBom });
+  };
+
+  // 编辑告一段落(失焦 / 切后台 / 切文件 / 停编辑 2s)时:存盘 or 缓存草稿。每个文档独立处理。
+  const persistDocument = (doc: WorkbenchDocument) => {
+    void autoSaveDiskDocument(doc);
+    cacheUntitledDraft(doc);
+  };
+  const persistActiveDocument = () => persistDocument(useWorkbenchStore.getState().document);
+
+  // 退出前尽力保存所有文档:已存盘的写盘,未命名的存草稿(下次启动恢复)。返回 Promise 供退出流程 await。
+  const persistAllForQuit = async (): Promise<boolean> => {
+    const docs = useWorkbenchStore.getState().openDocuments;
+    for (const doc of docs) {
+      if (doc.isUntitled) {
+        if (doc.mode !== "editable") continue;
+        if (doc.content.trim() === "") {
+          await deleteDraft(doc.id);
+        } else {
+          await writeDraft({
+            id: doc.id,
+            name: doc.name,
+            content: doc.content,
+            encoding: doc.encoding,
+            hasBom: doc.hasBom,
+          });
+        }
+        continue;
+      }
+
+      const saved = await autoSaveDiskDocument(doc);
+      if (!saved) {
+        focusFailedAutoSaveDocument(doc);
+        return false;
+      }
+    }
+    return true;
   };
 
   useEffect(() => {
@@ -922,11 +1058,11 @@ export function useDocumentSession() {
       void checkOpenDocumentsOnDisk();
     };
     const handleBlur = () => {
-      autoSaveActiveDocument();
+      persistActiveDocument();
     };
     const handleVisibilityChange = () => {
       if (globalThis.document.hidden) {
-        autoSaveActiveDocument();
+        persistActiveDocument();
         return;
       }
       void checkCurrentDocumentOnDisk();
@@ -984,6 +1120,31 @@ export function useDocumentSession() {
     saveState,
   ]);
 
+  // 停止编辑约 2s 后自动保存当前文件 / 缓存草稿。document.id 进 deps → 切文件即重置计时,每个文件独立。
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+    const timer = window.setTimeout(() => persistActiveDocument(), 2000);
+    return () => window.clearTimeout(timer);
+  }, [document.content, document.id]);
+
+  // 切换文件(失去焦点的那个文件)时立即保存它:从 openDocuments 取它的最新内容,避免丢改动。
+  const previousDocumentIdRef = useRef(document.id);
+  useEffect(() => {
+    const previousId = previousDocumentIdRef.current;
+    previousDocumentIdRef.current = document.id;
+    if (previousId === document.id || !isTauriRuntime()) {
+      return;
+    }
+    const leaving = useWorkbenchStore.getState().openDocuments.find((openDocument) => openDocument.id === previousId);
+    if (leaving) {
+      persistDocument(leaving);
+    }
+  }, [document.id]);
+
+  // 草稿恢复已移到首帧渲染前(见 main.tsx 的 seedRestoredDrafts),这里不再异步载入,避免「文字重新加载」闪烁。
+
   // Ctrl/Cmd+S 已迁移到全局快捷键分发器(actions/use-keybindings),此处不再单独监听。
 
   return {
@@ -1002,5 +1163,6 @@ export function useDocumentSession() {
     requestFileOpen,
     updateDocumentContent,
     changeDocumentEncoding,
+    persistAllForQuit,
   };
 }

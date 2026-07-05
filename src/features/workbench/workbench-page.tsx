@@ -38,12 +38,7 @@ import { useWorkbenchStore } from "./store/workbench-store";
 import { shouldAutoCheckUpdates } from "./update-schedule";
 import { hasSeenWelcome } from "./welcome";
 import { startWelcomeTour } from "./welcome-tour";
-import {
-  isDocumentDirty,
-  isTauriRuntime,
-  loadKeymapOverrides,
-  requiresDocumentCloseConfirmation,
-} from "./workbench-utils";
+import { isDocumentDirty, isTauriRuntime, loadKeymapOverrides } from "./workbench-utils";
 
 // 非首屏关键路径的面板按需加载，缩小首包、让窗口与文件更快出现（编辑器保持同步加载以最快展示文件）。
 // 文件树/Git 面板始终挂载（CSS 收起），首次渲染即拉取各自 chunk，期间显示空占位，随后补齐。
@@ -120,6 +115,7 @@ export function WorkbenchPage() {
     requestFileOpen,
     updateDocumentContent,
     changeDocumentEncoding,
+    persistAllForQuit,
   } = useDocumentSession();
 
   const goToLine = (line: number, column = 1) => {
@@ -157,6 +153,7 @@ export function WorkbenchPage() {
 
   const requestFileOpenRef = useRef(requestFileOpen);
   const requestCloseDocumentRef = useRef(requestCloseDocument);
+  const persistAllForQuitRef = useRef(persistAllForQuit);
 
   useEffect(() => {
     requestFileOpenRef.current = requestFileOpen;
@@ -165,6 +162,10 @@ export function WorkbenchPage() {
   useEffect(() => {
     requestCloseDocumentRef.current = requestCloseDocument;
   }, [requestCloseDocument]);
+
+  useEffect(() => {
+    persistAllForQuitRef.current = persistAllForQuit;
+  }, [persistAllForQuit]);
 
   useEffect(() => {
     if (!isTauriRuntime()) {
@@ -179,41 +180,32 @@ export function WorkbenchPage() {
     appWindow
       .onCloseRequested((event) => {
         const state = useWorkbenchStore.getState();
-        const closeDiagnostics = state.openDocuments.map((openDocument) => ({
-          id: openDocument.id,
-          name: openDocument.name,
-          isUntitled: Boolean(openDocument.isUntitled),
-          contentLength: (openDocument.content ?? "").length,
-          savedContentLength: (openDocument.savedContent ?? "").length,
-          dirty: isDocumentDirty(openDocument),
-          needsConfirmation: requiresDocumentCloseConfirmation(openDocument),
-        }));
-        const targetDocument = state.openDocuments.find(requiresDocumentCloseConfirmation);
-
-        const diagnosticPayload = {
-          documents: closeDiagnostics,
-          pendingCloseDocumentId: state.pendingCloseDocument?.id ?? null,
-          targetDocumentId: targetDocument?.id ?? null,
-        };
-
-        console.info("[norn] window close requested", diagnosticPayload);
-        void invoke("debug_log", { message: "window close requested", payload: diagnosticPayload }).catch(
-          () => undefined,
-        );
-
         event.preventDefault();
 
-        if (!targetDocument) {
-          void invoke("debug_log", { message: "destroy current window requested", payload: {} }).catch(() => undefined);
-          void invoke("destroy_current_window").catch((error) =>
-            invoke("debug_log", { message: "destroy current window failed", payload: { error: String(error) } }).catch(
-              () => undefined,
-            ),
-          );
+        // 未解决的磁盘冲突:仍需用户决断,别静默退出丢改动。
+        const conflicted =
+          state.openDocuments.find((openDocument) => openDocument.diskConflict) ??
+          (state.saveConflict ? state.document : undefined);
+        if (conflicted) {
+          requestCloseDocumentRef.current(conflicted);
           return;
         }
 
-        requestCloseDocumentRef.current(targetDocument);
+        // 其余一律不打扰:退出前把所有文档存盘 / 存草稿,然后关窗(下次启动恢复未命名草稿)。
+        void persistAllForQuitRef
+          .current()
+          .then((saved) => {
+            if (!saved) {
+              return;
+            }
+            void invoke("destroy_current_window").catch((error) =>
+              invoke("debug_log", {
+                message: "destroy current window failed",
+                payload: { error: String(error) },
+              }).catch(() => undefined),
+            );
+          })
+          .catch(() => undefined);
       })
       .then((cleanup) => {
         if (disposed) {
