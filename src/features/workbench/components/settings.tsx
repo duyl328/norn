@@ -85,6 +85,18 @@ export function SettingsPage({
   const [settingsSidebarWidth, setSettingsSidebarWidth] = useState(settingsSidebarDefaultWidth);
   const [settingsResizing, setSettingsResizing] = useState(false);
 
+  // Esc 退回主界面。若有 Radix 弹层(对话框/下拉/选择框)或快捷键录制正开着,先让它们各自吃掉这次 Esc,
+  // 别顺手退出设置页(录制器在捕获阶段 stopPropagation + preventDefault,故 defaultPrevented 足以让路)。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (document.querySelector('[data-state="open"][role="dialog"],[data-radix-popper-content-wrapper]')) return;
+      onBack();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onBack]);
+
   const switchSettingsTab = (nextTab: SettingsTabId) => {
     if (nextTab === activeTab) {
       return;

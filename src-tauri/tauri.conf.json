@@ -150,7 +150,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIxOTg1MjA1MzBGRDc1QzYKUldUR2RmMHdCVktZSVdhVFJoZTNwNWwzb0ZHekJXUFQ3Zkp5bTl0WGg5ZE1TSjBBbmp5dy8ybXIK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM3QzM4RUY0M0Q3NzMwQzgKUldUSU1IYzk5STdETnpSalRtQm5uODFvcmlmZVRka0huU3o0TnNOc0R6Z0liaGE2VEZSc3NST3oK",
       "endpoints": ["https://github.com/duyl328/norn/releases/latest/download/latest.json"]
     }
   }
