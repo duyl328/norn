@@ -116,7 +116,8 @@ export const windowsTitlebarMenus: ReadonlyArray<{
       { label: "Welcome", actionId: "help.welcome" },
       { label: "Documentation" },
       { label: "Keyboard Shortcuts", actionId: "view.settings" },
-      { label: "About Norn" },
+      { label: "Check for Updates", actionId: "help.checkUpdates" },
+      { label: "About Norn", actionId: "help.about" },
     ],
   },
 ] as const;

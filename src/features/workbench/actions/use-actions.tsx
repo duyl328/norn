@@ -188,6 +188,19 @@ export const buildActions = (deps: ActionDeps): Action[] => {
       category: "action.category.help",
       run: () => startWelcomeTour(store().language),
     },
+    {
+      id: "help.checkUpdates",
+      title: "action.help.checkUpdates",
+      category: "action.category.help",
+      // 原生菜单(检查更新)只在 macOS 编译;此 action 让 Windows 标题栏 Help 菜单 / 命令面板也能手动检查。
+      run: () => void import("../check-updates").then((m) => m.checkForUpdates("manual")),
+    },
+    {
+      id: "help.about",
+      title: "action.help.about",
+      category: "action.category.help",
+      run: () => void import("../about").then((m) => m.showAbout()),
+    },
   ];
 };
 

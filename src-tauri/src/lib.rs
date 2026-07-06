@@ -251,6 +251,24 @@ fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
 
+#[derive(Serialize)]
+struct AboutInfo {
+    version: &'static str,
+    build_time: u64,
+    os: &'static str,
+    arch: &'static str,
+}
+
+#[tauri::command]
+fn about_info() -> AboutInfo {
+    AboutInfo {
+        version: env!("CARGO_PKG_VERSION"),
+        build_time: env!("BUILD_TIMESTAMP").parse().unwrap_or(0),
+        os: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
+    }
+}
+
 #[tauri::command]
 fn debug_log(message: String, payload: serde_json::Value) {
     eprintln!("[norn] {message}: {payload}");
@@ -2852,6 +2870,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_version,
+            about_info,
             debug_log,
             destroy_current_window,
             take_initial_open_files,
