@@ -254,45 +254,9 @@ export function WorkbenchPage() {
     };
     window.addEventListener("focus", onWindowFocus);
 
-    let disposed = false;
-    let unlisten: UnlistenFn | undefined;
-
-    const openPaths = (paths: string[]) => {
-      paths.forEach((path) => {
-        requestFileOpenRef.current({ kind: "path", path, clearFolderView: true });
-      });
-    };
-
-    // 先注册实时监听，再 take_initial_open_files——后者会把后端标记为 ready，之后到达的文件改走
-    // 实时事件。若顺序反了，ready 与监听之间到达的 Opened 文件会丢（冷启动竞态根源）。
-    void (async () => {
-      try {
-        const cleanup = await listen<string[]>(nativeOpenFilesEvent, (event) => openPaths(event.payload));
-        if (disposed) {
-          cleanup();
-          return;
-        }
-        unlisten = cleanup;
-      } catch {
-        unlisten = undefined;
-      }
-
-      try {
-        const initial = await invoke<string[]>("take_initial_open_files");
-        if (initial.length > 0) {
-          markPerf("initial-file-open"); // 文件关联冷启动：已拿到待打开文件并发起打开
-          openPaths(initial);
-        }
-      } catch {
-        // 忽略：非 Tauri 环境或无待打开文件。
-      }
-    })();
-
     return () => {
-      disposed = true;
       window.clearTimeout(updateTimer);
       window.removeEventListener("focus", onWindowFocus);
-      unlisten?.();
     };
   }, []);
 
@@ -328,6 +292,86 @@ export function WorkbenchPage() {
     moveTreeNodeToDirectory,
     openFileTreeContextMenu,
   } = useWorkspaceTree({ requestFileOpen });
+
+  const openFolderViewRef = useRef(openFolderView);
+
+  useEffect(() => {
+    openFolderViewRef.current = openFolderView;
+  }, [openFolderView]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    let disposed = false;
+    let unlisten: UnlistenFn | undefined;
+
+    const openPaths = (paths: string[]) => {
+      void (async () => {
+        const resolved = await Promise.all(
+          paths.map(async (path) => {
+            try {
+              return { kind: await invoke<"file" | "directory">("path_kind", { path }), path };
+            } catch {
+              return { kind: "file" as const, path };
+            }
+          }),
+        );
+
+        if (disposed) {
+          return;
+        }
+
+        const directories = resolved.filter((item) => item.kind === "directory");
+        const directory = directories[directories.length - 1];
+
+        if (directory) {
+          await openFolderViewRef.current(directory.path, "open-folder");
+        }
+
+        if (disposed) {
+          return;
+        }
+
+        resolved
+          .filter((item) => item.kind !== "directory")
+          .forEach((item) => {
+            requestFileOpenRef.current({ kind: "path", path: item.path, clearFolderView: !directory });
+          });
+      })();
+    };
+
+    // 先注册实时监听，再 take_initial_open_files——后者会把后端标记为 ready，之后到达的文件改走
+    // 实时事件。若顺序反了，ready 与监听之间到达的 Opened 文件会丢（冷启动竞态根源）。
+    void (async () => {
+      try {
+        const cleanup = await listen<string[]>(nativeOpenFilesEvent, (event) => openPaths(event.payload));
+        if (disposed) {
+          cleanup();
+          return;
+        }
+        unlisten = cleanup;
+      } catch {
+        unlisten = undefined;
+      }
+
+      try {
+        const initial = await invoke<string[]>("take_initial_open_files");
+        if (initial.length > 0) {
+          markPerf("initial-file-open"); // 文件关联冷启动：已拿到待打开路径并发起打开
+          openPaths(initial);
+        }
+      } catch {
+        // 忽略：非 Tauri 环境或无待打开路径。
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   // 启动恢复上次会话:开启时恢复上次的文件夹 + 全部 tab(顺序)+ 每个 tab 的光标/滚动/查找框。只跑一次。
   // 草稿内容已由 main.tsx 首帧种入(不受此开关影响);此处补齐文件夹、已存盘 tab、tab 顺序与视图状态。

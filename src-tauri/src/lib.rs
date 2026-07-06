@@ -305,6 +305,23 @@ fn take_initial_open_files(state: tauri::State<'_, PendingOpenFilesState>) -> Ve
     state.0.lock().unwrap().take_ready()
 }
 
+#[tauri::command]
+fn path_kind(path: String) -> Result<String, String> {
+    let path = PathBuf::from(path);
+    let metadata = fs::metadata(&path)
+        .map_err(|error| format_file_error("Unable to read path metadata", &path, error))?;
+
+    if metadata.is_dir() {
+        return Ok("directory".to_string());
+    }
+
+    if metadata.is_file() {
+        return Ok("file".to_string());
+    }
+
+    Err(format!("{} is not a supported file system item", path.display()))
+}
+
 /// 自进程启动至今的毫秒数。前端用它估算「原生冷启动」耗时（进程拉起 → 前端首次能调用此命令）。
 #[tauri::command]
 fn app_startup_ms(clock: tauri::State<'_, StartupClock>) -> u64 {
@@ -909,8 +926,8 @@ fn open_terminal_at(path: String) -> Result<(), String> {
             return Ok(());
         }
         Command::new("cmd")
-            .args(["/C", "start", "cmd", "/K"])
-            .arg(format!("cd /d {}", directory.display()))
+            .arg("/K")
+            .current_dir(&directory)
             .spawn()
             .map_err(|error| format!("Unable to open terminal: {error}"))?;
         return Ok(());
@@ -2755,7 +2772,7 @@ fn is_forwarded_menu_event(id: &str) -> bool {
     )
 }
 
-fn collect_open_file_args<I, S>(args: I) -> Vec<String>
+fn collect_open_path_args<I, S>(args: I) -> Vec<String>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
@@ -2770,7 +2787,7 @@ where
 
             let path = PathBuf::from(value);
 
-            if path.is_file() {
+            if path.is_file() || path.is_dir() {
                 Some(path.to_string_lossy().into_owned())
             } else {
                 None
@@ -2804,7 +2821,7 @@ fn emit_open_files<R: tauri::Runtime>(app: &tauri::AppHandle<R>, paths: Vec<Stri
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let startup_clock = StartupClock(Instant::now());
-    let initial_open_files = collect_open_file_args(std::env::args().skip(1));
+    let initial_open_files = collect_open_path_args(std::env::args().skip(1));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -2814,7 +2831,7 @@ pub fn run() {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
-            emit_open_files(app, collect_open_file_args(args));
+            emit_open_files(app, collect_open_path_args(args));
         }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -2874,6 +2891,7 @@ pub fn run() {
             debug_log,
             destroy_current_window,
             take_initial_open_files,
+            path_kind,
             app_startup_ms,
             detect_git_cli,
             inspect_git_workspace,
@@ -2962,7 +2980,7 @@ pub fn run() {
                 let paths = urls
                     .into_iter()
                     .filter_map(|url| url.to_file_path().ok())
-                    .filter(|path| path.is_file())
+                    .filter(|path| path.is_file() || path.is_dir())
                     .map(|path| path.to_string_lossy().into_owned())
                     .collect::<Vec<_>>();
                 emit_open_files(app, paths);
@@ -3023,6 +3041,42 @@ mod tests {
         fn path_string(&self, path: &Path) -> String {
             path.to_string_lossy().into_owned()
         }
+    }
+
+    #[test]
+    fn collect_open_path_args_includes_files_and_directories() {
+        let workspace = TestWorkspace::new();
+        let file_path = workspace.root.join("notes.txt");
+        let dir_path = workspace.root.join("src");
+        let missing_path = workspace.root.join("missing.txt");
+        fs::write(&file_path, "hello").expect("file should be written");
+        fs::create_dir_all(&dir_path).expect("directory should be created");
+
+        let file = workspace.path_string(&file_path);
+        let dir = workspace.path_string(&dir_path);
+        let missing = workspace.path_string(&missing_path);
+        let paths = collect_open_path_args([
+            "--flag".to_string(),
+            "tauri://localhost".to_string(),
+            file.clone(),
+            dir.clone(),
+            missing,
+        ]);
+
+        assert_eq!(paths, vec![file, dir]);
+    }
+
+    #[test]
+    fn path_kind_reports_files_and_directories() {
+        let workspace = TestWorkspace::new();
+        let file_path = workspace.root.join("notes.txt");
+        fs::write(&file_path, "hello").expect("file should be written");
+
+        assert_eq!(path_kind(workspace.path_string(&file_path)).unwrap(), "file");
+        assert_eq!(path_kind(workspace.root_string()).unwrap(), "directory");
+        assert!(
+            path_kind(workspace.path_string(&workspace.root.join("missing.txt"))).is_err()
+        );
     }
 
     #[test]

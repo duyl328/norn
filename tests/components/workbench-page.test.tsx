@@ -74,6 +74,13 @@ const resetStore = (document: WorkbenchDocument, openDocuments: WorkbenchDocumen
     treeSelection: null,
   });
 
+const renderWorkbenchPage = () =>
+  render(
+    <I18nProvider>
+      <WorkbenchPage />
+    </I18nProvider>,
+  );
+
 beforeEach(() => {
   window.localStorage.clear(); // 会话恢复默认开启 + persistSession 写 localStorage,清掉避免测试间串味
   invokeMock.mockReset();
@@ -88,13 +95,6 @@ beforeEach(() => {
 });
 
 describe("WorkbenchPage close protection", () => {
-  const renderWorkbenchPage = () =>
-    render(
-      <I18nProvider>
-        <WorkbenchPage />
-      </I18nProvider>,
-    );
-
   it("auto-saves dirty documents then closes the window without prompting", async () => {
     const clean = makeDoc({ id: "clean", name: "clean.ts", content: "x", savedContent: "x" });
     const dirty = makeDoc({ id: "dirty", name: "dirty.ts", content: "changed", savedContent: "old" });
@@ -221,5 +221,27 @@ describe("WorkbenchPage close protection", () => {
     renderWorkbenchPage();
 
     expect(getCurrentWindow().onCloseRequested).not.toHaveBeenCalled();
+  });
+});
+
+describe("WorkbenchPage external path opening", () => {
+  it("opens an initial directory path as a workspace", async () => {
+    const clean = makeDoc({ id: "clean", name: "clean.ts", content: "x", savedContent: "x" });
+    resetStore(clean, [clean]);
+    invokeMock.mockImplementation(async (cmd: string) => {
+      if (cmd === "scratch_folder") return { name: "scratch", path: "/mock/scratch" };
+      if (cmd === "take_initial_open_files") return ["/mock/project"];
+      if (cmd === "path_kind") return "directory";
+      if (cmd === "list_directory")
+        return [{ name: "a.ts", path: "/mock/project/a.ts", relativePath: "a.ts", kind: "file" }];
+      return [];
+    });
+
+    renderWorkbenchPage();
+
+    await waitFor(() => expect(useWorkbenchStore.getState().folderView?.rootPath).toBe("/mock/project"));
+    expect(invokeMock).toHaveBeenCalledWith("path_kind", { path: "/mock/project" });
+    expect(invokeMock).toHaveBeenCalledWith("list_directory", { path: "/mock/project" });
+    expect(invokeMock).not.toHaveBeenCalledWith("inspect_text_file", expect.anything());
   });
 });
