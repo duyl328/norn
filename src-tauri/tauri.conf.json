@@ -151,7 +151,7 @@
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM3QzM4RUY0M0Q3NzMwQzgKUldUSU1IYzk5STdETnpSalRtQm5uODFvcmlmZVRka0huU3o0TnNOc0R6Z0liaGE2VEZSc3NST3oK",
-      "endpoints": ["https://github.com/duyl328/norn/releases/latest/download/latest.json"]
+      "endpoints": ["https://git.duyl328.org/jimmy/norn/releases/latest/download/latest.json"]
     }
   }
 }

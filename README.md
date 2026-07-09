@@ -96,7 +96,7 @@ norn/
 克隆仓库后进入项目根目录：
 
 ```bash
-git clone https://gitea.duyl328.org/jimmy/norn.git
+git clone https://git.duyl328.org/jimmy/norn.git
 cd norn
 ```
 

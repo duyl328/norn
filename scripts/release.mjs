@@ -6,7 +6,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-const REPO = "duyl328/norn";
+const REPO = "jimmy/norn";
+const REPO_URL = "https://git.duyl328.org/jimmy/norn";
 const bundle = "src-tauri/target/release/bundle";
 const macos = join(bundle, "macos");
 const dmgDir = join(bundle, "dmg");
@@ -50,7 +51,7 @@ const latest = {
   platforms: {
     "darwin-aarch64": {
       signature: readFileSync(sig, "utf8").trim(),
-      url: `https://github.com/${REPO}/releases/latest/download/${assetName}`,
+      url: `${REPO_URL}/releases/latest/download/${assetName}`,
     },
   },
 };
@@ -68,4 +69,4 @@ execFileSync(
   ],
   { stdio: "inherit" },
 );
-console.log(`[release] 完成:https://github.com/${REPO}/releases/tag/${tag}`);
+console.log(`[release] 完成:${REPO_URL}/releases/tag/${tag}`);
