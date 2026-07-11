@@ -62,6 +62,16 @@ interface UseWorkspaceTreeParams {
   requestFileOpen: (pendingOpen: PendingFileOpen) => void;
 }
 
+// 卸载事件监听:Tauri 侧若已不认得这个 eventId(dev 下 HMR 重载后就会这样),unlisten 会抛
+// unhandled rejection。清理阶段没什么可挽救的,吞掉即可。
+const safeUnlisten = (unlisten?: () => void) => {
+  try {
+    void Promise.resolve(unlisten?.()).catch(() => undefined);
+  } catch {
+    // 同上:清理失败无需上报。
+  }
+};
+
 export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   const document = useWorkbenchStore((state) => state.document);
   const setDocument = useWorkbenchStore((state) => state.setDocument);
@@ -1141,7 +1151,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     })
       .then((cleanup) => {
         if (disposed) {
-          cleanup();
+          safeUnlisten(cleanup);
           return;
         }
 
@@ -1153,7 +1163,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
 
     return () => {
       disposed = true;
-      unlisten?.();
+      safeUnlisten(unlisten);
     };
   }, [folderView?.rootPath]);
 
@@ -1202,7 +1212,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
       })
       .then((cleanup) => {
         if (disposed) {
-          cleanup();
+          safeUnlisten(cleanup);
           return;
         }
 
@@ -1214,7 +1224,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
 
     return () => {
       disposed = true;
-      unlisten?.();
+      safeUnlisten(unlisten);
     };
   }, [folderView?.rootPath, requestFileOpen, scratchFolder?.path]);
 

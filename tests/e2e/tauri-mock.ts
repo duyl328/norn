@@ -13,6 +13,12 @@ export type TauriMockScenario = {
 };
 
 type MockTextFileInspection = {
+  isText: boolean;
+  encoding: string;
+  encodingLabel: string;
+  encodingConfidence: number;
+  encodingCandidates: unknown[];
+  hasBom: boolean;
   isBinary: boolean;
   isUtf8: boolean;
   lastModified: number;
@@ -198,6 +204,13 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
         lastModified: lastModifiedFor(path),
         isBinary: false,
         isUtf8: true,
+        // 应用现在按 isText 判定可否打开(isUtf8 已不再是那个开关),漏掉它所有文件都会报「无法以支持的文本编码打开」。
+        isText: true,
+        encoding: "utf-8",
+        encodingLabel: "UTF-8",
+        encodingConfidence: 1,
+        encodingCandidates: [],
+        hasBom: false,
         sample: content.slice(0, 256),
         ...override,
       };
@@ -242,6 +255,19 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
           );
         case "git_fetch":
           return null;
+        // 打开文件夹后 use-git 会一次性拉这几条;返回 null 会让 project-panel 迭代 ignoredFiles 时整页崩掉。
+        case "git_status":
+          return { branch: "main", detached: false, upstream: null, ahead: 0, behind: 0, changes: [] };
+        case "git_branches":
+          return { current: "main", local: [], remote: [] };
+        case "git_ignored_files":
+        case "git_recent_commits":
+        case "git_log":
+        case "git_worktrees":
+        case "list_drafts":
+          return [];
+        case "git_pending_op":
+          return "";
         case "read_text_file": {
           const path = String(args.path);
           const inspection = inspectFile(path);
@@ -408,6 +434,10 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
     };
 
     (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = internals;
+    // @tauri-apps/api v2 的 listen() 卸载时会走这里;缺了它每个 listener 都抛 unregisterListener of undefined。
+    (window as unknown as { __TAURI_EVENT_PLUGIN_INTERNALS__: unknown }).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+      unregisterListener: () => {},
+    };
     (window as unknown as { __tauriInvokeCalls: typeof invokeCalls }).__tauriInvokeCalls = invokeCalls;
     (window as unknown as { __emitTauriEvent: (event: string, payload: unknown) => void }).__emitTauriEvent = (
       event,
