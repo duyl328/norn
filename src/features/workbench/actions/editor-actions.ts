@@ -27,6 +27,7 @@ import type { Extension } from "@codemirror/state";
 import { type Command, type KeyBinding, keymap } from "@codemirror/view";
 
 import { expandSelection, jumpBack, jumpForward, shrinkSelection, unselectLastOccurrence } from "../editor-commands";
+import { revertChunkAtCursor } from "../editor-git-gutter";
 import { openFind, openReplace } from "../editor-search-panel";
 import { formatText } from "../formatter";
 import { useWorkbenchStore } from "../store/workbench-store";
@@ -127,6 +128,14 @@ export const EDITOR_ACTIONS: readonly EditorActionDef[] = [
     category: "action.category.edit",
     keys: ["Mod+Shift+W"],
     command: shrinkSelection,
+  },
+  {
+    // 把光标所在的那块改动还原成 HEAD 的样子(改动条 / 审阅模式看到的那一块)。
+    id: "editor.revertGitChunk",
+    title: "action.editor.revertGitChunk",
+    category: "action.category.edit",
+    keys: ["Mod+Alt+Z"], // 注意:Alt+Shift+<字母> 在 CM keymap 里匹配不上(shift 会把键名变成大写)
+    command: revertChunkAtCursor,
   },
   {
     id: "editor.toggleComment",

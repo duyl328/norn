@@ -2872,6 +2872,105 @@
     @apply text-destructive;
   }
 
+  /* 编辑器 git 改动条:紧贴正文左侧一列,点一下弹出「原始内容 + 撤回」。
+     列本身透明(= 沿用 gutter 的底色),只有改动行的格子才被标记铺满颜色。 */
+  .cm-git-gutter {
+    @apply w-[12px] cursor-pointer bg-transparent p-0;
+  }
+
+  /* 必须压过 .codemirror-shell .cm-gutterElement 的 min-width:52px / 右内边距(那是给行号列的),
+     否则改动条这一列的每个格子被撑成 52px,竖条被挤出可视区。 */
+  .codemirror-shell .cm-git-gutter .cm-gutterElement {
+    /* 竖线贴住右边缘(紧挨正文),hover 加粗时向左长 */
+    @apply flex min-w-0 justify-end p-0;
+  }
+
+  /* 常态一条 3px 细竖线;鼠标进入这一列时缓动加粗到 6px(点击区始终是整列 12px,不随视觉宽度变)。 */
+  .cm-git-change {
+    @apply h-full w-[3px];
+    transition: width 0.14s ease;
+  }
+
+  .cm-git-gutter:hover .cm-git-change {
+    @apply w-[6px];
+  }
+
+  /* 改动块的首行画上沿圆角、末行画下沿圆角(单行块即四角全圆);块中间的行保持方角,连起来是一整条 */
+  .cm-git-change-head {
+    @apply rounded-t-[3px];
+  }
+
+  .cm-git-change-tail {
+    @apply rounded-b-[3px];
+  }
+
+  /* 改动行整行淡染。只用 background,不碰 color —— 那会连带把整行文字染色。 */
+  .cm-git-line-add {
+    background: hsl(142 72% 42% / 0.16);
+  }
+
+  .cm-git-line-mod {
+    background: hsl(212 95% 55% / 0.16);
+  }
+
+  .cm-git-change-add {
+    background: hsl(142 72% 42%);
+  }
+
+  .cm-git-change-mod {
+    background: hsl(212 95% 55%);
+  }
+
+  /* 纯删除没有当前行,画成挂在行边界的三角 */
+  .cm-git-change-del {
+    @apply h-0 w-0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 8px solid hsl(0 82% 56%);
+  }
+
+  /* 点改动条 → HEAD 原文就地展开在改动行正上方(红底 + 词级高亮),右上角 撤回 / 复制 / 关闭 */
+  .cm-git-inline {
+    @apply relative my-0.5 rounded-[6px] py-1;
+    background: hsl(0 75% 55% / 0.1);
+    border-left: 3px solid hsl(0 82% 56% / 0.8);
+  }
+
+  .cm-git-inline-row {
+    @apply whitespace-pre px-3;
+    color: hsl(var(--muted-foreground));
+  }
+
+  .cm-git-inline-note {
+    @apply px-3 font-sans text-ui-sm;
+    color: hsl(var(--muted-foreground));
+  }
+
+  .cm-git-inline-word {
+    @apply rounded-[2px];
+    background: hsl(0 75% 55% / 0.35);
+    color: inherit;
+  }
+
+  .cm-git-inline-bar {
+    @apply absolute right-1.5 top-1 z-10 flex gap-1 font-sans text-ui-sm;
+  }
+
+  .cm-git-inline-action {
+    @apply rounded-[6px] border border-border px-1.5 py-0.5 text-muted-foreground transition-colors;
+    background: hsl(var(--popover));
+  }
+
+  .cm-git-inline-action:hover {
+    @apply text-foreground;
+    background: hsl(var(--foreground) / 0.08);
+  }
+
+  /* 展开中的那一块:对应的改动行描一圈边,明确红块属于谁 */
+  .cm-git-line-open {
+    box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.18);
+  }
+
   /* 底部「已忽略」区 */
   .git-ignored-section {
     @apply mt-1 border-t border-border/60 pt-1;
@@ -2889,6 +2988,11 @@
 
   .git-ignored-count {
     @apply ml-auto rounded-full bg-muted px-1.5 text-ui-sm text-muted-foreground;
+  }
+
+  /* 分组内容限高:改动多时自己滚,不把面板撑到无限高(挤掉下面的分组和提交框)。 */
+  .git-fold-body {
+    @apply max-h-[40vh] min-w-0 overflow-y-auto;
   }
 
   /* 已忽略树:整体灰显;目录可展开,文件可点击打开�?*/

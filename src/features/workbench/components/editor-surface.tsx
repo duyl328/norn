@@ -21,6 +21,7 @@ import { setActiveEditorView } from "../actions/active-editor";
 import { buildEditorKeymapExtension } from "../actions/editor-actions";
 import { createCodeMirrorExtensions, tabSizeExtension } from "../codemirror-setup";
 import { EDITOR_SCROLLBAR_SIZE, emptyEditorScrollMetrics } from "../constants";
+import { gitChangeGutter, setGitBaseline } from "../editor-git-gutter";
 import {
   FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES,
   loadHighlightExtensions,
@@ -28,6 +29,7 @@ import {
 } from "../editor-highlighting";
 import { useEditorTabs } from "../hooks/use-editor-tabs";
 import { useI18n } from "../i18n";
+import { translate } from "../i18n-dictionaries";
 import { markPerf } from "../perf-marks";
 import { getTabViewState, registerActiveViewCapture, setTabViewState, type TabViewState } from "../session";
 import { useWorkbenchStore } from "../store/workbench-store";
@@ -159,6 +161,23 @@ export function EditorSurface({
   const [highlightWarning, setHighlightWarning] = useState<string | null>(null);
   const [tabMenu, setTabMenu] = useState<{ path: string; x: number; y: number } | null>(null);
   const setFileError = useWorkbenchStore((state) => state.setFileError);
+  const rootPath = useWorkbenchStore((state) => state.folderView?.rootPath ?? null);
+  // 提交 / 切分支 / 刷新后 HEAD 变了,基线要重取。gitStatus 每次刷新都是新对象,拿它当信号。
+  const gitStatus = useWorkbenchStore((state) => state.gitStatus);
+
+  // 行内展开块的按钮文案:调用时才取语言,切语言后下次展开即生效(扩展本身不必重建)。
+  const chunkLabels = useCallback(() => {
+    const language = useWorkbenchStore.getState().language;
+    return {
+      added: (count: number) => translate(language, "git.addedLines", { count }),
+      copy: translate(language, "common.copy"),
+      revert: translate(language, "git.revertChunk"),
+    };
+  }, []);
+
+  // 当前文档的 HEAD 基线。存在 ref 里而不是只 dispatch 一次:建 state 时要把它灌进扩展,
+  // 否则视图重建(切文档 setState / dev 期 HMR)后 StateField 复位,改动条会整片消失。
+  const gitBaselineRef = useRef<{ id: string; original: string | null }>({ id: "", original: null });
 
   // 右键菜单只对磁盘上真实存在的文件开:未命名 tab 没有路径;diff tab 的路径带 diff:// 前缀,剥掉即原文件。
   const tabFilePath = (tabDocument: WorkbenchDocument | undefined) =>
@@ -238,6 +257,8 @@ export function EditorSurface({
             useWorkbenchStore.getState().editorLineWrapping,
             useWorkbenchStore.getState().editorTabSize,
           ),
+          // git 改动条(相对 HEAD 的增/改/删):紧贴正文左侧。基线已取到就直接灌进去,没取到的由下面的 effect 补。
+          gitChangeGutter(gitBaselineRef.current.id === doc.id ? gitBaselineRef.current.original : null, chunkLabels),
           EditorView.updateListener.of((update) => {
             updateScrollMetricsRef.current();
             if (update.selectionSet || update.docChanged) {
@@ -248,7 +269,7 @@ export function EditorSurface({
           }),
         ],
       }),
-    [],
+    [chunkLabels],
   );
 
   // 异步按文件类型加载高亮并 reconfigure;token 防止旧文档的异步结果落到已切走的新文档上。
@@ -415,6 +436,48 @@ export function EditorSurface({
     updateScrollMetricsRef.current();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 id/name 变(切文档)时换 state
   }, [document.id, document.name]);
+
+  // git 改动条的基线:取当前文件在 HEAD 里的内容。切文档 / 提交 / 切分支后重取。
+  // 未跟踪的新文件在 HEAD 里没有内容(返回 ""),此时不显示改动条 —— 否则整个文件全是绿条,没信息量。
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) {
+      return;
+    }
+    const relative =
+      rootPath && !document.isUntitled && document.mode === "editable" && document.path.startsWith(`${rootPath}/`)
+        ? document.path.slice(rootPath.length + 1)
+        : null;
+    const docId = document.id;
+    let cancelled = false;
+    const apply = (original: string | null) => {
+      if (cancelled) {
+        return;
+      }
+      gitBaselineRef.current = { id: docId, original }; // 视图重建时(HMR / 切文档)由 buildEditorState 灌回去
+      if (viewRef.current === view) {
+        view.dispatch({ effects: setGitBaseline.of(original) });
+      }
+    };
+    // ponytail: 大文件每次按键重算全量 diff 划不来,直接不给基线。
+    if (!relative || !isTauriRuntime() || document.content.length > FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES) {
+      apply(null);
+      return;
+    }
+    void invoke<{ original: string }>("git_file_versions", { path: rootPath, file: relative })
+      .then((versions) => apply(versions.original || null))
+      .catch((baselineError) => {
+        // 不是仓库 / 读不到 → 关掉改动条;开发期留一条,免得「没条子」分不清是没改动还是取基线挂了。
+        if (import.meta.env.DEV) {
+          console.error("[git-gutter] 取 HEAD 基线失败", relative, baselineError);
+        }
+        apply(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- content 只作首次判据,不能随每次按键重取基线
+  }, [document.id, document.path, document.mode, document.isUntitled, rootPath, gitStatus]);
 
   useEffect(() => {
     const view = viewRef.current;

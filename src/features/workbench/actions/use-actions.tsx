@@ -177,6 +177,15 @@ export const buildActions = (deps: ActionDeps): Action[] => {
       run: () => store().setRightPanelOpen((value) => !value),
     },
     {
+      // 设置里已有「长行自动换行」开关,这里给个随手切换的入口(同 VSCode 的 Alt+Z)。
+      id: "view.toggleLineWrap",
+      title: "action.view.toggleLineWrap",
+      category: "action.category.view",
+      keys: ["Alt+Z"],
+      capture: true, // Option+Z 在编辑器里会被当字符吞掉,得抢在前面
+      run: () => store().setEditorLineWrapping((value) => !value),
+    },
+    {
       id: "view.settings",
       title: "action.view.settings",
       category: "action.category.view",

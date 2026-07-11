@@ -268,6 +268,13 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
           return [];
         case "git_pending_op":
           return "";
+        // 编辑器改动条的基线:HEAD 版本 = 当前 mock 内容(所以刚打开时没有改动条,一编辑就出现)。
+        case "git_file_versions": {
+          const file = String(args.file);
+          const full = Object.keys(fileContents).find((key) => key.endsWith(`/${file}`));
+          const original = full ? (fileContents[full] ?? "") : "";
+          return { original, modified: original };
+        }
         case "read_text_file": {
           const path = String(args.path);
           const inspection = inspectFile(path);
