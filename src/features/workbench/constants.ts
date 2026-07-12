@@ -6,6 +6,9 @@ export const nativeOpenFilesEvent = "norn-open-files";
 // Rust 文件系统监听器上报「受影响目录」时发出的事件(见 src-tauri watch_directory)。
 export const workspaceFsChangeEvent = "workspace-fs-change";
 
+// 同一个监听器:.git 里 HEAD/refs/index 变了(终端里 commit、切/删分支、rebase)时发出,前端据此重刷 git 面板。
+export const workspaceGitChangeEvent = "workspace-git-change";
+
 export const nativeMenuCommands = {
   find: "menu-find",
   newFile: "menu-new-file",
