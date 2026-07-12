@@ -3,8 +3,18 @@ import { EditorState, Text } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 
-import { gitChangeGutter, revertChunk } from "@/features/workbench/editor-git-gutter";
-import { lineChunks } from "@/features/workbench/line-diff";
+import { type GitChunkLabels, gitChangeGutter, revertChunk } from "@/features/workbench/editor-git-gutter";
+import { chunkWordOps, lineChunks } from "@/features/workbench/line-diff";
+
+const labels: GitChunkLabels = () => ({
+  close: "关闭",
+  copy: "复制",
+  meta: () => "1 行修改",
+  next: "下一处",
+  openDiff: "完整差异",
+  previous: "上一处",
+  revert: "撤回",
+});
 
 /** 撤回一块改动后，那块内容应回到 HEAD 的样子（其余行不动）。 */
 const revertOnce = (original: string, current: string, index = 0) => {
@@ -23,15 +33,15 @@ describe("editor git gutter", () => {
 
   // 「连续差异」内部要再切:新增的尾巴单独成绿块,否则整段判成「修改」全涂蓝。
   it("一段连续差异里,多出来的新增行单独切成 add 块", () => {
-    expect(lineChunks("x\nb\nc\n", "x\nB\nC\nD\n")).toEqual([
-      { kind: "mod", fromLine: 2, toLine: 3, original: ["b", "c"] },
-      { kind: "add", fromLine: 4, toLine: 4, original: [] },
+    expect(lineChunks("x\nb\nc\n", "x\nB\nC\nD\n")).toMatchObject([
+      { kind: "mod", fromLine: 2, toLine: 3, original: ["b", "c"], origFrom: 2, origTo: 3 },
+      { kind: "add", fromLine: 4, toLine: 4, original: [], origFrom: 4, origTo: 3 }, // HEAD 侧空区间
     ]);
   });
 
   it("旧行多于新行时不切:多出的旧行留在 mod 块里,撤回能一起还原", () => {
     const chunks = lineChunks("x\na\nb\nc\n", "x\nA\n");
-    expect(chunks).toEqual([{ kind: "mod", fromLine: 2, toLine: 2, original: ["a", "b", "c"] }]);
+    expect(chunks).toMatchObject([{ kind: "mod", fromLine: 2, toLine: 2, original: ["a", "b", "c"] }]);
     expect(revertOnce("x\na\nb\nc\n", "x\nA\n")).toBe("x\na\nb\nc\n");
   });
 
@@ -54,9 +64,21 @@ describe("editor git gutter", () => {
   it("建 state 时就带上基线 → 立刻有改动装饰,不依赖后续 dispatch", () => {
     const state = EditorState.create({
       doc: "a\nB\nc\n",
-      extensions: [gitChangeGutter(() => undefined, "a\nb\nc\n")],
+      extensions: [gitChangeGutter("a\nb\nc\n", labels)],
     });
     const sets = state.facet(EditorView.decorations).filter((value) => typeof value !== "function");
     expect(sets.some((set) => set.size > 0)).toBe(true);
+  });
+
+  // 同一处替换在编辑区和浮层里必须同色(pair 号相同),否则「谁对应谁」全靠猜。
+  it("词级切片:替换两侧同 pair 号,纯删除在新行侧留零宽锚点", () => {
+    const [row] = chunkWordOps(['  theme: "system",'], ['  theme: "dark",']);
+    const pairs = row.oldOps.filter((op) => op.kind === "pair");
+    expect(pairs).toHaveLength(1);
+    expect(row.newOps.filter((op) => op.kind === "pair").map((op) => op.pair)).toEqual(pairs.map((op) => op.pair));
+
+    const [deleted] = chunkWordOps(["  fontSize: 16, compactMode: true,"], ["  fontSize: 16,"]);
+    expect(deleted.newOps.some((op) => op.kind === "del")).toBe(true); // 锚点位置由它给出
+    expect(deleted.oldOps.some((op) => op.kind === "del")).toBe(true);
   });
 });

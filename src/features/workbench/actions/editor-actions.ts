@@ -27,7 +27,7 @@ import type { Extension } from "@codemirror/state";
 import { type Command, type KeyBinding, keymap } from "@codemirror/view";
 
 import { expandSelection, jumpBack, jumpForward, shrinkSelection, unselectLastOccurrence } from "../editor-commands";
-import { revertChunkAtCursor } from "../editor-git-gutter";
+import { nextGitChunk, previousGitChunk, revertChunkAtCursor } from "../editor-git-gutter";
 import { openFind, openReplace } from "../editor-search-panel";
 import { formatText } from "../formatter";
 import { useWorkbenchStore } from "../store/workbench-store";
@@ -136,6 +136,21 @@ export const EDITOR_ACTIONS: readonly EditorActionDef[] = [
     category: "action.category.edit",
     keys: ["Mod+Alt+Z"], // 注意:Alt+Shift+<字母> 在 CM keymap 里匹配不上(shift 会把键名变成大写)
     command: revertChunkAtCursor,
+  },
+  {
+    // 在改动之间跳(并展开那一块)。Alt+↑/↓ 已被 moveLine 占,故 Mod+Alt+↑/↓。
+    id: "editor.nextGitChunk",
+    title: "action.editor.nextGitChunk",
+    category: "action.category.navigate",
+    keys: ["Mod+Alt+ArrowDown"],
+    command: nextGitChunk,
+  },
+  {
+    id: "editor.previousGitChunk",
+    title: "action.editor.previousGitChunk",
+    category: "action.category.navigate",
+    keys: ["Mod+Alt+ArrowUp"],
+    command: previousGitChunk,
   },
   {
     id: "editor.toggleComment",

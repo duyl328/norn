@@ -30,6 +30,7 @@ import {
 import { useEditorTabs } from "../hooks/use-editor-tabs";
 import { useI18n } from "../i18n";
 import { translate } from "../i18n-dictionaries";
+import type { GitChunk } from "../line-diff";
 import { markPerf } from "../perf-marks";
 import { getTabViewState, registerActiveViewCapture, setTabViewState, type TabViewState } from "../session";
 import { useWorkbenchStore } from "../store/workbench-store";
@@ -165,12 +166,21 @@ export function EditorSurface({
   // 提交 / 切分支 / 刷新后 HEAD 变了,基线要重取。gitStatus 每次刷新都是新对象,拿它当信号。
   const gitStatus = useWorkbenchStore((state) => state.gitStatus);
 
-  // 行内展开块的按钮文案:调用时才取语言,切语言后下次展开即生效(扩展本身不必重建)。
+  // 浮层的工具条文案 / 脚注:调用时才取语言,切语言后下次展开即生效(扩展本身不必重建)。
   const chunkLabels = useCallback(() => {
     const language = useWorkbenchStore.getState().language;
     return {
-      added: (count: number) => translate(language, "git.addedLines", { count }),
+      close: translate(language, "common.close"),
       copy: translate(language, "common.copy"),
+      meta: (chunk: GitChunk) => {
+        const count = chunk.kind === "del" ? chunk.original.length : chunk.toLine - chunk.fromLine + 1;
+        const key =
+          chunk.kind === "add" ? "git.addedLines" : chunk.kind === "del" ? "git.deletedLines" : "git.modifiedLines";
+        return translate(language, key, { count });
+      },
+      next: translate(language, "git.nextChunk"),
+      openDiff: translate(language, "git.openFullDiff"),
+      previous: translate(language, "git.previousChunk"),
       revert: translate(language, "git.revertChunk"),
     };
   }, []);

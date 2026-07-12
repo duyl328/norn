@@ -2921,49 +2921,135 @@
     background: hsl(212 95% 55%);
   }
 
-  /* 纯删除没有当前行,画成挂在行边界的三角 */
+  /* 纯删除没有当前行,画成贴在行尾的一小段红竖线 = 内容是在这一行之后被删掉的。
+     (增/改是整行长的竖条,它短一截 → 一眼分得开。)
+
+     必须整段待在自己那一格里:让它探出去骑在两行交界上更好看,但探出去的那半截落在
+     下一行的 gutter 格子上,那儿没有块 —— 点到下半截就什么都不发生。
+     pointer-events:none 把命中交给底下的格子(点击 handler 本来就挂在那儿),整格都可点。 */
   .cm-git-change-del {
-    @apply h-0 w-0;
-    border-top: 5px solid transparent;
-    border-bottom: 5px solid transparent;
-    border-left: 8px solid hsl(0 82% 56%);
+    @apply pointer-events-none mb-px h-[10px] w-[3px] self-end rounded-[2px];
+    background: hsl(0 82% 56%);
   }
 
-  /* 点改动条 → HEAD 原文就地展开在改动行正上方(红底 + 词级高亮),右上角 撤回 / 复制 / 关闭 */
+  /* 点改动条 → HEAD 原文展开在改动行正上方:一张浮起来的卡片(带词级配色 + 图标工具条)。
+     宽度按最宽那行收缩(inline-block),但不超过 70% —— 长行横向滚动,不把编辑区撑爆。
+     min-width 兜住工具条:它是绝对定位的,不撑宽度,行太短的话卡片会比工具条还窄。 */
   .cm-git-inline {
-    @apply relative my-0.5 rounded-[6px] py-1;
-    background: hsl(0 75% 55% / 0.1);
-    border-left: 3px solid hsl(0 82% 56% / 0.8);
+    @apply relative my-0.5 inline-block max-w-[70%] select-text overflow-x-auto rounded-[6px] border border-border;
+    min-width: 260px;
+    background: hsl(var(--popover));
+    box-shadow: 0 2px 8px hsl(0 0% 0% / 0.18);
+    cursor: text;
   }
 
-  .cm-git-inline-row {
-    @apply whitespace-pre px-3;
+  /* 纯新增块只有一条工具条:不撑开新行,悬浮在该行之上。
+     外层 span 零尺寸、留在行内当定位原点(inline 元素设了 relative 就能当绝对定位的包含块),
+     里面的工具条 absolute 出流 —— 行高、排版一律不受影响。 */
+  /* align-top:定位原点要跟行顶对齐。跟基线对齐的话原点会落在文字基线上,
+     工具条整体下沉十几个像素、垂到下一行去。 */
+  .cm-git-float {
+    @apply relative inline-block h-0 w-0 align-top;
+  }
+
+  .cm-git-float .cm-git-inline-bar {
+    @apply absolute -top-0.5 left-0 rounded-[6px] border border-border;
+    /* 基类给了 right-1:绝对定位元素 left/right 同时有值 = 宽度被拉伸到两者之间,
+       而这里的父元素宽 0 → 算出负宽度,整个盒子塌掉(只剩图标浮在透明背景上)。必须复位。 */
+    right: auto;
+    background: hsl(var(--popover));
+    box-shadow: 0 6px 18px hsl(0 0% 0% / 0.3);
+  }
+
+  /* 原文行要能拖选复制:CodeMirror 的 widget DOM 是 contenteditable=false,不显式放开就选不动。 */
+  .cm-git-row {
+    @apply select-text whitespace-pre px-3 py-px;
+    -webkit-user-select: text;
+  }
+
+  /* 改动的旧行:红底。上下文行不染色、压暗 —— 只为交代这块落在哪儿。 */
+  .cm-git-row-old {
+    background: hsl(0 75% 55% / 0.12);
+    border-left: 3px solid hsl(0 82% 56%);
+    padding-left: calc(0.75rem - 3px);
+  }
+
+  .cm-git-row-ctx {
+    color: hsl(var(--muted-foreground) / 0.65);
+  }
+
+  .cm-git-inline-foot {
+    @apply border-t border-border/60 px-3 py-0.5 font-sans text-ui-sm;
     color: hsl(var(--muted-foreground));
-  }
-
-  .cm-git-inline-note {
-    @apply px-3 font-sans text-ui-sm;
-    color: hsl(var(--muted-foreground));
-  }
-
-  .cm-git-inline-word {
-    @apply rounded-[2px];
-    background: hsl(0 75% 55% / 0.35);
-    color: inherit;
   }
 
   .cm-git-inline-bar {
-    @apply absolute right-1.5 top-1 z-10 flex gap-1 font-sans text-ui-sm;
+    @apply absolute right-1 top-1 z-10 flex select-none items-center gap-px rounded-[6px] px-0.5 py-0.5;
+    background: hsl(var(--popover) / 0.92);
   }
 
   .cm-git-inline-action {
-    @apply rounded-[6px] border border-border px-1.5 py-0.5 text-muted-foreground transition-colors;
-    background: hsl(var(--popover));
+    @apply grid h-6 w-6 cursor-pointer place-items-center rounded-[4px] text-muted-foreground transition-colors;
   }
 
   .cm-git-inline-action:hover {
     @apply text-foreground;
-    background: hsl(var(--foreground) / 0.08);
+    background: hsl(var(--foreground) / 0.1);
+  }
+
+  .cm-git-inline-action svg {
+    @apply h-4 w-4;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .cm-git-inline-sep {
+    @apply mx-1 h-[18px] w-px;
+    background: hsl(var(--border));
+  }
+
+  /* 词级切片。op-a / op-b 是「两边都有内容」的一处替换:编辑区和浮层里配同一种颜色,
+     交替上色,所以哪块对哪块一眼就看出来。add 只在新行(编辑区),del 只在旧行(浮层)。 */
+  .cm-git-op {
+    @apply rounded-[2px];
+  }
+
+  .cm-git-op-a {
+    background: hsl(268 70% 70% / 0.28);
+  }
+
+  .cm-git-op-b {
+    background: hsl(40 75% 67% / 0.28);
+  }
+
+  .cm-git-op-add {
+    background: hsl(142 72% 50% / 0.28);
+  }
+
+  .cm-git-op-del {
+    background: hsl(0 82% 60% / 0.3);
+    text-decoration: line-through;
+    text-decoration-color: hsl(0 82% 56%);
+    text-decoration-thickness: 1.5px;
+  }
+
+  /* 行内删除锚点:被删掉的文字在新行里不占宽度,就在删除处竖一小段红竖线(hover 看删了什么)。
+     零宽度 + 绝对定位:它是插在正文里的,占了宽度就会把后面的字挤开。 */
+  .cm-git-anchor {
+    @apply relative inline-block h-0 w-0 align-top;
+    cursor: help;
+  }
+
+  /* 父元素高 0,竖线高度只能按字号给(不能用 h-full,那会算成 0)。 */
+  .cm-git-anchor::before {
+    @apply absolute block w-[2px] rounded-[1px] content-[''];
+    top: 0.1em;
+    left: -1px;
+    height: 1.1em;
+    background: hsl(0 82% 56%);
   }
 
   /* 展开中的那一块:对应的改动行描一圈边,明确红块属于谁 */

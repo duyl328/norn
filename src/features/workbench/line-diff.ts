@@ -1,4 +1,4 @@
-import { diff } from "@codemirror/merge";
+import { diff, presentableDiff } from "@codemirror/merge";
 
 import type { DiffRow } from "./diff-parse";
 
@@ -27,16 +27,87 @@ function tokenize(a: string[], b: string[]): { sa: string; sb: string } {
 }
 
 /**
- * 一处改动块（编辑器改动条用）。行号都是「当前文档」里的 1-based 行号：
+ * 一处改动块（编辑器改动条用）。fromLine/toLine 是「当前文档」里的 1-based 行号：
  * add/mod 覆盖 fromLine..toLine；del 是纯删除，没有当前行，fromLine=toLine=删除位置之前的那一行（可能是 0=文首）。
- * original 是这块在 HEAD 里的原始行，撤回时写回去。
+ * original 是这块在 HEAD 里的原始行，撤回时写回去；origFrom/origTo 是它在 HEAD 里的 1-based 行号区间
+ * （闭区间，纯新增时 origTo = origFrom - 1 = 空区间），浮层据此从基线里取上下文行。
  */
 export type GitChunk = {
   fromLine: number;
   kind: "add" | "del" | "mod";
+  origFrom: number;
+  origTo: number;
   original: string[];
   toLine: number;
 };
+
+/**
+ * 一行里的词级切片。same = 两边一样；pair = 两边都有内容的一处替换（同 pair 号 = 同一处改动，
+ * 编辑区与浮层配同一种颜色，一眼看出谁对应谁）；add 只存在于新行；del 只存在于旧行
+ * （在新行侧它宽度为 0，编辑区拿它的位置画删除锚点）。
+ */
+export type WordOp = { kind: "add" | "del" | "pair" | "same"; pair: number; text: string };
+
+/** 旧行 vs 新行 → 两侧各自的词级切片。pairStart：本行首个配对改动的色号（块内连续递增，跨行不重置）。 */
+export function wordOps(
+  oldLine: string,
+  newLine: string,
+  pairStart = 0,
+): { newOps: WordOp[]; next: number; oldOps: WordOp[] } {
+  const oldOps: WordOp[] = [];
+  const newOps: WordOp[] = [];
+  let ai = 0;
+  let bi = 0;
+  let pair = pairStart;
+
+  // presentableDiff 而非 diff：它把字符级结果按词边界归拢，"system"→"dark" 不会碎成一地单字符。
+  for (const change of presentableDiff(oldLine, newLine)) {
+    if (change.fromA > ai) oldOps.push({ kind: "same", pair: -1, text: oldLine.slice(ai, change.fromA) });
+    if (change.fromB > bi) newOps.push({ kind: "same", pair: -1, text: newLine.slice(bi, change.fromB) });
+
+    const a = oldLine.slice(change.fromA, change.toA);
+    const b = newLine.slice(change.fromB, change.toB);
+    if (a && b) {
+      oldOps.push({ kind: "pair", pair, text: a });
+      newOps.push({ kind: "pair", pair, text: b });
+      pair += 1;
+    } else if (a) {
+      // 纯删除：旧行侧划掉，新行侧留一个零宽的锚点（编辑区在这个位置画小三角）。
+      oldOps.push({ kind: "del", pair: -1, text: a });
+      newOps.push({ kind: "del", pair: -1, text: a });
+    } else if (b) {
+      newOps.push({ kind: "add", pair: -1, text: b });
+    }
+    ai = change.toA;
+    bi = change.toB;
+  }
+  if (ai < oldLine.length) oldOps.push({ kind: "same", pair: -1, text: oldLine.slice(ai) });
+  if (bi < newLine.length) newOps.push({ kind: "same", pair: -1, text: newLine.slice(bi) });
+  return { newOps, next: pair, oldOps };
+}
+
+/**
+ * 整块的词级切片：旧行与新行按顺序配对（多出来的旧行整行算删除，多出来的新行整行算新增）。
+ * 编辑区画高亮和浮层渲染原文都走这里，pair 号才对得上。
+ */
+export function chunkWordOps(original: string[], current: string[]): Array<{ newOps: WordOp[]; oldOps: WordOp[] }> {
+  const rows: Array<{ newOps: WordOp[]; oldOps: WordOp[] }> = [];
+  let pair = 0;
+  for (let i = 0; i < Math.max(original.length, current.length); i += 1) {
+    const oldLine = original[i];
+    const newLine = current[i];
+    if (oldLine === undefined) {
+      rows.push({ newOps: [{ kind: "add", pair: -1, text: newLine }], oldOps: [] });
+    } else if (newLine === undefined) {
+      rows.push({ newOps: [], oldOps: [{ kind: "del", pair: -1, text: oldLine }] });
+    } else {
+      const ops = wordOps(oldLine, newLine, pair);
+      rows.push({ newOps: ops.newOps, oldOps: ops.oldOps });
+      pair = ops.next;
+    }
+  }
+  return rows;
+}
 
 /**
  * 原始全文 vs 当前全文 → 行级改动块。
@@ -56,12 +127,16 @@ export function lineChunks(original: string, current: string): GitChunk[] {
     const del = a.slice(change.fromA, change.toA);
     const add = b.slice(change.fromB, change.toB);
 
+    // HEAD 侧的 1-based 闭区间(纯新增时是空区间:origTo = origFrom - 1)。
+    const origFrom = change.fromA + 1;
+    const origTo = change.toA;
+
     if (del.length === 0) {
-      chunks.push({ kind: "add", fromLine: change.fromB + 1, toLine: change.toB, original: [] });
+      chunks.push({ kind: "add", fromLine: change.fromB + 1, toLine: change.toB, origFrom, origTo, original: [] });
       continue;
     }
     if (add.length === 0) {
-      chunks.push({ kind: "del", fromLine: change.fromB, toLine: change.fromB, original: del });
+      chunks.push({ kind: "del", fromLine: change.fromB, toLine: change.fromB, origFrom, origTo, original: del });
       continue;
     }
     const paired = Math.min(del.length, add.length);
@@ -69,11 +144,20 @@ export function lineChunks(original: string, current: string): GitChunk[] {
       kind: "mod",
       fromLine: change.fromB + 1,
       toLine: change.fromB + paired,
+      origFrom,
+      origTo,
       // 旧行比新行多时,多出来的旧行(= 这块里被删掉的)也挂在修改块上,撤回一并还原。
       original: del,
     });
     if (add.length > paired) {
-      chunks.push({ kind: "add", fromLine: change.fromB + paired + 1, toLine: change.toB, original: [] });
+      chunks.push({
+        kind: "add",
+        fromLine: change.fromB + paired + 1,
+        toLine: change.toB,
+        origFrom: origTo + 1, // 尾巴新增在 HEAD 里没有对应行,区间置空
+        origTo,
+        original: [],
+      });
     }
   }
   return chunks;
