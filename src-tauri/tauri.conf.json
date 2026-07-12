@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Norn",
-  "version": "0.2.2",
+  "version": "0.2.4",
   "identifier": "com.norn.workbench",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -150,7 +150,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM3QzM4RUY0M0Q3NzMwQzgKUldUSU1IYzk5STdETnpSalRtQm5uODFvcmlmZVRka0huU3o0TnNOc0R6Z0liaGE2VEZSc3NST3oK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ1MkU1NTkwMjg0MEQ1QUUKUldTdTFVQW9rRlV1UmN1aXNUOU9Bbm1RRzFEQUptZ3A4ZEpFUVVzbDVyQmpmOUtMZk9KY0QrdSsK",
       "endpoints": ["https://github.com/duyl328/norn/releases/latest/download/latest.json"]
     }
   }

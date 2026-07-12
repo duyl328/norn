@@ -1,6 +1,6 @@
 [package]
 name = "norn"
-version = "0.2.2"
+version = "0.2.4"
 description = "A lightweight code and Git workbench."
 authors = ["Norn contributors"]
 edition = "2021"
