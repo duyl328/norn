@@ -2932,60 +2932,75 @@
     background: hsl(0 82% 56%);
   }
 
-  /* 点改动条 → HEAD 原文展开在改动行正上方:一张浮起来的卡片(带词级配色 + 图标工具条)。
-     宽度按最宽那行收缩(inline-block),但不超过 70% —— 长行横向滚动,不把编辑区撑爆。
-     min-width 兜住工具条:它是绝对定位的,不撑宽度,行太短的话卡片会比工具条还窄。 */
+  /* 点改动条 → HEAD 原文的卡片(词级配色 + 图标工具条)。绝对定位 = 盖在下方的代码上,
+     编辑区一行都不挪(块级插入会把正文整段推下去,读起来很跳)。
+     宽度按最宽那行收缩,上限 70vw —— 父元素宽 0,百分比会算成 0,只能按视口给。
+     min-width 兜住工具条:它也是绝对定位的、不撑宽度,行太短的话卡片会比工具条还窄。 */
   .cm-git-inline {
-    @apply relative my-0.5 inline-block max-w-[70%] select-text overflow-x-auto rounded-[6px] border border-border;
+    @apply relative w-max max-w-[70vw] select-text overflow-x-auto rounded-[6px] border border-border;
+    /* 卡片左沿再往左探 12px(约到行盒的左边缘),左边留出空隙不至于顶着字。
+       -12 = 3px 红边 + 9px 内边距(见 .cm-git-row)—— 加起来正好把文字送回锚点所在的那一列
+       (浮层容器的左沿就落在正文文字的起始处)。 */
+    left: -12px;
+    border-left: 3px solid hsl(0 82% 56%);
     min-width: 260px;
     background: hsl(var(--popover));
     box-shadow: 0 2px 8px hsl(0 0% 0% / 0.18);
     cursor: text;
   }
 
-  /* 纯新增块只有一条工具条:不撑开新行,悬浮在该行之上。
-     外层 span 零尺寸、留在行内当定位原点(inline 元素设了 relative 就能当绝对定位的包含块),
-     里面的工具条 absolute 出流 —— 行高、排版一律不受影响。 */
-  /* align-top:定位原点要跟行顶对齐。跟基线对齐的话原点会落在文字基线上,
-     工具条整体下沉十几个像素、垂到下一行去。 */
-  .cm-git-float {
-    @apply relative inline-block h-0 w-0 align-top;
+  /* 浮层容器:挂在 .cm-scroller(CM 给它设了 position:relative)上的普通 DOM,不是 CM 的 widget。
+     绝对定位的子元素会跟着内容一起滚,位置由 JS 按 coordsAtPos 算出来。 */
+  .cm-git-popup {
+    @apply absolute z-10 w-max;
   }
 
-  .cm-git-float .cm-git-inline-bar {
-    @apply absolute -top-0.5 left-0 rounded-[6px] border border-border;
-    /* 基类给了 right-1:绝对定位元素 left/right 同时有值 = 宽度被拉伸到两者之间,
-       而这里的父元素宽 0 → 算出负宽度,整个盒子塌掉(只剩图标浮在透明背景上)。必须复位。 */
-    right: auto;
-    background: hsl(var(--popover));
-    box-shadow: 0 6px 18px hsl(0 0% 0% / 0.3);
-  }
-
-  /* 原文行要能拖选复制:CodeMirror 的 widget DOM 是 contenteditable=false,不显式放开就选不动。 */
-  .cm-git-row {
-    @apply select-text whitespace-pre px-3 py-px;
+  /* body 是 user-select:none(见上面 @layer base),只对 .cm-line 等白名单放开 —— 浮层在白名单外,
+     得自己放开。两个前缀都写(WKWebView)。工具条那一行下面再单独关掉。 */
+  .cm-git-popup,
+  .cm-git-popup * {
+    user-select: text;
     -webkit-user-select: text;
   }
 
-  /* 改动的旧行:红底。上下文行不染色、压暗 —— 只为交代这块落在哪儿。 */
+  /* 上面那条用了 .cm-git-popup *(特指度更高),会把工具条的 select-none 压过去 —— 补回来,
+     否则拖选原文时会把图标按钮一起框进去。 */
+  .cm-git-popup .cm-git-inline-bar,
+  .cm-git-popup .cm-git-inline-bar * {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* 纯新增没有卡片,工具条就是浮层本身(直接子代 —— 卡片里那条工具条不能被这条规则命中)。 */
+  .cm-git-popup > .cm-git-inline-bar {
+    @apply w-max rounded-[6px] border border-border;
+    background: hsl(var(--popover));
+    box-shadow: 0 2px 8px hsl(0 0% 0% / 0.18);
+  }
+
+  /* 原文行要能拖选复制:CodeMirror 的 widget DOM 是 contenteditable=false,不显式放开就选不动。 */
+  /* 9px 左内边距,配合卡片的 left:-12px(3px 红边 + 9px = 12px),把文字精确送回锚点那一列 ——
+     旧行的字跟新行的字一列对一列,上下扫一眼就能比,不用横向找。改任何一个都得改另一个。 */
+  .cm-git-row {
+    @apply select-text whitespace-pre py-px pr-3;
+    padding-left: 9px;
+    -webkit-user-select: text;
+  }
+
+  /* 被改掉 / 删掉的旧行:红底。左侧那条红边挂在卡片上(见 .cm-git-inline),不挂在行上 ——
+     挂行上会把文字推开 3px,就跟正文对不齐了。 */
   .cm-git-row-old {
     background: hsl(0 75% 55% / 0.12);
-    border-left: 3px solid hsl(0 82% 56%);
-    padding-left: calc(0.75rem - 3px);
-  }
-
-  .cm-git-row-ctx {
-    color: hsl(var(--muted-foreground) / 0.65);
-  }
-
-  .cm-git-inline-foot {
-    @apply border-t border-border/60 px-3 py-0.5 font-sans text-ui-sm;
-    color: hsl(var(--muted-foreground));
   }
 
   .cm-git-inline-bar {
-    @apply absolute right-1 top-1 z-10 flex select-none items-center gap-px rounded-[6px] px-0.5 py-0.5;
-    background: hsl(var(--popover) / 0.92);
+    @apply flex select-none items-center gap-px px-0.5 py-0.5;
+  }
+
+  /* 卡片里的工具条:自成一行排在原文下面(压在原文上会盖掉正要看的字),跟原文一样左对齐。 */
+  .cm-git-inline .cm-git-inline-bar {
+    @apply justify-start border-t border-border/60;
+    background: hsl(var(--muted) / 0.3);
   }
 
   .cm-git-inline-action {
@@ -3040,16 +3055,25 @@
      零宽度 + 绝对定位:它是插在正文里的,占了宽度就会把后面的字挤开。 */
   .cm-git-anchor {
     @apply relative inline-block h-0 w-0 align-top;
-    cursor: help;
   }
 
-  /* 父元素高 0,竖线高度只能按字号给(不能用 h-full,那会算成 0)。 */
+  /* 父元素高 0,竖线高度只能按字号给(不能用 h-full,那会算成 0)。
+     比行内文字略矮一截:跟正文一样高的话它在行里太抢眼,像是多了个光标。 */
   .cm-git-anchor::before {
     @apply absolute block w-[2px] rounded-[1px] content-[''];
-    top: 0.1em;
+    top: 0.34em;
     left: -1px;
-    height: 1.1em;
+    height: 0.98em;
+  }
+
+  /* 编辑区里的红线:这儿被删了东西(HEAD 有、现在没了) */
+  .cm-git-anchor-del::before {
     background: hsl(0 82% 56%);
+  }
+
+  /* 浮层里的绿线:这儿被加了东西(HEAD 没有、现在有了)。跟红线正好对称。 */
+  .cm-git-anchor-add::before {
+    background: hsl(142 72% 45%);
   }
 
   /* 展开中的那一块:对应的改动行描一圈边,明确红块属于谁 */

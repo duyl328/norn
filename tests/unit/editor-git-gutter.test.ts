@@ -78,7 +78,12 @@ describe("editor git gutter", () => {
     expect(row.newOps.filter((op) => op.kind === "pair").map((op) => op.pair)).toEqual(pairs.map((op) => op.pair));
 
     const [deleted] = chunkWordOps(["  fontSize: 16, compactMode: true,"], ["  fontSize: 16,"]);
-    expect(deleted.newOps.some((op) => op.kind === "del")).toBe(true); // 锚点位置由它给出
+    expect(deleted.newOps.some((op) => op.kind === "del")).toBe(true); // 编辑区那根红线的位置由它给出
     expect(deleted.oldOps.some((op) => op.kind === "del")).toBe(true);
+
+    // 反过来:新增的字在旧行里不存在,浮层要在「将被插入的位置」竖一根绿线 —— 所以两侧都得有它。
+    const [added] = chunkWordOps(["  fontSize: 16,"], ["  fontSize: 16, compactMode: true,"]);
+    expect(added.newOps.some((op) => op.kind === "add")).toBe(true);
+    expect(added.oldOps.some((op) => op.kind === "add")).toBe(true);
   });
 });

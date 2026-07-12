@@ -21,7 +21,7 @@ import { setActiveEditorView } from "../actions/active-editor";
 import { buildEditorKeymapExtension } from "../actions/editor-actions";
 import { createCodeMirrorExtensions, tabSizeExtension } from "../codemirror-setup";
 import { EDITOR_SCROLLBAR_SIZE, emptyEditorScrollMetrics } from "../constants";
-import { gitChangeGutter, setGitBaseline } from "../editor-git-gutter";
+import { gitChangeGutter, gitChunkLabels, setGitBaseline } from "../editor-git-gutter";
 import {
   FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES,
   loadHighlightExtensions,
@@ -29,8 +29,6 @@ import {
 } from "../editor-highlighting";
 import { useEditorTabs } from "../hooks/use-editor-tabs";
 import { useI18n } from "../i18n";
-import { translate } from "../i18n-dictionaries";
-import type { GitChunk } from "../line-diff";
 import { markPerf } from "../perf-marks";
 import { getTabViewState, registerActiveViewCapture, setTabViewState, type TabViewState } from "../session";
 import { useWorkbenchStore } from "../store/workbench-store";
@@ -166,25 +164,6 @@ export function EditorSurface({
   // 提交 / 切分支 / 刷新后 HEAD 变了,基线要重取。gitStatus 每次刷新都是新对象,拿它当信号。
   const gitStatus = useWorkbenchStore((state) => state.gitStatus);
 
-  // 浮层的工具条文案 / 脚注:调用时才取语言,切语言后下次展开即生效(扩展本身不必重建)。
-  const chunkLabels = useCallback(() => {
-    const language = useWorkbenchStore.getState().language;
-    return {
-      close: translate(language, "common.close"),
-      copy: translate(language, "common.copy"),
-      meta: (chunk: GitChunk) => {
-        const count = chunk.kind === "del" ? chunk.original.length : chunk.toLine - chunk.fromLine + 1;
-        const key =
-          chunk.kind === "add" ? "git.addedLines" : chunk.kind === "del" ? "git.deletedLines" : "git.modifiedLines";
-        return translate(language, key, { count });
-      },
-      next: translate(language, "git.nextChunk"),
-      openDiff: translate(language, "git.openFullDiff"),
-      previous: translate(language, "git.previousChunk"),
-      revert: translate(language, "git.revertChunk"),
-    };
-  }, []);
-
   // 当前文档的 HEAD 基线。存在 ref 里而不是只 dispatch 一次:建 state 时要把它灌进扩展,
   // 否则视图重建(切文档 setState / dev 期 HMR)后 StateField 复位,改动条会整片消失。
   const gitBaselineRef = useRef<{ id: string; original: string | null }>({ id: "", original: null });
@@ -268,7 +247,10 @@ export function EditorSurface({
             useWorkbenchStore.getState().editorTabSize,
           ),
           // git 改动条(相对 HEAD 的增/改/删):紧贴正文左侧。基线已取到就直接灌进去,没取到的由下面的 effect 补。
-          gitChangeGutter(gitBaselineRef.current.id === doc.id ? gitBaselineRef.current.original : null, chunkLabels),
+          gitChangeGutter(
+            gitBaselineRef.current.id === doc.id ? gitBaselineRef.current.original : null,
+            gitChunkLabels,
+          ),
           EditorView.updateListener.of((update) => {
             updateScrollMetricsRef.current();
             if (update.selectionSet || update.docChanged) {
@@ -279,7 +261,7 @@ export function EditorSurface({
           }),
         ],
       }),
-    [chunkLabels],
+    [],
   );
 
   // 异步按文件类型加载高亮并 reconfigure;token 防止旧文档的异步结果落到已切走的新文档上。

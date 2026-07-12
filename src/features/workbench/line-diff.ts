@@ -49,7 +49,7 @@ export type GitChunk = {
 export type WordOp = { kind: "add" | "del" | "pair" | "same"; pair: number; text: string };
 
 /** 旧行 vs 新行 → 两侧各自的词级切片。pairStart：本行首个配对改动的色号（块内连续递增，跨行不重置）。 */
-export function wordOps(
+function wordOps(
   oldLine: string,
   newLine: string,
   pairStart = 0,
@@ -72,11 +72,13 @@ export function wordOps(
       newOps.push({ kind: "pair", pair, text: b });
       pair += 1;
     } else if (a) {
-      // 纯删除：旧行侧划掉，新行侧留一个零宽的锚点（编辑区在这个位置画小三角）。
+      // 纯删除：旧行侧划掉，新行侧留一个零宽的锚点（编辑区在这个位置竖一根红线 = 这儿被删了东西）。
       oldOps.push({ kind: "del", pair: -1, text: a });
       newOps.push({ kind: "del", pair: -1, text: a });
     } else if (b) {
+      // 纯新增：新行侧高亮，旧行侧留一个零宽的锚点（浮层在这个位置竖一根绿线 = 这儿被加了东西）。对称。
       newOps.push({ kind: "add", pair: -1, text: b });
+      oldOps.push({ kind: "add", pair: -1, text: b });
     }
     ai = change.toA;
     bi = change.toB;
