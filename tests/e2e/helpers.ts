@@ -1,6 +1,11 @@
 import { expect, type Page } from "@playwright/test";
 
 export async function emitMenu(page: Page, command: string): Promise<void> {
+  await page.waitForFunction(() => {
+    return (window as unknown as { __tauriMockHasListener?: (event: string) => boolean }).__tauriMockHasListener?.(
+      "norn-menu",
+    );
+  });
   await page.evaluate((value) => {
     (window as unknown as { __emitTauriEvent: (event: string, payload: unknown) => void }).__emitTauriEvent(
       "norn-menu",
@@ -11,7 +16,7 @@ export async function emitMenu(page: Page, command: string): Promise<void> {
 
 export async function openMockFolder(page: Page): Promise<void> {
   await emitMenu(page, "menu-open-folder");
-  await expect(page.locator("button.tree-row").first()).toBeVisible();
+  await expect(page.locator(".tree-row:not(.tree-row-root)").first()).toBeVisible();
 }
 
 export async function openRootContextMenu(page: Page): Promise<void> {
@@ -25,4 +30,3 @@ export async function getTauriInvokeCalls(page: Page) {
       .__tauriInvokeCalls;
   });
 }
-

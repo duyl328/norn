@@ -784,56 +784,57 @@ fn watch_directory(
     let emitter = app.clone();
     // 去抖 400ms:把 git checkout / npm install 这类成千上万次事件合并成几批,
     // 每批只把「受影响条目的父目录」去重后发给前端,由前端按需刷新已加载的那几层。
-    let mut debouncer = new_debouncer(
-        Duration::from_millis(400),
-        move |result: DebounceEventResult| {
-            let Ok(events) = result else {
-                return;
-            };
+    let mut debouncer =
+        new_debouncer(
+            Duration::from_millis(400),
+            move |result: DebounceEventResult| {
+                let Ok(events) = result else {
+                    return;
+                };
 
-            let mut dirs: HashSet<String> = HashSet::new();
-            let mut git_changed = false;
+                let mut dirs: HashSet<String> = HashSet::new();
+                let mut git_changed = false;
 
-            for event in events {
-                // .git / node_modules 内部 churn 不影响树展示,跳过以免无谓刷新风暴。
-                // ponytail: 仅过滤上报,递归监听仍会为这些目录占用 inotify 句柄(见 watch_directory 调用方注释)。
-                let mut in_git = false;
-                let skip = event.path.components().any(|component| {
-                    match component.as_os_str().to_str() {
-                        Some(".git") => {
-                            in_git = true;
-                            true
+                for event in events {
+                    // .git / node_modules 内部 churn 不影响树展示,跳过以免无谓刷新风暴。
+                    // ponytail: 仅过滤上报,递归监听仍会为这些目录占用 inotify 句柄(见 watch_directory 调用方注释)。
+                    let mut in_git = false;
+                    let skip = event.path.components().any(|component| {
+                        match component.as_os_str().to_str() {
+                            Some(".git") => {
+                                in_git = true;
+                                true
+                            }
+                            Some("node_modules") => true,
+                            _ => false,
                         }
-                        Some("node_modules") => true,
-                        _ => false,
-                    }
-                });
+                    });
 
-                if skip {
-                    // 但 .git 里的 HEAD/refs/index 变了就是「外部动了 git」(终端里 commit、切/删分支、
-                    // rebase),树不用刷,git 面板必须刷 —— 否则面板一直停在打开仓库那一刻的快照。
-                    if in_git && git_state_changed(&event.path) {
-                        git_changed = true;
+                    if skip {
+                        // 但 .git 里的 HEAD/refs/index 变了就是「外部动了 git」(终端里 commit、切/删分支、
+                        // rebase),树不用刷,git 面板必须刷 —— 否则面板一直停在打开仓库那一刻的快照。
+                        if in_git && git_state_changed(&event.path) {
+                            git_changed = true;
+                        }
+                        continue;
                     }
-                    continue;
+
+                    // 新建/删除/重命名都体现在「父目录」的列表里 → 重新 list 父目录即可。
+                    if let Some(parent) = event.path.parent() {
+                        dirs.insert(parent.to_string_lossy().into_owned());
+                    }
                 }
 
-                // 新建/删除/重命名都体现在「父目录」的列表里 → 重新 list 父目录即可。
-                if let Some(parent) = event.path.parent() {
-                    dirs.insert(parent.to_string_lossy().into_owned());
+                if !dirs.is_empty() {
+                    let _ = emitter.emit(FS_CHANGE_EVENT, dirs.into_iter().collect::<Vec<_>>());
                 }
-            }
 
-            if !dirs.is_empty() {
-                let _ = emitter.emit(FS_CHANGE_EVENT, dirs.into_iter().collect::<Vec<_>>());
-            }
-
-            if git_changed {
-                let _ = emitter.emit(GIT_CHANGE_EVENT, ());
-            }
-        },
-    )
-    .map_err(|error| format!("Unable to start file watcher: {error}"))?;
+                if git_changed {
+                    let _ = emitter.emit(GIT_CHANGE_EVENT, ());
+                }
+            },
+        )
+        .map_err(|error| format!("Unable to start file watcher: {error}"))?;
 
     debouncer
         .watcher()

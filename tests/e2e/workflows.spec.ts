@@ -23,7 +23,7 @@ test("流程：打开文件树文件后编辑器显示内容并出现 Tab", asyn
   await emitMenu(page, "menu-open-folder");
 
   // 双击文件树里的 README.md 行（tree-row 按钮）打开文件（单击仅选中、双击才打开）
-  const readmeRow = page.locator("button.tree-row", { hasText: "README.md" });
+  const readmeRow = page.locator(".tree-row", { hasText: "README.md" });
   await expect(readmeRow).toBeVisible();
   await readmeRow.dblclick();
 
@@ -45,24 +45,24 @@ test("流程：编辑产生脏标记后保存回到已保存", async ({ page }) 
   await page.goto("/");
 
   await emitMenu(page, "menu-open-folder");
-  await page.locator("button.tree-row", { hasText: "README.md" }).dblclick();
+  await page.locator(".tree-row", { hasText: "README.md" }).dblclick();
   await expect(page.locator(".cm-content")).toContainText("Mock Project");
 
   // 打开后应为已保存
-  await expect(page.locator(".status-bar")).toContainText("Saved");
+  await expect(page.getByRole("tab", { name: /README\.md/ })).not.toContainText("•");
 
   // 在编辑器输入文本，产生本地改动
   await page.locator(".cm-content").click();
   await page.keyboard.type("EDITED");
 
   // 状态栏出现未保存指示
-  await expect(page.locator(".status-bar")).toContainText("Unsaved");
+  await expect(page.getByRole("tab", { name: /README\.md/ })).toContainText("•");
 
   // 触发原生保存命令（save_text_file）
   await emitMenu(page, "menu-save-file");
 
   // 状态栏回到已保存
-  await expect(page.locator(".status-bar")).toContainText("Saved");
+  await expect(page.getByRole("tab", { name: /README\.md/ })).not.toContainText("•");
 });
 
 /**
@@ -77,12 +77,12 @@ test("流程：打开多个文件后切换 Tab 编辑器内容随之变化", asy
   await emitMenu(page, "menu-open-folder");
 
   // 打开 README.md
-  await page.locator("button.tree-row", { hasText: "README.md" }).dblclick();
+  await page.locator(".tree-row", { hasText: "README.md" }).dblclick();
   await expect(page.locator(".cm-content")).toContainText("Mock Project");
 
   // 展开 src 目录后打开 main.tsx
-  await page.locator("button.tree-row", { hasText: "src" }).dblclick();
-  const mainRow = page.locator("button.tree-row", { hasText: "main.tsx" });
+  await page.locator(".tree-row", { hasText: "src" }).dblclick();
+  const mainRow = page.locator(".tree-row", { hasText: "main.tsx" });
   await expect(mainRow).toBeVisible();
   await mainRow.dblclick();
   await expect(page.locator(".cm-content")).toContainText("hello from mock");
@@ -99,36 +99,31 @@ test("流程：打开多个文件后切换 Tab 编辑器内容随之变化", asy
   await expect(page.locator(".cm-content")).not.toContainText("hello from mock");
 });
 
-/**
- * 流程 4：关闭未保存文档 → 弹出 UnsavedChangesDialog 确认对话框。
- * 打开两个文件（确保 Tab 可关闭），对其中一个产生改动后点击 Tab 上的关闭按钮，
- * 断言出现 "Unsaved changes" 确认对话框及其操作项。
- */
-test("流程：关闭有未保存改动的文档弹出确认对话框", async ({ page }) => {
+/** 已存盘文件关闭前会静默自动保存；只有未命名文档仍需丢弃确认。 */
+test("流程：关闭有未保存改动的已存盘文档时自动保存", async ({ page }) => {
   await installTauriMock(page);
   await page.goto("/");
 
   await emitMenu(page, "menu-open-folder");
 
   // 打开两个文件，使 Tab 可关闭（closable 需 openDocuments.length > 1）
-  await page.locator("button.tree-row", { hasText: "README.md" }).dblclick();
+  await page.locator(".tree-row", { hasText: "README.md" }).dblclick();
   await expect(page.locator(".cm-content")).toContainText("Mock Project");
-  await page.locator("button.tree-row", { hasText: "src" }).dblclick();
-  await page.locator("button.tree-row", { hasText: "main.tsx" }).dblclick();
+  await page.locator(".tree-row", { hasText: "src" }).dblclick();
+  await page.locator(".tree-row", { hasText: "main.tsx" }).dblclick();
   await expect(page.locator(".cm-content")).toContainText("hello from mock");
 
   // 在当前活动文档（main.tsx）产生改动
   await page.locator(".cm-content").click();
   await page.keyboard.type("EDITED");
-  await expect(page.locator(".status-bar")).toContainText("Unsaved");
+  await expect(page.getByRole("tab", { name: /main\.tsx/ })).toContainText("•");
 
   // 点击该 Tab 上的关闭按钮（活动 Tab 才显示关闭按钮）
   await page.getByRole("button", { name: /Close main\.tsx/ }).click();
 
-  // 弹出 UnsavedChangesDialog
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toContainText("Unsaved changes");
-  await expect(dialog.getByRole("button", { name: "Save and Close" })).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Discard" })).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /main\.tsx/ })).toHaveCount(0);
+  const calls = await page.evaluate(() => {
+    return (window as unknown as { __tauriInvokeCalls?: Array<{ cmd: string }> }).__tauriInvokeCalls ?? [];
+  });
+  expect(calls.some((call) => call.cmd === "save_text_file")).toBe(true);
 });
