@@ -23,7 +23,8 @@ const bumpVersion = () => {
   console.log(`[tauri-runner] 版本号已递增为 ${next}`);
 };
 
-if (args[0] === "build") {
+// GitHub Actions 的版本由 tag 决定，CI 构建不能再次自增，否则产物版本会与 tag 不一致。
+if (args[0] === "build" && !process.env.CI) {
   bumpVersion();
 }
 
