@@ -19,7 +19,7 @@ test("浏览器模式：工作台与编辑器正常渲染且无运行时报错",
 
   await expect(page.locator("#root")).not.toBeEmpty();
   await expect(page.getByText("UTF-8")).toBeVisible();
-  await expect(page.getByText("Untitled.txt").first()).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Untitled/ })).toBeVisible();
 
   // 编辑器（CodeMirror）已挂载并准备好默认空白未命名文档
   await expect(page.locator(".cm-content")).toBeVisible();
@@ -55,6 +55,7 @@ test("Tauri mock：Git 面板显示 mock 分支", async ({ page }) => {
   await emitMenu(page, "menu-open-folder");
   await emitMenu(page, "menu-toggle-git-panel");
 
-  // Git 面板显示 mock 的仓库分支信息
-  await expect(page.getByText("main - /mock/project")).toBeVisible();
+  // Git 面板已打开，状态栏显示 mock 仓库的当前分支。
+  await expect(page.getByRole("button", { name: "Hide Git panel" })).toBeVisible();
+  await expect(page.locator(".status-bar").getByRole("button", { name: "main" })).toBeVisible();
 });

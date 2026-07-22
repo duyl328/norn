@@ -1,17 +1,17 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
-import { emitMenu } from "./helpers";
+import { openMockFolder } from "./helpers";
 import { installTauriMock } from "./tauri-mock";
 
 const openReadme = async (page: Page, contents?: string) => {
   await installTauriMock(page, contents ? { fileContents: { "/mock/project/README.md": contents } } : {});
-  // 首启引导的气泡会盖住编辑区,挡掉点击 —— 标记为「已看过」。
-  await page.addInitScript(() => window.localStorage.setItem("norn.welcomeSeen", "1"));
   await page.goto("/");
-  await emitMenu(page, "menu-open-folder");
+  await openMockFolder(page);
   // 从文件树打开(菜单的「打开文件」会清掉文件夹视图 = 脱离仓库,那种情况本来就没有改动条)。
-  await page.locator(".tree-row", { hasText: "README.md" }).dblclick({ force: true });
-  await expect(page.locator(".cm-content")).not.toBeEmpty();
+  const readmeRow = page.locator(".tree-row", { hasText: "README.md" });
+  await expect(readmeRow).toBeVisible();
+  await readmeRow.dblclick();
+  await expect(page.locator(".cm-line").first()).toHaveText(contents?.split("\n")[0] ?? "# Mock Project");
 };
 
 /** 改动条:相对 HEAD 有改动才出现;点改动条 → HEAD 原文就地展开,浮条上可撤回。 */
@@ -45,10 +45,13 @@ test("编辑器改动条:编辑后出现,点开展开 HEAD 原文并可撤回", 
 
   // 旧行的字要跟正文的字对齐同一列 —— 新旧上下一比就出来,不用横向找。
   // 基准是正文文字的起始处 = 行盒左沿 + 它的左内边距(别直接拿 .cm-line 的 x,那还含 12px 内边距)。
-  const textLeft = await page.locator(".cm-line").nth(1).evaluate((el) => {
-    const rect = el.getBoundingClientRect();
-    return rect.left + parseFloat(getComputedStyle(el).paddingLeft);
-  });
+  const textLeft = await page
+    .locator(".cm-line")
+    .nth(1)
+    .evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      return rect.left + parseFloat(getComputedStyle(el).paddingLeft);
+    });
   const oldText = await inline.locator(".cm-git-row-code").first().boundingBox();
   expect(Math.abs((oldText?.x ?? 0) - textLeft)).toBeLessThan(2);
 

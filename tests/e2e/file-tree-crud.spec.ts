@@ -22,7 +22,7 @@ import { installTauriMock } from "./tauri-mock";
 
 async function openFolder(page: Page): Promise<void> {
   await openMockFolder(page);
-  await expect(page.locator("button.tree-row", { hasText: "README.md" })).toBeVisible();
+  await expect(page.locator(".tree-row", { hasText: "README.md" })).toBeVisible();
 }
 
 /**
@@ -36,7 +36,7 @@ test("CRUD：新建文件后文件出现在文件树", async ({ page }) => {
   await openFolder(page);
 
   // 新建前不存在该文件。
-  await expect(page.locator("button.tree-row", { hasText: "notes.txt" })).toHaveCount(0);
+  await expect(page.locator(".tree-row", { hasText: "notes.txt" })).toHaveCount(0);
 
   await openRootContextMenu(page);
   await page.locator(".file-tree-context-item", { hasText: "New File" }).click();
@@ -47,7 +47,7 @@ test("CRUD：新建文件后文件出现在文件树", async ({ page }) => {
   await dialog.getByRole("button", { name: "Create" }).click();
 
   // 成功后刷新该目录的 list_directory，可变 mock 返回包含新文件 → 树里出现。
-  await expect(page.locator("button.tree-row", { hasText: "notes.txt" })).toBeVisible();
+  await expect(page.locator(".tree-row", { hasText: "notes.txt" })).toBeVisible();
 });
 
 /**
@@ -58,7 +58,7 @@ test("CRUD：新建文件夹后目录出现在文件树", async ({ page }) => {
   await page.goto("/");
   await openFolder(page);
 
-  await expect(page.locator("button.tree-row", { hasText: "components" })).toHaveCount(0);
+  await expect(page.locator(".tree-row", { hasText: "components" })).toHaveCount(0);
 
   await openRootContextMenu(page);
   await page.locator(".file-tree-context-item", { hasText: "New Folder" }).click();
@@ -68,7 +68,7 @@ test("CRUD：新建文件夹后目录出现在文件树", async ({ page }) => {
   await dialog.getByRole("textbox").fill("components");
   await dialog.getByRole("button", { name: "Create" }).click();
 
-  await expect(page.locator("button.tree-row", { hasText: "components" })).toBeVisible();
+  await expect(page.locator(".tree-row", { hasText: "components" })).toBeVisible();
 });
 
 /**
@@ -81,7 +81,7 @@ test("CRUD：重命名文件后新名出现旧名消失", async ({ page }) => {
   await page.goto("/");
   await openFolder(page);
 
-  await page.locator("button.tree-row", { hasText: "README.md" }).click({ button: "right" });
+  await page.locator(".tree-row", { hasText: "README.md" }).click({ button: "right" });
   await expect(page.locator(".file-tree-context-menu")).toBeVisible();
   await page.locator(".file-tree-context-item", { hasText: "Rename" }).click();
 
@@ -93,8 +93,8 @@ test("CRUD：重命名文件后新名出现旧名消失", async ({ page }) => {
   await dialog.getByRole("button", { name: "Rename" }).click();
 
   // 成功后刷新目录，可变 mock 返回新名字 → 树里旧名消失、新名出现。
-  await expect(page.locator("button.tree-row", { hasText: "README.md" })).toHaveCount(0);
-  await expect(page.locator("button.tree-row", { hasText: "renamed.md" })).toBeVisible();
+  await expect(page.locator(".tree-row", { hasText: "README.md" })).toHaveCount(0);
+  await expect(page.locator(".tree-row", { hasText: "renamed.md" })).toBeVisible();
 });
 
 /**
@@ -107,9 +107,9 @@ test("CRUD：删除到回收站后文件从树消失", async ({ page }) => {
   await page.goto("/");
   await openFolder(page);
 
-  await expect(page.locator("button.tree-row", { hasText: "package.json" })).toBeVisible();
+  await expect(page.locator(".tree-row", { hasText: "package.json" })).toBeVisible();
 
-  await page.locator("button.tree-row", { hasText: "package.json" }).click({ button: "right" });
+  await page.locator(".tree-row", { hasText: "package.json" }).click({ button: "right" });
   await expect(page.locator(".file-tree-context-menu")).toBeVisible();
   await page.locator(".file-tree-context-item", { hasText: "Move to Trash" }).click();
 
@@ -118,5 +118,5 @@ test("CRUD：删除到回收站后文件从树消失", async ({ page }) => {
   await dialog.getByRole("button", { name: "Move to Trash" }).click();
 
   // 成功后刷新目录，可变 mock 已移除该条目 → 树里不再出现。
-  await expect(page.locator("button.tree-row", { hasText: "package.json" })).toHaveCount(0);
+  await expect(page.locator(".tree-row", { hasText: "package.json" })).toHaveCount(0);
 });
