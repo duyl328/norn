@@ -6,8 +6,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-const REPO = "jimmy/norn";
-const REPO_URL = "https://git.duyl328.org/jimmy/norn";
+const REPO = "duyl328/norn";
+const REPO_URL = "https://github.com/duyl328/norn";
 const bundle = "src-tauri/target/release/bundle";
 const macos = join(bundle, "macos");
 const dmgDir = join(bundle, "dmg");
