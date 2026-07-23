@@ -2,7 +2,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { I18nProvider } from "@/features/workbench/i18n-provider";
@@ -92,6 +92,27 @@ beforeEach(() => {
   onCloseRequestedMock.mockReset();
   onCloseRequestedMock.mockResolvedValue(vi.fn());
   setTauri(true);
+});
+
+it("allows discarding editor content when the file was deleted on disk", async () => {
+  const deleted = makeDoc({ content: "local edits", savedContent: "old" });
+  resetStore(deleted);
+  useWorkbenchStore.getState().setLanguage("en");
+  useWorkbenchStore.getState().setSaveConflict({
+    content: deleted.content,
+    diskMissing: true,
+    path: deleted.path,
+  });
+
+  renderWorkbenchPage();
+
+  expect(screen.getByRole("button", { name: "Save As" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Save Editor As" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+
+  await waitFor(() => expect(useWorkbenchStore.getState().saveConflict).toBeNull());
+  expect(useWorkbenchStore.getState().openDocuments).toHaveLength(1);
+  expect(useWorkbenchStore.getState().openDocuments[0]?.id).not.toBe(deleted.id);
 });
 
 describe("WorkbenchPage close protection", () => {

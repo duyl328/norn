@@ -200,6 +200,7 @@ export function SaveConflictDialog({
   editorContent,
   message,
   onCancel,
+  onDiscard,
   onOverwrite,
   onReload,
   onSaveAs,
@@ -210,6 +211,7 @@ export function SaveConflictDialog({
   editorContent: string;
   message?: string;
   onCancel: () => void;
+  onDiscard: () => void;
   onOverwrite: () => void;
   onReload: () => void;
   onSaveAs: () => void;
@@ -225,10 +227,16 @@ export function SaveConflictDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => (!nextOpen ? onCancel() : undefined)}>
-      <DialogContent className={compareOpen && canCompare ? "save-conflict-dialog save-conflict-dialog-wide" : "save-conflict-dialog"}>
+      <DialogContent
+        className={
+          compareOpen && canCompare ? "save-conflict-dialog save-conflict-dialog-wide" : "save-conflict-dialog"
+        }
+      >
         <DialogHeader>
-          <DialogTitle>{diskMissing ? t("dialogs.conflict.deletedTitle") : t("dialogs.conflict.changedTitle")}</DialogTitle>
-          <DialogDescription>
+          <DialogTitle>
+            {diskMissing ? t("dialogs.conflict.deletedTitle") : t("dialogs.conflict.changedTitle")}
+          </DialogTitle>
+          <DialogDescription className="save-conflict-dialog-description">
             {message ?? t("dialogs.conflict.description")}
           </DialogDescription>
         </DialogHeader>
@@ -250,7 +258,7 @@ export function SaveConflictDialog({
           </div>
         ) : null}
 
-        <DialogFooter>
+        <DialogFooter className="save-conflict-dialog-actions">
           <Button variant="ghost" onClick={onCancel}>
             {t("common.cancel")}
           </Button>
@@ -259,17 +267,28 @@ export function SaveConflictDialog({
               {compareOpen ? t("dialogs.conflict.hideCompare") : t("dialogs.conflict.compare")}
             </Button>
           ) : null}
-          <Button variant="ghost" onClick={onSaveAs}>
-            {t("dialogs.conflict.saveAs")}
-          </Button>
-          {!diskMissing ? (
-            <Button variant="ghost" onClick={onReload}>
-              {t("dialogs.conflict.useDisk")}
-            </Button>
-          ) : null}
-          <Button variant="destructive" onClick={onOverwrite}>
-            {diskMissing ? t("dialogs.conflict.saveEditorAs") : t("dialogs.conflict.useEditor")}
-          </Button>
+          {diskMissing ? (
+            <>
+              <Button className="save-conflict-dialog-discard" variant="ghost" onClick={onDiscard}>
+                {t("dialogs.unsaved.discard")}
+              </Button>
+              <Button variant="primary" onClick={onSaveAs}>
+                {t("dialogs.conflict.saveAs")}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={onSaveAs}>
+                {t("dialogs.conflict.saveAs")}
+              </Button>
+              <Button variant="ghost" onClick={onReload}>
+                {t("dialogs.conflict.useDisk")}
+              </Button>
+              <Button variant="destructive" onClick={onOverwrite}>
+                {t("dialogs.conflict.useEditor")}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

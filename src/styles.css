@@ -2113,7 +2113,19 @@
   }
 
   .save-conflict-dialog {
-    @apply max-w-[560px];
+    @apply max-w-[560px] gap-4 p-5;
+  }
+
+  .save-conflict-dialog-description {
+    @apply break-words pr-2;
+  }
+
+  .save-conflict-dialog-actions {
+    @apply flex-wrap gap-1.5 border-t border-border/50 pt-3;
+  }
+
+  .save-conflict-dialog-discard {
+    @apply text-destructive hover:text-destructive;
   }
 
   .save-conflict-dialog-wide {

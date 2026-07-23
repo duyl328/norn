@@ -665,14 +665,11 @@ export function WorkbenchPage() {
                 editorContent={saveConflict?.content ?? document.content}
                 message={saveConflict?.message}
                 onCancel={() => setSaveConflict(null)}
+                onDiscard={() => {
+                  setSaveConflict(null);
+                  closeDocument(document);
+                }}
                 onOverwrite={() => {
-                  if (saveConflict?.diskMissing) {
-                    const content = saveConflict.content;
-                    setSaveConflict(null);
-                    void saveDocumentAs(content);
-                    return;
-                  }
-
                   setSaveConflict(null);
                   void saveDocument({ force: true });
                 }}
