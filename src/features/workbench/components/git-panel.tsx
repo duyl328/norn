@@ -2,6 +2,7 @@ import {
   ChevronDown,
   ChevronRight,
   EyeOff,
+  FileDiff,
   FilePlus2,
   GitCommitVertical,
   GitFork,
@@ -28,7 +29,6 @@ import { useWorkbenchStore } from "../store/workbench-store";
 import type {
   FolderView,
   GitBranches,
-  GitChange,
   GitChangeStatus,
   GitError,
   GitPanelMode,
@@ -303,8 +303,16 @@ function GitCommitMode({
         {gitError ? <GitErrorNotice error={gitError} /> : null}
         {hasChanges ? (
           <>
-            {tracked.length > 0 ? <GitChangesTree changes={tracked} {...treeProps} /> : null}
-            {untracked.length > 0 ? <GitUntrackedSection changes={untracked} {...treeProps} /> : null}
+            {tracked.length > 0 ? (
+              <GitFoldSection icon={FileDiff} title={t("git.uncommitted")} count={tracked.length} defaultOpen>
+                <GitChangesTree changes={tracked} {...treeProps} />
+              </GitFoldSection>
+            ) : null}
+            {untracked.length > 0 ? (
+              <GitFoldSection icon={FilePlus2} title={t("git.untracked")} count={untracked.length}>
+                <GitChangesTree changes={untracked} {...treeProps} />
+              </GitFoldSection>
+            ) : null}
           </>
         ) : (
           <div className="git-panel-clean">
@@ -318,71 +326,49 @@ function GitCommitMode({
   );
 }
 
-/** 底部「已忽略」区:被 .gitignore 忽略的条目;目录可展开看真实内容、文件可点击打开。默认收起。 */
+/** 可折叠分组:标题栏 + 计数 + 限高滚动的内容区(未提交/未跟踪/已忽略共用)。 */
+function GitFoldSection({
+  children,
+  count,
+  defaultOpen = false,
+  icon: Icon,
+  title,
+}: {
+  children: ReactNode;
+  count: number;
+  defaultOpen?: boolean;
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="git-ignored-section">
+      <button type="button" className="git-ignored-head" onClick={() => setOpen((value) => !value)}>
+        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+        <Icon className="h-3.5 w-3.5 shrink-0" />
+        <span>{title}</span>
+        <span className="git-ignored-count">{count}</span>
+      </button>
+      {open ? <div className="git-fold-body">{children}</div> : null}
+    </div>
+  );
+}
+
+/** 底部「已忽略」区:被 .gitignore 忽略的条目;目录可展开看真实内容、文件可点击打开。 */
 function GitIgnoredSection({ onOpenFile }: { onOpenFile: (path: string, size?: number) => void }) {
   const { t } = useI18n();
   const rootPath = useWorkbenchStore((state) => state.folderView?.rootPath ?? null);
   const items = useWorkbenchStore((state) => state.gitIgnoredFiles);
-  // 默认展开:每个忽略目录已折叠成单行(node_modules/、.idea/),展开也就几行,直接可见更直观。
-  const [open, setOpen] = useState(true);
 
   if (items.length === 0 || !rootPath) {
     return null;
   }
 
+  // 默认展开:每个忽略目录已折叠成单行(node_modules/、.idea/),展开也就几行,直接可见更直观。
   return (
-    <div className="git-ignored-section">
-      <button type="button" className="git-ignored-head" onClick={() => setOpen((value) => !value)}>
-        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
-        <EyeOff className="h-3.5 w-3.5 shrink-0" />
-        <span>{t("git.ignored")}</span>
-        <span className="git-ignored-count">{items.length}</span>
-      </button>
-      {open ? <GitIgnoredTree entries={items} rootPath={rootPath} onOpenFile={onOpenFile} /> : null}
-    </div>
-  );
-}
-
-/** 未跟踪(新文件)分组:挪到底部,带勾选 / 双击 diff / 右键忽略;勾选的仍计入提交。 */
-function GitUntrackedSection({
-  changes,
-  isChecked,
-  onAddIgnore,
-  onOpen,
-  onSelect,
-  onTogglePaths,
-  selectedPath,
-}: {
-  changes: GitChange[];
-  isChecked: (path: string) => boolean;
-  onAddIgnore: (entry: string) => void;
-  onOpen: (path: string) => void;
-  onSelect: (path: string) => void;
-  onTogglePaths: (paths: string[], value: boolean) => void;
-  selectedPath: string | null;
-}) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="git-ignored-section">
-      <button type="button" className="git-ignored-head" onClick={() => setOpen((value) => !value)}>
-        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
-        <FilePlus2 className="h-3.5 w-3.5 shrink-0" />
-        <span>{t("git.untracked")}</span>
-        <span className="git-ignored-count">{changes.length}</span>
-      </button>
-      {open ? (
-        <GitChangesTree
-          changes={changes}
-          isChecked={isChecked}
-          onAddIgnore={onAddIgnore}
-          onOpen={onOpen}
-          onSelect={onSelect}
-          onTogglePaths={onTogglePaths}
-          selectedPath={selectedPath}
-        />
-      ) : null}
-    </div>
+    <GitFoldSection icon={EyeOff} title={t("git.ignored")} count={items.length} defaultOpen>
+      <GitIgnoredTree entries={items} rootPath={rootPath} onOpenFile={onOpenFile} />
+    </GitFoldSection>
   );
 }
 

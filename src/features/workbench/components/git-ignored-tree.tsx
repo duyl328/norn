@@ -2,44 +2,87 @@ import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
 
+import { buildFileTree, type FileTreeNode } from "../change-tree";
 import type { NativeDirectoryEntry } from "../types";
 import { getPathIcon } from "../workbench-utils";
 
 const joinPath = (root: string, rel: string) =>
   `${root.replace(/[\\/]+$/, "")}/${rel.replace(/^[\\/]+/, "").replace(/[\\/]+$/, "")}`;
 
-/** 已忽略条目树:目录可懒加载展开(读真实磁盘内容),文件可点击打开。整体灰显。 */
-export function GitIgnoredTree({
-  entries,
-  onOpenFile,
-  rootPath,
-}: {
-  entries: string[];
+/** git 给的忽略项:整目录被忽略时带尾斜杠(node_modules/),零散文件是完整相对路径。 */
+type IgnoredItem = { path: string; isDir: boolean };
+
+type IgnoredNode = FileTreeNode<IgnoredItem>;
+
+type SharedProps = {
   onOpenFile: (path: string, size?: number) => void;
   rootPath: string;
-}) {
+};
+
+/** 已忽略条目树:目录可懒加载展开(读真实磁盘内容),文件可点击打开。整体灰显。 */
+export function GitIgnoredTree({ entries, ...shared }: { entries: string[] } & SharedProps) {
+  const tree = buildFileTree<IgnoredItem>(
+    entries.map((entry) => ({ path: entry.replace(/\/+$/, ""), isDir: entry.endsWith("/") })),
+  );
   return (
     <div className="git-ignored-tree">
-      {entries.map((entry) =>
-        entry.endsWith("/") ? (
+      <IgnoredNodes nodes={tree} depth={0} {...shared} />
+    </div>
+  );
+}
+
+function IgnoredNodes({ depth, nodes, ...shared }: { depth: number; nodes: IgnoredNode[] } & SharedProps) {
+  return (
+    <>
+      {nodes.map((node) =>
+        node.kind === "folder" ? (
+          <IgnoredGroup key={`group:${node.path}`} node={node} depth={depth} {...shared} />
+        ) : node.item.isDir ? (
           <IgnoredFolder
-            key={entry}
-            absPath={joinPath(rootPath, entry)}
-            name={entry.replace(/\/+$/, "").split("/").pop() ?? entry}
-            depth={0}
-            onOpenFile={onOpenFile}
+            key={node.item.path}
+            absPath={joinPath(shared.rootPath, node.item.path)}
+            name={node.name}
+            depth={depth}
+            onOpenFile={shared.onOpenFile}
           />
         ) : (
           <IgnoredFile
-            key={entry}
-            absPath={joinPath(rootPath, entry)}
-            name={entry}
-            depth={0}
-            onOpenFile={onOpenFile}
+            key={node.item.path}
+            absPath={joinPath(shared.rootPath, node.item.path)}
+            name={node.name}
+            depth={depth}
+            onOpenFile={shared.onOpenFile}
           />
         ),
       )}
-    </div>
+    </>
+  );
+}
+
+/** 中间层目录:它自己没被忽略,只是里面有零散忽略项(src/features/…),子节点已知无需懒加载。 */
+function IgnoredGroup({
+  depth,
+  node,
+  ...shared
+}: { depth: number; node: Extract<IgnoredNode, { kind: "folder" }> } & SharedProps) {
+  const [open, setOpen] = useState(true);
+  const icon = getPathIcon(node.name, "directory", open);
+
+  return (
+    <>
+      <button
+        type="button"
+        className="git-ignored-row git-ignored-row-folder"
+        style={{ paddingLeft: `${depth * 12 + 6}px` }}
+        onClick={() => setOpen((value) => !value)}
+        title={node.path}
+      >
+        {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" />}
+        <PathIconImage icon={icon} />
+        <span className="truncate">{node.name}</span>
+      </button>
+      {open ? <IgnoredNodes nodes={node.children} depth={depth + 1} {...shared} /> : null}
+    </>
   );
 }
 

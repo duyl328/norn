@@ -29,8 +29,19 @@ const dmg = find(dmgDir, (f) => f.endsWith(".dmg"));
 // (曾因换了新密钥打包却没同步 pubkey,导致 GitHub 自动更新全线失效)。minisign 文件第 2 行 base64
 // 解出的 [2:10] 8 字节即 keyID,只比 keyID 足以拦住「换错密钥」这类事故。
 // ponytail: 只校验 keyID,不做完整 ed25519 验签;要更强就把 .tar.gz 一起验,目前没必要。
-const keyId = (minisignText) =>
-  Buffer.from(minisignText.trim().split("\n").pop().trim(), "base64").subarray(2, 10).toString("hex");
+const keyId = (minisignText) => {
+  let decoded = minisignText.trim();
+  if (!decoded.includes("\n")) {
+    const candidate = Buffer.from(decoded, "base64").toString("utf8");
+    if (candidate.includes("\n")) decoded = candidate;
+  }
+  const payload = decoded
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /^[A-Za-z0-9+/]+={0,2}$/.test(line));
+  if (!payload) throw new Error("无法解析 minisign keyID");
+  return Buffer.from(payload, "base64").subarray(2, 10).toString("hex");
+};
 const pubkeyB64 = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8")).plugins.updater.pubkey;
 const pubKeyId = keyId(Buffer.from(pubkeyB64, "base64").toString("utf8"));
 const sigKeyId = keyId(readFileSync(sig, "utf8"));
@@ -60,13 +71,7 @@ writeFileSync("latest.json", JSON.stringify(latest, null, 2));
 console.log(`[release] 发布 ${tag} 到 ${REPO}`);
 execFileSync(
   "gh",
-  [
-    "release", "create", tag,
-    dmg, updater, sig, "latest.json",
-    "--repo", REPO,
-    "--title", tag,
-    "--notes", latest.notes,
-  ],
+  ["release", "create", tag, dmg, updater, sig, "latest.json", "--repo", REPO, "--title", tag, "--notes", latest.notes],
   { stdio: "inherit" },
 );
 console.log(`[release] 完成:${REPO_URL}/releases/tag/${tag}`);

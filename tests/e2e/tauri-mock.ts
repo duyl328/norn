@@ -13,6 +13,12 @@ export type TauriMockScenario = {
 };
 
 type MockTextFileInspection = {
+  isText: boolean;
+  encoding: string;
+  encodingLabel: string;
+  encodingConfidence: number;
+  encodingCandidates: unknown[];
+  hasBom: boolean;
   isBinary: boolean;
   isUtf8: boolean;
   lastModified: number;
@@ -25,7 +31,13 @@ type MockTextFileInspection = {
 export const largeFileScenario = {
   directories: {
     "/mock/project": [
-      { name: "large.txt", path: "/mock/project/large.txt", relativePath: "large.txt", kind: "file", size: 6 * 1024 * 1024 },
+      {
+        name: "large.txt",
+        path: "/mock/project/large.txt",
+        relativePath: "large.txt",
+        kind: "file",
+        size: 6 * 1024 * 1024,
+      },
       {
         name: "huge.log",
         path: "/mock/project/huge.log",
@@ -60,7 +72,13 @@ export const fileErrorScenario = {
     "/mock/project": [
       { name: "binary.bin", path: "/mock/project/binary.bin", relativePath: "binary.bin", kind: "file", size: 32 },
       { name: "latin1.txt", path: "/mock/project/latin1.txt", relativePath: "latin1.txt", kind: "file", size: 32 },
-      { name: "readonly.txt", path: "/mock/project/readonly.txt", relativePath: "readonly.txt", kind: "file", size: 32 },
+      {
+        name: "readonly.txt",
+        path: "/mock/project/readonly.txt",
+        relativePath: "readonly.txt",
+        kind: "file",
+        size: 32,
+      },
     ],
     "/mock/scratch": [],
   },
@@ -70,8 +88,8 @@ export const fileErrorScenario = {
     "/mock/project/readonly.txt": "readonly content\n",
   },
   fileInspections: {
-    "/mock/project/binary.bin": { isBinary: true, isUtf8: false },
-    "/mock/project/latin1.txt": { isBinary: false, isUtf8: false },
+    "/mock/project/binary.bin": { isBinary: true, isText: false, isUtf8: false },
+    "/mock/project/latin1.txt": { isBinary: false, isText: false, isUtf8: false },
   },
   invokeErrors: {
     "save_text_file:/mock/project/readonly.txt": {
@@ -84,7 +102,13 @@ export const fileErrorScenario = {
 export const saveConflictScenario = {
   directories: {
     "/mock/project": [
-      { name: "conflict.txt", path: "/mock/project/conflict.txt", relativePath: "conflict.txt", kind: "file", size: 17 },
+      {
+        name: "conflict.txt",
+        path: "/mock/project/conflict.txt",
+        relativePath: "conflict.txt",
+        kind: "file",
+        size: 17,
+      },
     ],
     "/mock/scratch": [],
   },
@@ -104,6 +128,7 @@ export const saveConflictScenario = {
 
 export async function installTauriMock(page: Page, scenario: TauriMockScenario = {}): Promise<void> {
   await page.addInitScript((mockScenario) => {
+    window.localStorage.setItem("norn.welcomeSeen", "1");
     const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
     const listeners = new Map<number, { event: string; handlerId: number }>();
     let nextEventId = 1;
@@ -154,7 +179,10 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
       ...clone(mockScenario.fileLastModified ?? {}),
     } as Record<string, number>;
 
-    const fileInspections = clone(mockScenario.fileInspections ?? {}) as Record<string, Partial<MockTextFileInspection>>;
+    const fileInspections = clone(mockScenario.fileInspections ?? {}) as Record<
+      string,
+      Partial<MockTextFileInspection>
+    >;
     const invokeErrors = clone(mockScenario.invokeErrors ?? {}) as Record<string, unknown>;
 
     const baseName = (path: string) => path.split("/").filter(Boolean).pop() ?? path;
@@ -198,6 +226,13 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
         lastModified: lastModifiedFor(path),
         isBinary: false,
         isUtf8: true,
+        // 应用现在按 isText 判定可否打开(isUtf8 已不再是那个开关),漏掉它所有文件都会报「无法以支持的文本编码打开」。
+        isText: true,
+        encoding: "utf-8",
+        encodingLabel: "UTF-8",
+        encodingConfidence: 1,
+        encodingCandidates: [],
+        hasBom: false,
         sample: content.slice(0, 256),
         ...override,
       };
@@ -221,6 +256,18 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
           return null;
         case "app_version":
           return "0.1.0";
+        case "read_config_file":
+          return args.name === "settings.json"
+            ? JSON.stringify({
+                schemaVersion: 1,
+                language: "en",
+                theme: "system",
+                editor: { fontSize: 13, tabSize: 2, lineWrapping: false, formatOnSave: false },
+                ui: { showStatusBar: true, resizeHandleHints: false, restoreLastWorkspace: true },
+              })
+            : null;
+        case "write_config_file":
+          return null;
         case "open_folder_dialog":
           return mockScenario.folderDialogPath === undefined ? "/mock/project" : mockScenario.folderDialogPath;
         case "open_file_dialog":
@@ -242,6 +289,26 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
           );
         case "git_fetch":
           return null;
+        // 打开文件夹后 use-git 会一次性拉这几条;返回 null 会让 project-panel 迭代 ignoredFiles 时整页崩掉。
+        case "git_status":
+          return { branch: "main", detached: false, upstream: null, ahead: 0, behind: 0, changes: [] };
+        case "git_branches":
+          return { current: "main", local: [], remote: [] };
+        case "git_ignored_files":
+        case "git_recent_commits":
+        case "git_log":
+        case "git_worktrees":
+        case "list_drafts":
+          return [];
+        case "git_pending_op":
+          return "";
+        // 编辑器改动条的基线:HEAD 版本 = 当前 mock 内容(所以刚打开时没有改动条,一编辑就出现)。
+        case "git_file_versions": {
+          const file = String(args.file);
+          const full = Object.keys(fileContents).find((key) => key.endsWith(`/${file}`));
+          const original = full ? (fileContents[full] ?? "") : "";
+          return { original, modified: original };
+        }
         case "read_text_file": {
           const path = String(args.path);
           const inspection = inspectFile(path);
@@ -263,7 +330,10 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
           const startOffset = Math.max(0, Math.min(offset, virtualSize));
           const contentOffset = Math.max(0, Math.min(offset, content.length));
           const rangeContent = content.slice(contentOffset, Math.min(content.length, contentOffset + length));
-          const endOffset = Math.min(virtualSize, startOffset + Math.max(rangeContent.length, Math.min(length, virtualSize)));
+          const endOffset = Math.min(
+            virtualSize,
+            startOffset + Math.max(rangeContent.length, Math.min(length, virtualSize)),
+          );
           return {
             path,
             content: rangeContent,
@@ -301,7 +371,14 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
           const path = `${parentPath}/${name}`;
           fileContents[path] = "";
           fileLastModified[path] = lastModifiedFor(path);
-          const entry = { name, path, relativePath: relativeTo(workspaceRoot, path), kind: "file", size: 0, lastModified: fileLastModified[path] };
+          const entry = {
+            name,
+            path,
+            relativePath: relativeTo(workspaceRoot, path),
+            kind: "file",
+            size: 0,
+            lastModified: fileLastModified[path],
+          };
           (directories[parentPath] ??= []).push({ ...entry });
           return entry;
         }
@@ -310,7 +387,14 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
           const parentPath = String(args.parentPath ?? "/mock/project");
           const name = String(args.name ?? "untitled");
           const path = `${parentPath}/${name}`;
-          const entry = { name, path, relativePath: relativeTo(workspaceRoot, path), kind: "directory", size: null, lastModified: lastModifiedFor(path) };
+          const entry = {
+            name,
+            path,
+            relativePath: relativeTo(workspaceRoot, path),
+            kind: "directory",
+            size: null,
+            lastModified: lastModifiedFor(path),
+          };
           (directories[parentPath] ??= []).push({ ...entry });
           directories[path] ??= [];
           return entry;
@@ -331,7 +415,14 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
             fileLastModified[newPath] = fileLastModified[path];
             delete fileLastModified[path];
           }
-          const entry = { name: newName, path: newPath, relativePath: relativeTo(workspaceRoot, newPath), kind, size: removed?.size ?? (kind === "file" ? contentLengthFor(newPath) : null), lastModified: lastModifiedFor(newPath) };
+          const entry = {
+            name: newName,
+            path: newPath,
+            relativePath: relativeTo(workspaceRoot, newPath),
+            kind,
+            size: removed?.size ?? (kind === "file" ? contentLengthFor(newPath) : null),
+            lastModified: lastModifiedFor(newPath),
+          };
           (directories[parentPath] ??= []).push({ ...entry });
           return entry;
         }
@@ -355,7 +446,14 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
             fileContents[newPath] = fileContents[sourcePath];
             delete fileContents[sourcePath];
           }
-          const entry = { name, path: newPath, relativePath: relativeTo(workspaceRoot, newPath), kind, size: removed?.size ?? (kind === "file" ? contentLengthFor(newPath) : null), lastModified: lastModifiedFor(newPath) };
+          const entry = {
+            name,
+            path: newPath,
+            relativePath: relativeTo(workspaceRoot, newPath),
+            kind,
+            size: removed?.size ?? (kind === "file" ? contentLengthFor(newPath) : null),
+            lastModified: lastModifiedFor(newPath),
+          };
           (directories[targetDirectory] ??= []).push({ ...entry });
           return entry;
         }
@@ -368,7 +466,14 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
           const source = findEntry(sourcePath);
           const kind = source?.kind === "directory" ? "directory" : "file";
           if (fileContents[sourcePath] !== undefined) fileContents[newPath] = fileContents[sourcePath];
-          const entry = { name, path: newPath, relativePath: relativeTo(workspaceRoot, newPath), kind, size: source?.size ?? (kind === "file" ? contentLengthFor(newPath) : null), lastModified: lastModifiedFor(newPath) };
+          const entry = {
+            name,
+            path: newPath,
+            relativePath: relativeTo(workspaceRoot, newPath),
+            kind,
+            size: source?.size ?? (kind === "file" ? contentLengthFor(newPath) : null),
+            lastModified: lastModifiedFor(newPath),
+          };
           (directories[targetDirectory] ??= []).push({ ...entry });
           return entry;
         }
@@ -408,7 +513,13 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
     };
 
     (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = internals;
+    // @tauri-apps/api v2 的 listen() 卸载时会走这里;缺了它每个 listener 都抛 unregisterListener of undefined。
+    (window as unknown as { __TAURI_EVENT_PLUGIN_INTERNALS__: unknown }).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+      unregisterListener: () => {},
+    };
     (window as unknown as { __tauriInvokeCalls: typeof invokeCalls }).__tauriInvokeCalls = invokeCalls;
+    (window as unknown as { __tauriMockHasListener: (event: string) => boolean }).__tauriMockHasListener = (event) =>
+      [...listeners.values()].some((listener) => listener.event === event);
     (window as unknown as { __emitTauriEvent: (event: string, payload: unknown) => void }).__emitTauriEvent = (
       event,
       payload,

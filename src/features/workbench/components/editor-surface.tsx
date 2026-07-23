@@ -1,7 +1,8 @@
 import { openSearchPanel } from "@codemirror/search";
 import { Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { Plus, X } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { Copy, FolderSearch, Plus, Terminal, X } from "lucide-react";
 import {
   type CSSProperties,
   lazy,
@@ -20,6 +21,7 @@ import { setActiveEditorView } from "../actions/active-editor";
 import { buildEditorKeymapExtension } from "../actions/editor-actions";
 import { createCodeMirrorExtensions, tabSizeExtension } from "../codemirror-setup";
 import { EDITOR_SCROLLBAR_SIZE, emptyEditorScrollMetrics } from "../constants";
+import { gitChangeGutter, gitChunkLabels, setGitBaseline } from "../editor-git-gutter";
 import {
   FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES,
   loadHighlightExtensions,
@@ -37,7 +39,9 @@ import {
   getEditorScrollbarGeometry,
   getFileTreeIcon,
   getTabBorderAccent,
+  isTauriRuntime,
 } from "../workbench-utils";
+import { ContextMenu } from "./context-menu";
 import { TabFoldStack } from "./titlebar";
 
 // diff / 冲突视图仅在 diff 模式用到，按需加载，不进首屏编辑器关键路径。
@@ -154,6 +158,29 @@ export function EditorSurface({
 
   const [scrollMetrics, setScrollMetrics] = useState<EditorScrollMetrics>(emptyEditorScrollMetrics);
   const [highlightWarning, setHighlightWarning] = useState<string | null>(null);
+  const [tabMenu, setTabMenu] = useState<{ path: string; x: number; y: number } | null>(null);
+  const setFileError = useWorkbenchStore((state) => state.setFileError);
+  const rootPath = useWorkbenchStore((state) => state.folderView?.rootPath ?? null);
+  // 提交 / 切分支 / 刷新后 HEAD 变了,基线要重取。gitStatus 每次刷新都是新对象,拿它当信号。
+  const gitStatus = useWorkbenchStore((state) => state.gitStatus);
+
+  // 当前文档的 HEAD 基线。存在 ref 里而不是只 dispatch 一次:建 state 时要把它灌进扩展,
+  // 否则视图重建(切文档 setState / dev 期 HMR)后 StateField 复位,改动条会整片消失。
+  const gitBaselineRef = useRef<{ id: string; original: string | null }>({ id: "", original: null });
+
+  // 右键菜单只对磁盘上真实存在的文件开:未命名 tab 没有路径;diff tab 的路径带 diff:// 前缀,剥掉即原文件。
+  const tabFilePath = (tabDocument: WorkbenchDocument | undefined) =>
+    tabDocument && !tabDocument.isUntitled ? tabDocument.path.replace(/^diff:\/\//, "") : null;
+
+  const runTabPathCommand = (command: "open_terminal_at" | "reveal_in_file_manager", path: string) => {
+    if (!isTauriRuntime()) {
+      setFileError("This action is only available in the Tauri desktop app.");
+      return;
+    }
+    void invoke(command, { path }).catch((error) => {
+      setFileError(error instanceof Error ? error.message : String(error));
+    });
+  };
 
   useEffect(() => {
     onChangeRef.current = onChange;
@@ -218,6 +245,11 @@ export function EditorSurface({
             keymapCompartmentRef.current.of(buildEditorKeymapExtension(keymapOverridesRef.current)),
             useWorkbenchStore.getState().editorLineWrapping,
             useWorkbenchStore.getState().editorTabSize,
+          ),
+          // git 改动条(相对 HEAD 的增/改/删):紧贴正文左侧。基线已取到就直接灌进去,没取到的由下面的 effect 补。
+          gitChangeGutter(
+            gitBaselineRef.current.id === doc.id ? gitBaselineRef.current.original : null,
+            gitChunkLabels,
           ),
           EditorView.updateListener.of((update) => {
             updateScrollMetricsRef.current();
@@ -396,6 +428,48 @@ export function EditorSurface({
     updateScrollMetricsRef.current();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在 id/name 变(切文档)时换 state
   }, [document.id, document.name]);
+
+  // git 改动条的基线:取当前文件在 HEAD 里的内容。切文档 / 提交 / 切分支后重取。
+  // 未跟踪的新文件在 HEAD 里没有内容(返回 ""),此时不显示改动条 —— 否则整个文件全是绿条,没信息量。
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) {
+      return;
+    }
+    const relative =
+      rootPath && !document.isUntitled && document.mode === "editable" && document.path.startsWith(`${rootPath}/`)
+        ? document.path.slice(rootPath.length + 1)
+        : null;
+    const docId = document.id;
+    let cancelled = false;
+    const apply = (original: string | null) => {
+      if (cancelled) {
+        return;
+      }
+      gitBaselineRef.current = { id: docId, original }; // 视图重建时(HMR / 切文档)由 buildEditorState 灌回去
+      if (viewRef.current === view) {
+        view.dispatch({ effects: setGitBaseline.of(original) });
+      }
+    };
+    // ponytail: 大文件每次按键重算全量 diff 划不来,直接不给基线。
+    if (!relative || !isTauriRuntime() || document.content.length > FULL_LANGUAGE_PARSER_SIZE_LIMIT_BYTES) {
+      apply(null);
+      return;
+    }
+    void invoke<{ original: string }>("git_file_versions", { path: rootPath, file: relative })
+      .then((versions) => apply(versions.original || null))
+      .catch((baselineError) => {
+        // 不是仓库 / 读不到 → 关掉改动条;开发期留一条,免得「没条子」分不清是没改动还是取基线挂了。
+        if (import.meta.env.DEV) {
+          console.error("[git-gutter] 取 HEAD 基线失败", relative, baselineError);
+        }
+        apply(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- content 只作首次判据,不能随每次按键重取基线
+  }, [document.id, document.path, document.mode, document.isUntitled, rootPath, gitStatus]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -626,6 +700,24 @@ export function EditorSurface({
                         onSelectDocument(tabDocument);
                       }
                     }}
+                    onContextMenu={(event) => {
+                      // 无条件挡掉 WebView 自带菜单(dev 下 main.tsx 不全局屏蔽,漏一次就冒出「检查元素」)。
+                      event.preventDefault();
+                      if (!tabDocument) {
+                        return;
+                      }
+                      // 右键先切到该 tab(与左键一致),菜单动作作用的文件就是眼睛看到的那个。
+                      if (!active) {
+                        onSelectDocument(tabDocument);
+                      }
+                      const path = tabFilePath(tabDocument);
+                      if (path) {
+                        // WKWebView 一次右键会派发两次 contextmenu:同一个 tab 已开着菜单就别重定位(否则会抖一下)。
+                        setTabMenu((current) =>
+                          current?.path === path ? current : { path, x: event.clientX, y: event.clientY },
+                        );
+                      }
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
@@ -703,6 +795,36 @@ export function EditorSurface({
           <Plus className="h-3 w-3" />
         </button>
       </div>
+      {tabMenu ? (
+        <ContextMenu
+          x={tabMenu.x}
+          y={tabMenu.y}
+          closeOnScroll={false}
+          onClose={() => setTabMenu(null)}
+          items={[
+            {
+              label: t("fileTree.revealInFileManager"),
+              icon: <FolderSearch className="h-3.5 w-3.5" />,
+              onClick: () => runTabPathCommand("reveal_in_file_manager", tabMenu.path),
+            },
+            {
+              // open_terminal_at 传文件路径会自动落到其所在目录。
+              label: t("fileTree.openTerminalHere"),
+              icon: <Terminal className="h-3.5 w-3.5" />,
+              onClick: () => runTabPathCommand("open_terminal_at", tabMenu.path),
+            },
+            {
+              label: t("fileTree.copyPath"),
+              icon: <Copy className="h-3.5 w-3.5" />,
+              onClick: () => {
+                void globalThis.navigator?.clipboard?.writeText(tabMenu.path).catch((error) => {
+                  setFileError(error instanceof Error ? error.message : String(error));
+                });
+              },
+            },
+          ]}
+        />
+      ) : null}
       {error ? (
         <div className="border-b border-destructive/30 bg-destructive/10 px-3 py-1.5 text-ui text-destructive">
           {error}

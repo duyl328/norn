@@ -1,7 +1,17 @@
 {
   "name": "norn",
   "private": true,
-  "version": "0.2.3",
+  "version": "0.2.4",
+  "description": "基于 Tauri、React 和 TypeScript 的轻量代码编辑器，内置简单 Git 工作流",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/duyl328/norn.git"
+  },
+  "homepage": "https://github.com/duyl328/norn#readme",
+  "bugs": {
+    "url": "https://github.com/duyl328/norn/issues"
+  },
   "type": "module",
   "packageManager": "pnpm@10.33.0",
   "engines": {

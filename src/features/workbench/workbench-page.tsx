@@ -26,6 +26,7 @@ import {
   rightPanelMaxWidth,
   rightPanelMinWidth,
 } from "./constants";
+import { openGitDiffRequestEvent } from "./editor-git-gutter";
 import { useDocumentSession } from "./hooks/use-document-session";
 import { gitActions } from "./hooks/use-git";
 import { usePanelLayout } from "./hooks/use-panel-layout";
@@ -145,6 +146,19 @@ export function WorkbenchPage() {
     window.addEventListener(openGoToLineRequestEvent, openGoToLine);
     return () => window.removeEventListener(openGoToLineRequestEvent, openGoToLine);
   }, []);
+
+  // 编辑区改动条浮层上的「显示完整差异」:为当前文件开一个并排 diff 标签(和 git 面板双击同一条路)。
+  useEffect(() => {
+    const openFullDiff = () => {
+      const { document: current, folderView } = useWorkbenchStore.getState();
+      const root = folderView?.rootPath;
+      if (!root || current.isUntitled || !current.path.startsWith(`${root}/`)) return;
+      const file = current.path.slice(root.length + 1);
+      void gitActions.loadFileVersions(file).then((versions) => openDiff(file, versions));
+    };
+    window.addEventListener(openGitDiffRequestEvent, openFullDiff);
+    return () => window.removeEventListener(openGitDiffRequestEvent, openFullDiff);
+  }, [openDiff]);
 
   const changeDocumentLineEnding = (lineEnding: "crlf" | "lf") => {
     if (document.mode === "large-readonly" || document.mode === "diff") return;

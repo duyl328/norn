@@ -2872,6 +2872,215 @@
     @apply text-destructive;
   }
 
+  /* 编辑器 git 改动条:紧贴正文左侧一列,点一下弹出「原始内容 + 撤回」。
+     列本身透明(= 沿用 gutter 的底色),只有改动行的格子才被标记铺满颜色。 */
+  .cm-git-gutter {
+    @apply w-[12px] cursor-pointer bg-transparent p-0;
+  }
+
+  /* 必须压过 .codemirror-shell .cm-gutterElement 的 min-width:52px / 右内边距(那是给行号列的),
+     否则改动条这一列的每个格子被撑成 52px,竖条被挤出可视区。 */
+  .codemirror-shell .cm-git-gutter .cm-gutterElement {
+    /* 竖线贴住右边缘(紧挨正文),hover 加粗时向左长 */
+    @apply flex min-w-0 justify-end p-0;
+  }
+
+  /* 常态一条 3px 细竖线;鼠标进入这一列时缓动加粗到 6px(点击区始终是整列 12px,不随视觉宽度变)。 */
+  .cm-git-change {
+    @apply h-full w-[3px];
+    transition: width 0.14s ease;
+  }
+
+  .cm-git-gutter:hover .cm-git-change {
+    @apply w-[6px];
+  }
+
+  /* 改动块的首行画上沿圆角、末行画下沿圆角(单行块即四角全圆);块中间的行保持方角,连起来是一整条 */
+  .cm-git-change-head {
+    @apply rounded-t-[3px];
+  }
+
+  .cm-git-change-tail {
+    @apply rounded-b-[3px];
+  }
+
+  /* 改动行整行淡染。只用 background,不碰 color —— 那会连带把整行文字染色。 */
+  .cm-git-line-add {
+    background: hsl(142 72% 42% / 0.16);
+  }
+
+  .cm-git-line-mod {
+    background: hsl(212 95% 55% / 0.16);
+  }
+
+  .cm-git-change-add {
+    background: hsl(142 72% 42%);
+  }
+
+  .cm-git-change-mod {
+    background: hsl(212 95% 55%);
+  }
+
+  /* 纯删除没有当前行,画成贴在行尾的一小段红竖线 = 内容是在这一行之后被删掉的。
+     (增/改是整行长的竖条,它短一截 → 一眼分得开。)
+
+     必须整段待在自己那一格里:让它探出去骑在两行交界上更好看,但探出去的那半截落在
+     下一行的 gutter 格子上,那儿没有块 —— 点到下半截就什么都不发生。
+     pointer-events:none 把命中交给底下的格子(点击 handler 本来就挂在那儿),整格都可点。 */
+  .cm-git-change-del {
+    @apply pointer-events-none mb-px h-[10px] w-[3px] self-end rounded-[2px];
+    background: hsl(0 82% 56%);
+  }
+
+  /* 点改动条 → HEAD 原文的卡片(词级配色 + 图标工具条)。绝对定位 = 盖在下方的代码上,
+     编辑区一行都不挪(块级插入会把正文整段推下去,读起来很跳)。
+     宽度按最宽那行收缩,上限 70vw —— 父元素宽 0,百分比会算成 0,只能按视口给。
+     min-width 兜住工具条:它也是绝对定位的、不撑宽度,行太短的话卡片会比工具条还窄。 */
+  .cm-git-inline {
+    @apply relative w-max max-w-[70vw] select-text overflow-x-auto rounded-[6px] border border-border;
+    /* 卡片左沿再往左探 12px(约到行盒的左边缘),左边留出空隙不至于顶着字。
+       -12 = 3px 红边 + 9px 内边距(见 .cm-git-row)—— 加起来正好把文字送回锚点所在的那一列
+       (浮层容器的左沿就落在正文文字的起始处)。 */
+    left: -12px;
+    border-left: 3px solid hsl(0 82% 56%);
+    min-width: 260px;
+    background: hsl(var(--popover));
+    box-shadow: 0 2px 8px hsl(0 0% 0% / 0.18);
+    cursor: text;
+  }
+
+  /* 浮层容器:挂在 .cm-scroller(CM 给它设了 position:relative)上的普通 DOM,不是 CM 的 widget。
+     绝对定位的子元素会跟着内容一起滚,位置由 JS 按 coordsAtPos 算出来。 */
+  .cm-git-popup {
+    @apply absolute z-10 w-max;
+  }
+
+  /* body 是 user-select:none(见上面 @layer base),只对 .cm-line 等白名单放开 —— 浮层在白名单外,
+     得自己放开。两个前缀都写(WKWebView)。工具条那一行下面再单独关掉。 */
+  .cm-git-popup,
+  .cm-git-popup * {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  /* 上面那条用了 .cm-git-popup *(特指度更高),会把工具条的 select-none 压过去 —— 补回来,
+     否则拖选原文时会把图标按钮一起框进去。 */
+  .cm-git-popup .cm-git-inline-bar,
+  .cm-git-popup .cm-git-inline-bar * {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* 纯新增没有卡片,工具条就是浮层本身(直接子代 —— 卡片里那条工具条不能被这条规则命中)。 */
+  .cm-git-popup > .cm-git-inline-bar {
+    @apply w-max rounded-[6px] border border-border;
+    background: hsl(var(--popover));
+    box-shadow: 0 2px 8px hsl(0 0% 0% / 0.18);
+  }
+
+  /* 原文行要能拖选复制:CodeMirror 的 widget DOM 是 contenteditable=false,不显式放开就选不动。 */
+  /* 9px 左内边距,配合卡片的 left:-12px(3px 红边 + 9px = 12px),把文字精确送回锚点那一列 ——
+     旧行的字跟新行的字一列对一列,上下扫一眼就能比,不用横向找。改任何一个都得改另一个。 */
+  .cm-git-row {
+    @apply select-text whitespace-pre py-px pr-3;
+    padding-left: 9px;
+    -webkit-user-select: text;
+  }
+
+  /* 被改掉 / 删掉的旧行:红底。左侧那条红边挂在卡片上(见 .cm-git-inline),不挂在行上 ——
+     挂行上会把文字推开 3px,就跟正文对不齐了。 */
+  .cm-git-row-old {
+    background: hsl(0 75% 55% / 0.12);
+  }
+
+  .cm-git-inline-bar {
+    @apply flex select-none items-center gap-px px-0.5 py-0.5;
+  }
+
+  /* 卡片里的工具条:自成一行排在原文下面(压在原文上会盖掉正要看的字),跟原文一样左对齐。 */
+  .cm-git-inline .cm-git-inline-bar {
+    @apply justify-start border-t border-border/60;
+    background: hsl(var(--muted) / 0.3);
+  }
+
+  .cm-git-inline-action {
+    @apply grid h-6 w-6 cursor-pointer place-items-center rounded-[4px] text-muted-foreground transition-colors;
+  }
+
+  .cm-git-inline-action:hover {
+    @apply text-foreground;
+    background: hsl(var(--foreground) / 0.1);
+  }
+
+  .cm-git-inline-action svg {
+    @apply h-4 w-4;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .cm-git-inline-sep {
+    @apply mx-1 h-[18px] w-px;
+    background: hsl(var(--border));
+  }
+
+  /* 词级切片。op-a / op-b 是「两边都有内容」的一处替换:编辑区和浮层里配同一种颜色,
+     交替上色,所以哪块对哪块一眼就看出来。add 只在新行(编辑区),del 只在旧行(浮层)。 */
+  .cm-git-op {
+    @apply rounded-[2px];
+  }
+
+  .cm-git-op-a {
+    background: hsl(268 70% 70% / 0.28);
+  }
+
+  .cm-git-op-b {
+    background: hsl(40 75% 67% / 0.28);
+  }
+
+  .cm-git-op-add {
+    background: hsl(142 72% 50% / 0.28);
+  }
+
+  .cm-git-op-del {
+    background: hsl(0 82% 60% / 0.3);
+    text-decoration: line-through;
+    text-decoration-color: hsl(0 82% 56%);
+    text-decoration-thickness: 1.5px;
+  }
+
+  /* 行内删除锚点:被删掉的文字在新行里不占宽度,就在删除处竖一小段红竖线(hover 看删了什么)。
+     零宽度 + 绝对定位:它是插在正文里的,占了宽度就会把后面的字挤开。 */
+  .cm-git-anchor {
+    @apply relative inline-block h-0 w-0 align-top;
+  }
+
+  /* 父元素高 0,竖线高度只能按字号给(不能用 h-full,那会算成 0)。
+     比行内文字略矮一截:跟正文一样高的话它在行里太抢眼,像是多了个光标。 */
+  .cm-git-anchor::before {
+    @apply absolute block w-[2px] rounded-[1px] content-[''];
+    top: 0.34em;
+    left: -1px;
+    height: 0.98em;
+  }
+
+  /* 编辑区里的红线:这儿被删了东西(HEAD 有、现在没了) */
+  .cm-git-anchor-del::before {
+    background: hsl(0 82% 56%);
+  }
+
+  /* 浮层里的绿线:这儿被加了东西(HEAD 没有、现在有了)。跟红线正好对称。 */
+  .cm-git-anchor-add::before {
+    background: hsl(142 72% 45%);
+  }
+
+  /* 展开中的那一块:对应的改动行描一圈边,明确红块属于谁 */
+  .cm-git-line-open {
+    box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.18);
+  }
+
   /* 底部「已忽略」区 */
   .git-ignored-section {
     @apply mt-1 border-t border-border/60 pt-1;
@@ -2889,6 +3098,11 @@
 
   .git-ignored-count {
     @apply ml-auto rounded-full bg-muted px-1.5 text-ui-sm text-muted-foreground;
+  }
+
+  /* 分组内容限高:改动多时自己滚,不把面板撑到无限高(挤掉下面的分组和提交框)。 */
+  .git-fold-body {
+    @apply max-h-[40vh] min-w-0 overflow-y-auto;
   }
 
   /* 已忽略树:整体灰显;目录可展开,文件可点击打开�?*/

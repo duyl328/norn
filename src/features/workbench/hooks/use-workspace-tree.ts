@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, useEffect, useRef } from "react";
 
-import { maxRecentFolders, workspaceFsChangeEvent } from "../constants";
+import { maxRecentFolders, workspaceFsChangeEvent, workspaceGitChangeEvent } from "../constants";
 import { useWorkbenchStore } from "../store/workbench-store";
 import type {
   FileTreeNameDialog,
@@ -61,6 +61,16 @@ import { refreshGit } from "./use-git";
 interface UseWorkspaceTreeParams {
   requestFileOpen: (pendingOpen: PendingFileOpen) => void;
 }
+
+// 卸载事件监听:Tauri 侧若已不认得这个 eventId(dev 下 HMR 重载后就会这样),unlisten 会抛
+// unhandled rejection。清理阶段没什么可挽救的,吞掉即可。
+const safeUnlisten = (unlisten?: () => void) => {
+  try {
+    void Promise.resolve(unlisten?.()).catch(() => undefined);
+  } catch {
+    // 同上:清理失败无需上报。
+  }
+};
 
 export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   const document = useWorkbenchStore((state) => state.document);
@@ -1093,6 +1103,46 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     };
   }, [folderView?.rootPath, leftPanelOpen]);
 
+  // git 状态刷新。两条来源:
+  // 1. 监听器:.git 里 HEAD/refs/index 变了 = 外部动了 git(终端里 commit、切/删分支、rebase)。
+  // 2. 窗口聚焦:兜底。linked worktree 里 .git 是个文件,真正的 gitdir 在监听范围之外,
+  //    监听器根本看不到 ref 变化;watcher 启动失败时同理。
+  useEffect(() => {
+    if (!isTauriRuntime() || !folderView) {
+      return;
+    }
+
+    const refresh = () => {
+      if (!globalThis.document.hidden) {
+        void refreshGit();
+      }
+    };
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    listen(workspaceGitChangeEvent, () => void refreshGit())
+      .then((cleanup) => {
+        if (disposed) {
+          safeUnlisten(cleanup);
+          return;
+        }
+
+        unlisten = cleanup;
+      })
+      .catch(() => undefined);
+
+    window.addEventListener("focus", refresh);
+    globalThis.document.addEventListener("visibilitychange", refresh);
+
+    return () => {
+      disposed = true;
+      safeUnlisten(unlisten);
+      window.removeEventListener("focus", refresh);
+      globalThis.document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [folderView?.rootPath]);
+
   // 文件系统监听(替代轮询):Rust 侧 notify 去抖后上报「受影响目录」,
   // 这里只重新 list 那些「当前已加载」的层级,任意深度的增删改都能近实时反映到树上。
   useEffect(() => {
@@ -1141,7 +1191,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     })
       .then((cleanup) => {
         if (disposed) {
-          cleanup();
+          safeUnlisten(cleanup);
           return;
         }
 
@@ -1153,7 +1203,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
 
     return () => {
       disposed = true;
-      unlisten?.();
+      safeUnlisten(unlisten);
     };
   }, [folderView?.rootPath]);
 
@@ -1202,7 +1252,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
       })
       .then((cleanup) => {
         if (disposed) {
-          cleanup();
+          safeUnlisten(cleanup);
           return;
         }
 
@@ -1214,7 +1264,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
 
     return () => {
       disposed = true;
-      unlisten?.();
+      safeUnlisten(unlisten);
     };
   }, [folderView?.rootPath, requestFileOpen, scratchFolder?.path]);
 

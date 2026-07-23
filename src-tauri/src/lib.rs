@@ -34,6 +34,35 @@ use std::{
 const MENU_EVENT: &str = "norn-menu";
 const OPEN_FILES_EVENT: &str = "norn-open-files";
 const FS_CHANGE_EVENT: &str = "workspace-fs-change";
+const GIT_CHANGE_EVENT: &str = "workspace-git-change";
+
+/// .git 里哪些路径值得让前端重刷 git 状态:HEAD / refs / packed-refs / index /
+/// 进行中的操作标记(MERGE_HEAD、rebase-merge 等)。objects、logs、*.lock 这些是纯 churn,
+/// 每次 commit 都要写几十次,跟进去只会把面板刷爆。
+fn git_state_changed(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+
+    if name.ends_with(".lock") {
+        return false;
+    }
+
+    let after_git = path
+        .components()
+        .skip_while(|c| c.as_os_str() != ".git")
+        .skip(1)
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    let Some(first) = after_git.first() else {
+        return false;
+    };
+
+    // *_HEAD 覆盖 MERGE_HEAD / CHERRY_PICK_HEAD / REVERT_HEAD。
+    matches!(first.as_str(), "HEAD" | "index" | "packed-refs" | "refs")
+        || first.starts_with("rebase-")
+        || first.ends_with("_HEAD")
+}
 
 // 当前打开文件夹的文件系统监听器。切换文件夹时整体替换;drop 旧 debouncer 即停止其监听。
 #[derive(Default)]
@@ -795,39 +824,57 @@ fn watch_directory(
     let emitter = app.clone();
     // 去抖 400ms:把 git checkout / npm install 这类成千上万次事件合并成几批,
     // 每批只把「受影响条目的父目录」去重后发给前端,由前端按需刷新已加载的那几层。
-    let mut debouncer = new_debouncer(
-        Duration::from_millis(400),
-        move |result: DebounceEventResult| {
-            let Ok(events) = result else {
-                return;
-            };
+    let mut debouncer =
+        new_debouncer(
+            Duration::from_millis(400),
+            move |result: DebounceEventResult| {
+                let Ok(events) = result else {
+                    return;
+                };
 
-            let mut dirs: HashSet<String> = HashSet::new();
+                let mut dirs: HashSet<String> = HashSet::new();
+                let mut git_changed = false;
 
-            for event in events {
-                // .git / node_modules 内部 churn 不影响树展示,跳过以免无谓刷新风暴。
-                // ponytail: 仅过滤上报,递归监听仍会为这些目录占用 inotify 句柄(见 watch_directory 调用方注释)。
-                if event.path.components().any(|component| {
-                    matches!(
-                        component.as_os_str().to_str(),
-                        Some(".git") | Some("node_modules")
-                    )
-                }) {
-                    continue;
+                for event in events {
+                    // .git / node_modules 内部 churn 不影响树展示,跳过以免无谓刷新风暴。
+                    // ponytail: 仅过滤上报,递归监听仍会为这些目录占用 inotify 句柄(见 watch_directory 调用方注释)。
+                    let mut in_git = false;
+                    let skip = event.path.components().any(|component| {
+                        match component.as_os_str().to_str() {
+                            Some(".git") => {
+                                in_git = true;
+                                true
+                            }
+                            Some("node_modules") => true,
+                            _ => false,
+                        }
+                    });
+
+                    if skip {
+                        // 但 .git 里的 HEAD/refs/index 变了就是「外部动了 git」(终端里 commit、切/删分支、
+                        // rebase),树不用刷,git 面板必须刷 —— 否则面板一直停在打开仓库那一刻的快照。
+                        if in_git && git_state_changed(&event.path) {
+                            git_changed = true;
+                        }
+                        continue;
+                    }
+
+                    // 新建/删除/重命名都体现在「父目录」的列表里 → 重新 list 父目录即可。
+                    if let Some(parent) = event.path.parent() {
+                        dirs.insert(parent.to_string_lossy().into_owned());
+                    }
                 }
 
-                // 新建/删除/重命名都体现在「父目录」的列表里 → 重新 list 父目录即可。
-                if let Some(parent) = event.path.parent() {
-                    dirs.insert(parent.to_string_lossy().into_owned());
+                if !dirs.is_empty() {
+                    let _ = emitter.emit(FS_CHANGE_EVENT, dirs.into_iter().collect::<Vec<_>>());
                 }
-            }
 
-            if !dirs.is_empty() {
-                let _ = emitter.emit(FS_CHANGE_EVENT, dirs.into_iter().collect::<Vec<_>>());
-            }
-        },
-    )
-    .map_err(|error| format!("Unable to start file watcher: {error}"))?;
+                if git_changed {
+                    let _ = emitter.emit(GIT_CHANGE_EVENT, ());
+                }
+            },
+        )
+        .map_err(|error| format!("Unable to start file watcher: {error}"))?;
 
     debouncer
         .watcher()
@@ -2999,6 +3046,27 @@ pub fn run() {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn git_state_changed_tracks_refs_not_churn() {
+        let git = |rest: &str| Path::new("/repo/.git").join(rest);
+
+        // 外部动了 git → 前端必须重刷。
+        assert!(git_state_changed(&git("HEAD")));
+        assert!(git_state_changed(&git("index")));
+        assert!(git_state_changed(&git("packed-refs")));
+        assert!(git_state_changed(&git("refs/heads/main")));
+        assert!(git_state_changed(&git("MERGE_HEAD")));
+        assert!(git_state_changed(&git("rebase-merge/done")));
+
+        // 纯 churn:一次 commit 写几十次,跟进去只会把面板刷爆。
+        assert!(!git_state_changed(&git("objects/ab/cdef")));
+        assert!(!git_state_changed(&git("logs/HEAD")));
+        assert!(!git_state_changed(&git("index.lock")));
+        assert!(!git_state_changed(&git("refs/heads/main.lock")));
+        // .git 外的文件走另一条路(目录树刷新),不该被当成 git 状态变更。
+        assert!(!git_state_changed(Path::new("/repo/src/main.rs")));
+    }
 
     #[test]
     fn pending_open_files_buffers_until_ready_then_emits_live() {
