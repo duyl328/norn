@@ -1,7 +1,7 @@
 {
   "name": "norn",
   "private": true,
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "基于 Tauri、React 和 TypeScript 的轻量代码编辑器，内置简单 Git 工作流",
   "license": "MIT",
   "repository": {
