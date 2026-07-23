@@ -207,7 +207,7 @@ export function WorkbenchPage() {
           return;
         }
 
-        // 其余一律不打扰:退出前把所有文档存盘 / 存草稿,然后关窗(下次启动恢复未命名草稿)。
+        // 其余一律不打扰:关闭前把所有文档存盘 / 存草稿,再交给后端隐藏窗口或退出进程。
         void persistAllForQuitRef
           .current()
           .then((saved) => {

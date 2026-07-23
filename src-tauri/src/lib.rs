@@ -10,7 +10,11 @@ use notify_debouncer_mini::{
     DebounceEventResult, Debouncer,
 };
 #[cfg(target_os = "macos")]
-use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{AboutMetadata, Submenu};
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+#[cfg(target_os = "windows")]
+use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager, Theme};
 use tauri_plugin_dialog::DialogExt;
 
@@ -18,6 +22,8 @@ use crate::process::hidden_command;
 use serde::Serialize;
 #[cfg(target_os = "macos")]
 use std::collections::HashMap;
+#[cfg(target_os = "windows")]
+use std::sync::atomic::AtomicBool;
 use std::{
     collections::HashSet,
     fs::{self, File, OpenOptions},
@@ -72,6 +78,10 @@ struct PendingOpenFilesState(Mutex<PendingOpenFiles>);
 /// 进程启动时刻，用于度量「原生冷启动」部分（进程拉起 → WebView/前端可用），这段时间 JS 看不到。
 struct StartupClock(Instant);
 
+#[cfg(target_os = "windows")]
+#[derive(Default)]
+struct WindowsExitRequested(AtomicBool);
+
 /// 文件关联打开的待处理队列 + 前端就绪标记。
 /// 冷启动（尤其 macOS：文件经 Apple Event → `RunEvent::Opened` 到达，早于前端注册 listener）时，
 /// 文件先缓冲在 `pending`；前端挂载后 `take_initial_open_files` 排空并置 `ready`，之后改走实时事件。
@@ -117,6 +127,10 @@ const MENU_CHECK_FOR_UPDATES: &str = "menu-check-for-updates";
 const MENU_COMMUNITY: &str = "menu-community";
 const MENU_PRIVACY_STATEMENT: &str = "menu-privacy-statement";
 const MENU_ABOUT_NORN: &str = "menu-about-norn";
+#[cfg(target_os = "windows")]
+const TRAY_SHOW_NORN: &str = "tray-show-norn";
+#[cfg(target_os = "windows")]
+const TRAY_QUIT_NORN: &str = "tray-quit-norn";
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TextFile {
@@ -306,20 +320,34 @@ fn debug_log(message: String, payload: serde_json::Value) {
 }
 
 #[tauri::command]
-fn destroy_current_window(window: tauri::WebviewWindow) -> Result<(), String> {
-    // macOS:关最后一个窗口不退进程,改为隐藏 —— 保留 WebView 常驻内存,再次打开走
-    // Reopen/单实例的 show() 即可秒出,绕开冷启动(进程拉起 + WebKit 框架 page-in)。
-    // 进程仍可由 Cmd+Q / 菜单 Quit(PredefinedMenuItem::quit,走原生退出)真正结束。
-    #[cfg(target_os = "macos")]
+fn destroy_current_window(
+    window: tauri::WebviewWindow,
+    _app: tauri::AppHandle,
+) -> Result<(), String> {
+    // Windows 托盘「退出 Norn」会先走前端的保存/草稿流程,再由这里真正结束进程。
+    #[cfg(target_os = "windows")]
+    if _app
+        .state::<WindowsExitRequested>()
+        .0
+        .swap(false, Ordering::SeqCst)
+    {
+        _app.exit(0);
+        return Ok(());
+    }
+
+    // macOS / Windows:关最后一个窗口不退进程,改为隐藏并保留 WebView 常驻内存。
+    // macOS 由 Dock Reopen 唤回;Windows 由托盘或再次启动应用唤回。
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
         window.hide().map_err(|error| {
             eprintln!("[norn] failed to hide window {}: {error}", window.label());
             error.to_string()
         })?;
-        return Ok(());
+        Ok(())
     }
-    // 其它平台保持「关窗即退」的惯例。
-    #[cfg(not(target_os = "macos"))]
+
+    // Linux 等其它平台保持「关窗即退」的惯例。
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let label = window.label().to_string();
         window.destroy().map_err(|error| {
@@ -2872,6 +2900,72 @@ fn emit_open_files<R: tauri::Runtime>(app: &tauri::AppHandle<R>, paths: Vec<Stri
     }
 }
 
+#[cfg(target_os = "windows")]
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn request_windows_exit(app: &tauri::AppHandle) {
+    app.state::<WindowsExitRequested>()
+        .0
+        .store(true, Ordering::SeqCst);
+
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+        if let Err(error) = window.close() {
+            app.state::<WindowsExitRequested>()
+                .0
+                .store(false, Ordering::SeqCst);
+            eprintln!("[norn] failed to request window close from tray: {error}");
+        }
+    } else {
+        app.exit(0);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn build_windows_tray(app: &tauri::App) -> tauri::Result<()> {
+    let show_item = MenuItem::with_id(app, TRAY_SHOW_NORN, "显示 Norn", true, None::<&str>)?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit_item = MenuItem::with_id(app, TRAY_QUIT_NORN, "退出 Norn", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_item, &separator, &quit_item])?;
+
+    let mut builder = TrayIconBuilder::with_id("norn-main-tray")
+        .tooltip("Norn")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            TRAY_SHOW_NORN => show_main_window(app),
+            TRAY_QUIT_NORN => request_windows_exit(app),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if matches!(
+                event,
+                TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
+                }
+            ) {
+                show_main_window(tray.app_handle());
+            }
+        });
+
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+
+    builder.build(app)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let startup_clock = StartupClock(Instant::now());
@@ -2925,6 +3019,12 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             if let Some(window) = app.get_webview_window("main") {
                 window.set_decorations(false)?;
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                let _ = app.manage(WindowsExitRequested::default());
+                build_windows_tray(app)?;
             }
 
             // 窗口初始 visible:false(避免启动透明框),正常情况下前端挂载后会调用 show()。
