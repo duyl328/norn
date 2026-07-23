@@ -38,6 +38,7 @@ import {
   formatFileSize,
   getEditorScrollbarGeometry,
   getFileTreeIcon,
+  getRelativePathInside,
   getTabBorderAccent,
   isTauriRuntime,
 } from "../workbench-utils";
@@ -437,8 +438,8 @@ export function EditorSurface({
       return;
     }
     const relative =
-      rootPath && !document.isUntitled && document.mode === "editable" && document.path.startsWith(`${rootPath}/`)
-        ? document.path.slice(rootPath.length + 1)
+      rootPath && !document.isUntitled && document.mode === "editable"
+        ? getRelativePathInside(document.path, rootPath)
         : null;
     const docId = document.id;
     let cancelled = false;

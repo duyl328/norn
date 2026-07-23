@@ -30,6 +30,7 @@ import {
   getPathName,
   getProjectAccentStyle,
   getProjectInitials,
+  getRelativePathInside,
   getTabAccent,
   getTabBorderAccent,
   getTailPath,
@@ -115,6 +116,12 @@ describe("path helpers", () => {
     expect(isPathInsideOrEqual("/a/b", "/a")).toBe(true);
     expect(isPathInsideOrEqual("/a", "/a")).toBe(true);
     expect(isPathInsideOrEqual("/ab", "/a")).toBe(false);
+  });
+
+  it("getRelativePathInside handles Windows and POSIX separators", () => {
+    expect(getRelativePathInside("C:\\repo\\src\\main.ts", "C:\\repo")).toBe("src/main.ts");
+    expect(getRelativePathInside("/repo/src/main.ts", "/repo/")).toBe("src/main.ts");
+    expect(getRelativePathInside("C:\\repository\\main.ts", "C:\\repo")).toBeNull();
   });
 
   it("arePathsEqual normalizes separators and trailing slashes", () => {

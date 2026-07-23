@@ -684,6 +684,18 @@ export const moveTreeLead = (
   return singleSelection(scope, leadPath);
 };
 
+export const getRelativePathInside = (path: string, possibleParent: string): string | null => {
+  const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  const normalizedParent = possibleParent.replace(/\\/g, "/").replace(/\/+$/, "");
+
+  if (normalizedPath === normalizedParent) {
+    return "";
+  }
+
+  const prefix = `${normalizedParent}/`;
+  return normalizedPath.startsWith(prefix) ? normalizedPath.slice(prefix.length) : null;
+};
+
 export const isPathInsideOrEqual = (path: string, possibleParent: string) => {
   const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
   const normalizedParent = possibleParent.replace(/\\/g, "/").replace(/\/+$/, "");
