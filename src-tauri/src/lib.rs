@@ -1,4 +1,5 @@
 mod git;
+mod process;
 
 use encoding_rs::{
     Encoding, BIG5, EUC_JP, EUC_KR, GBK, SHIFT_JIS, UTF_16BE, UTF_16LE, UTF_8, WINDOWS_1252,
@@ -13,6 +14,7 @@ use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, Manager, Theme};
 use tauri_plugin_dialog::DialogExt;
 
+use crate::process::hidden_command;
 use serde::Serialize;
 #[cfg(target_os = "macos")]
 use std::collections::HashMap;
@@ -319,7 +321,10 @@ fn path_kind(path: String) -> Result<String, String> {
         return Ok("file".to_string());
     }
 
-    Err(format!("{} is not a supported file system item", path.display()))
+    Err(format!(
+        "{} is not a supported file system item",
+        path.display()
+    ))
 }
 
 /// 自进程启动至今的毫秒数。前端用它估算「原生冷启动」耗时（进程拉起 → 前端首次能调用此命令）。
@@ -331,7 +336,7 @@ fn app_startup_ms(clock: tauri::State<'_, StartupClock>) -> u64 {
 /// 快捷检测:仅运行 `git --version`,不依赖任何打开的文件夹。供设置页「检测 Git」按钮用。
 #[tauri::command]
 async fn detect_git_cli() -> GitCliDetection {
-    match Command::new("git").arg("--version").output() {
+    match hidden_command("git").arg("--version").output() {
         Ok(output) if output.status.success() => {
             let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
             GitCliDetection {
@@ -369,7 +374,7 @@ async fn inspect_git_workspace(path: String) -> Result<GitWorkspaceInspection, S
         return Err(format!("{} is not a directory", workspace.display()));
     }
 
-    let git_version_output = Command::new("git").arg("--version").output();
+    let git_version_output = hidden_command("git").arg("--version").output();
     let git_version_output = match git_version_output {
         Ok(output) => output,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -411,7 +416,7 @@ async fn inspect_git_workspace(path: String) -> Result<GitWorkspaceInspection, S
         });
     }
 
-    let git_root_output = Command::new("git")
+    let git_root_output = hidden_command("git")
         .args(["-C"])
         .arg(&workspace)
         .args(["rev-parse", "--show-toplevel"])
@@ -444,7 +449,7 @@ async fn inspect_git_workspace(path: String) -> Result<GitWorkspaceInspection, S
         Some(git_root)
     };
 
-    let branch_output = Command::new("git")
+    let branch_output = hidden_command("git")
         .args(["-C"])
         .arg(&workspace)
         .args(["branch", "--show-current"])
@@ -874,19 +879,20 @@ fn open_external(target: String) -> Result<(), String> {
 
     #[cfg(target_os = "macos")]
     let mut command = {
-        let mut c = Command::new("open");
+        let mut c = hidden_command("open");
         c.arg(&target);
         c
     };
     #[cfg(target_os = "windows")]
     let mut command = {
-        let mut c = Command::new("cmd");
+        // cmd 只是把 URL 转交默认浏览器，它自己的控制台窗口纯属副作用。
+        let mut c = hidden_command("cmd");
         c.args(["/C", "start", "", &target]);
         c
     };
     #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     let mut command = {
-        let mut c = Command::new("xdg-open");
+        let mut c = hidden_command("xdg-open");
         c.arg(&target);
         c
     };
@@ -916,7 +922,7 @@ fn open_terminal_at(path: String) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        // 优先 Windows Terminal;不可用时回退到 cmd。
+        // 优先 Windows Terminal(GUI 程序,自带窗口);不可用时回退到 cmd。
         if Command::new("wt.exe")
             .arg("-d")
             .arg(&directory)
@@ -925,7 +931,8 @@ fn open_terminal_at(path: String) -> Result<(), String> {
         {
             return Ok(());
         }
-        Command::new("cmd")
+        // GUI 进程没有可继承的控制台,必须显式 CREATE_NEW_CONSOLE,否则 cmd 无窗口可用。
+        crate::process::console_command("cmd")
             .arg("/K")
             .current_dir(&directory)
             .spawn()
@@ -971,7 +978,7 @@ fn reveal_in_file_manager(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         // explorer /select 即便成功也常返回非 0 退出码,故只 spawn、不校验状态。
-        Command::new("explorer")
+        hidden_command("explorer")
             .arg(format!("/select,{}", target.display()))
             .spawn()
             .map_err(|error| format!("Unable to open File Explorer: {error}"))?;
@@ -3072,11 +3079,12 @@ mod tests {
         let file_path = workspace.root.join("notes.txt");
         fs::write(&file_path, "hello").expect("file should be written");
 
-        assert_eq!(path_kind(workspace.path_string(&file_path)).unwrap(), "file");
-        assert_eq!(path_kind(workspace.root_string()).unwrap(), "directory");
-        assert!(
-            path_kind(workspace.path_string(&workspace.root.join("missing.txt"))).is_err()
+        assert_eq!(
+            path_kind(workspace.path_string(&file_path)).unwrap(),
+            "file"
         );
+        assert_eq!(path_kind(workspace.root_string()).unwrap(), "directory");
+        assert!(path_kind(workspace.path_string(&workspace.root.join("missing.txt"))).is_err());
     }
 
     #[test]

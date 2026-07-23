@@ -2,7 +2,9 @@
 //! 向前端返回结构化错误 `{ kind, message }`。变更模型是扁平的——
 //! 不区分已暂存/未暂存，提交即提交全部改动（`git add -A` + `git commit`）。
 
-use std::{collections::HashMap, path::Path, path::PathBuf, process::Command};
+use std::{collections::HashMap, path::Path, path::PathBuf};
+
+use crate::process::hidden_command;
 
 use serde::Serialize;
 
@@ -146,7 +148,7 @@ pub struct GitWorktree {
 // --- 进程执行 -------------------------------------------------------------
 
 fn run_git(workspace: &Path, args: &[&str]) -> Result<std::process::Output, GitError> {
-    let mut cmd = Command::new("git");
+    let mut cmd = hidden_command("git");
     // 强制 C locale：classify() 靠英文 stderr 子串识别错误类型，本地化 git 会让
     // IdentityMissing/NoUpstream/Conflict 等全部塌缩成 Io（含新分支首推无法回退 -u）。
     cmd.env("LC_ALL", "C").env("LANG", "C");

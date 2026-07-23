@@ -1,20 +1,81 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
   <component name="ChangeListManager">
-    <list default="true" id="bc104265-b171-48d5-96a6-e6b43947d310" name="Changes" comment="" />
+    <list default="true" id="656cf1f8-d3cb-43c9-a11b-e83c5b98ac50" name="更改" comment="todo">
+      <change afterPath="$PROJECT_DIR$/src/features/workbench/drafts.ts" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/features/workbench/editor-cjk-word-select.ts" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/features/workbench/session.ts" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/unit/drafts.test.ts" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/unit/editor-cjk-word-select.test.ts" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/unit/editor-jump-history.test.ts" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/unit/editor-linewise-clipboard.test.ts" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/unit/session.test.ts" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/unit/settings-migration.test.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/doc/发布新版本指南.md" beforeDir="false" afterPath="$PROJECT_DIR$/doc/发布新版本指南.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/scripts/release.mjs" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/release.mjs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src-tauri/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/src-tauri/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src-tauri/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/src-tauri/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src-tauri/gen/schemas/desktop-schema.json" beforeDir="false" afterPath="$PROJECT_DIR$/src-tauri/gen/schemas/desktop-schema.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src-tauri/src/lib.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src-tauri/src/lib.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src-tauri/tauri.conf.json" beforeDir="false" afterPath="$PROJECT_DIR$/src-tauri/tauri.conf.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/app.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/app.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/features/workbench/actions/editor-actions.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/features/workbench/actions/editor-actions.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/features/workbench/codemirror-setup.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/features/workbench/codemirror-setup.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/features/workbench/components/editor-surface.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/features/workbench/components/editor-surface.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/features/workbench/components/settings.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/features/workbench/components/settings.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/features/workbench/components/status-bar.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/features/workbench/components/status-bar.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/features/workbench/constants.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/features/workbench/constants.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/features/workbench/editor-commands.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/features/workbench/editor-commands.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/features/workbench/hooks/use-document-session.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/features/workbench/hooks/use-document-session.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/features/workbench/i18n-dictionaries.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/features/workbench/i18n-dictionaries.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/features/workbench/settings.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/features/workbench/settings.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/features/workbench/store/workbench-store.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/features/workbench/store/workbench-store.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/features/workbench/types.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/features/workbench/types.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/features/workbench/workbench-page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/features/workbench/workbench-page.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/features/workbench/workbench-utils.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/features/workbench/workbench-utils.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/styles.css" beforeDir="false" afterPath="$PROJECT_DIR$/src/styles.css" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/components/use-document-session.test.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/tests/components/use-document-session.test.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/components/workbench-page.test.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/tests/components/workbench-page.test.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/unit/workbench-store.test.ts" beforeDir="false" afterPath="$PROJECT_DIR$/tests/unit/workbench-store.test.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/unit/workbench-utils.test.ts" beforeDir="false" afterPath="$PROJECT_DIR$/tests/unit/workbench-utils.test.ts" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
+  <component name="ChangesViewManager">
+    <option name="groupingKeys">
+      <option value="directory" />
+      <option value="repository" />
+    </option>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 3,
-  "fromUser": false
-}]]></component>
-  <component name="ProjectId" id="3FiOtTxHkdYE0MGqrAeMBpWsxQS" />
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;duyl328&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/duyl328/norn.git&quot;,
+    &quot;accountId&quot;: &quot;6cc0ac6d-c76b-40f7-8b1f-637175d7691c&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 3
+}</component>
+  <component name="ProjectId" id="3FIoPShps1dtgDeOupFpsr40ieY" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
@@ -23,14 +84,17 @@
   "keyToString": {
     "ModuleVcsDetector.initialDetectionPerformed": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "codeWithMe.voiceChat.enabledByDefault": "false",
-    "git-widget-placeholder": "main",
-    "kotlin-language-version-configured": "true",
-    "last_opened_file_path": "/Users/jimmygatsby/temp/norn",
+    "git-widget-placeholder": "Merging main",
+    "ignore.virus.scanning.warn.message": "true",
+    "last_opened_file_path": "D:/yuanll/code/norn",
     "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "pnpm",
     "vue.rearranger.settings.migration": "true"
   }
@@ -38,20 +102,36 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-jdk-30f59d01ecdd-37e91769500f-intellij.indexing.shared.core-IU-261.25134.95" />
-        <option value="bundled-js-predefined-d6986cc7102b-31caf2ab9e3c-JavaScript-IU-261.25134.95" />
+        <option value="bundled-python-sdk-245168a56dbd-c2ffad84badb-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-261.25134.203" />
       </set>
     </attachedChunks>
   </component>
   <component name="TaskManager">
-    <task active="true" id="Default" summary="Default task">
-      <changelist id="bc104265-b171-48d5-96a6-e6b43947d310" name="Changes" comment="" />
-      <created>1782554637697</created>
+    <task active="true" id="Default" summary="默认任务">
+      <changelist id="656cf1f8-d3cb-43c9-a11b-e83c5b98ac50" name="更改" comment="" />
+      <created>1781771920310</created>
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
-      <updated>1782554637697</updated>
-      <workItem from="1782554638919" duration="4196000" />
+      <updated>1781771920310</updated>
+      <workItem from="1783386917277" duration="1855000" />
     </task>
+    <task id="LOCAL-00001" summary="运行方式提交">
+      <option name="closed" value="true" />
+      <created>1781771986429</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1781771986429</updated>
+    </task>
+    <task id="LOCAL-00002" summary="todo">
+      <option name="closed" value="true" />
+      <created>1781776001033</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1781776001033</updated>
+    </task>
+    <option name="localTasksCounter" value="3" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -67,5 +147,10 @@
         </entry>
       </map>
     </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="运行方式提交" />
+    <MESSAGE value="todo" />
+    <option name="LAST_COMMIT_MESSAGE" value="todo" />
   </component>
 </project>
