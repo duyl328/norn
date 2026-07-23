@@ -11,14 +11,16 @@ use std::process::Command;
 
 /// 不弹控制台窗口的子进程。用于所有后台调用（git、explorer、start 等）。
 pub fn hidden_command(program: &str) -> Command {
-    let mut command = Command::new(program);
+    let command = Command::new(program);
     #[cfg(target_os = "windows")]
-    {
+    let command = {
+        let mut command = command;
         use std::os::windows::process::CommandExt;
         // winbase.h: CREATE_NO_WINDOW
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         command.creation_flags(CREATE_NO_WINDOW);
-    }
+        command
+    };
     command
 }
 
