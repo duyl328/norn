@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
-import { getTauriInvokeCalls, openMockFolder } from "./helpers";
+import { emitMenu, getTauriInvokeCalls, openMockFolder } from "./helpers";
 import {
   clearMockInvokeError,
   deleteMockPath,
@@ -196,6 +196,52 @@ test("TREE-LOAD-018：主工作区与临时树的加载和错误状态互不串�
   await expect(scratchRegion(page).getByText("scratch denied")).toBeVisible();
   await expect(row(mainRegion(page), "main.txt")).toBeVisible();
   await expect(mainRegion(page).getByText("scratch denied")).toHaveCount(0);
+});
+
+test("TREE-LOAD-017：最近文件夹去重排序限量且无效目录不破坏当前工作区", async ({ page }) => {
+  const paths = Array.from({ length: 9 }, (_, index) => `/mock/recent-${index}`);
+  const currentPath = paths[3];
+  const invalidPath = paths[5];
+  const directories = Object.fromEntries([
+    ...paths.map((path, index) => [path, [file(`marker-${index}.txt`, path)]]),
+    [scratchPath, []],
+  ]);
+  await installTauriMock(page, {
+    directories,
+    folderDialogPaths: [...paths, currentPath],
+  });
+  await page.goto("/");
+
+  for (const path of [...paths, currentPath]) {
+    await emitMenu(page, "menu-open-folder");
+    await expect(mainRegion(page).locator('button.tree-row-root[data-tree-drop-scope="main"]')).toHaveAttribute(
+      "title",
+      path,
+    );
+  }
+
+  const recent = await page.evaluate(() => JSON.parse(localStorage.getItem("norn.recentFolders") ?? "[]"));
+  expect(recent.map((folder: { path: string }) => folder.path)).toEqual([
+    currentPath,
+    paths[8],
+    paths[7],
+    paths[6],
+    paths[5],
+    paths[4],
+    paths[2],
+    paths[1],
+  ]);
+
+  await setMockInvokeError(page, `list_directory:${invalidPath}`, "recent folder missing");
+  await page.locator(".project-panel-recent-select").click();
+  await page.locator(".project-panel-recent-menu-item", { hasText: "recent-5" }).click();
+
+  await expect(page.getByText("recent folder missing")).toBeVisible();
+  await expect(mainRegion(page).locator('button.tree-row-root[data-tree-drop-scope="main"]')).toHaveAttribute(
+    "title",
+    currentPath,
+  );
+  await expect(row(mainRegion(page), "marker-3.txt")).toBeVisible();
 });
 
 test("TREE-SELECT-006：折叠后复制不会包含不可见的过期选中路径", async ({ page }) => {
