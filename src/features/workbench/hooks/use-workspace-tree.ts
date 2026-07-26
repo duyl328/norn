@@ -106,6 +106,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
 
   const dropTargetRef = useRef<TreeDropTarget | null>(null);
   const folderOpenRequestRef = useRef(0);
+  const folderRefreshRequestRef = useRef(new Map<string, number>());
   const loadingDirectoriesRef = useRef(new Set<string>());
   const isDirty = isDocumentDirty(document);
 
@@ -155,6 +156,9 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
       return;
     }
 
+    const rootPath = folderView.rootPath;
+    const requestId = (folderRefreshRequestRef.current.get(path) ?? 0) + 1;
+    folderRefreshRequestRef.current.set(path, requestId);
     const collapseChildren = options.collapseChildren ?? true;
     const preserveExpansion = options.preserveExpansion ?? false;
 
@@ -165,6 +169,13 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     try {
       const children = await readFolderEntries(path);
       const nextChildren = collapseChildren ? collapseTreeNodesDeep(children) : children;
+
+      if (
+        folderRefreshRequestRef.current.get(path) !== requestId ||
+        useWorkbenchStore.getState().folderView?.rootPath !== rootPath
+      ) {
+        return;
+      }
 
       const state = useWorkbenchStore.getState();
       const currentView = state.folderView;
@@ -203,6 +214,12 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
         currentView ? applyFolderEntries(currentView, path, nextChildren, preserveExpansion) : currentView,
       );
     } catch (error) {
+      if (
+        folderRefreshRequestRef.current.get(path) !== requestId ||
+        useWorkbenchStore.getState().folderView?.rootPath !== rootPath
+      ) {
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       setFolderView((currentView) => (currentView ? applyFolderError(currentView, path, message) : currentView));
     }
@@ -466,7 +483,9 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     if (!current || current.scope !== scope) {
       return [];
     }
+    const visiblePaths = new Set(getVisibleTreePaths(scope));
     return current.paths
+      .filter((path) => visiblePaths.has(path))
       .map((path) => getTreeNodeByPath(scope, path))
       .filter((node): node is FileTreeNode => Boolean(node));
   };
@@ -598,8 +617,8 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     const search = useWorkbenchStore.getState().treeSearch;
     const searching = Boolean(search && search.scope === scope && search.query);
     const leadPath = current && current.scope === scope ? current.leadPath : null;
-    const leadNode = leadPath ? getTreeNodeByPath(scope, leadPath) : null;
     const leadIndex = leadPath ? order.indexOf(leadPath) : -1;
+    const leadNode = leadIndex >= 0 && leadPath ? getTreeNodeByPath(scope, leadPath) : null;
     const pageRows = 10;
 
     // Ctrl/Cmd 组合优先处理(否则字母会被「即输即搜」吃掉)。任何此类操作都视作「操作后」→ 退出搜索。

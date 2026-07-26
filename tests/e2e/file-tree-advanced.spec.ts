@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
-import { emitMenu, getTauriInvokeCalls, openMockFolder } from "./helpers";
+import { getTauriInvokeCalls, openMockFolder } from "./helpers";
 import {
   clearMockInvokeError,
   deleteMockPath,
@@ -218,6 +218,9 @@ test("TREE-SELECT-006：折叠后复制不会包含不可见的过期选中路�
   const calls = await getTauriInvokeCalls(page);
   const copyCall = calls?.filter((call) => call.cmd === "copy_files_to_clipboard").at(-1);
   expect(copyCall?.args.paths).toEqual([`${projectPath}/visible.txt`]);
+
+  await page.getByRole("tree", { name: "project" }).press("Delete");
+  await expect(page.getByRole("dialog", { name: /trash/i })).toHaveCount(0);
 });
 
 test("TREE-SELECT-010：主工作区与临时树选择互斥且操作使用正确作用域", async ({ page }) => {
