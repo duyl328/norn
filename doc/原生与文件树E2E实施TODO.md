@@ -12,9 +12,14 @@
 
 ### 2.0 实施进度（2026-07-26）
 
-已新增 `tests/native-e2e/file-system.spec.ts`，首组 5 条真实 Windows/Tauri E2E 覆盖 6 个用例 ID，当前全部通过。
+已新增 `tests/native-e2e/file-system.spec.ts`，当前 10 条真实 Windows/Tauri E2E 覆盖 11 个用例 ID，全部通过。
 
 - [x] `NATIVE-FILE-OPEN-001` / `NATIVE-FILE-OPEN-003`：真实 Unicode 路径 UTF-8 文件正常打开。
+- [x] `NATIVE-FILE-OPEN-002`：UTF-8 BOM、UTF-16 LE/BE 文件正常打开且不显示 BOM 字符。
+- [x] `NATIVE-FILE-OPEN-004`：检查文件期间真实文件被删除，不创建半初始化 Tab。
+- [x] `NATIVE-FILE-OPEN-005`：读取文件期间被其他进程修改，打开修改后的完整版本。
+- [x] `NATIVE-FILE-OPEN-006`：读取文件期间真实文件被重命名，不产生旧、新重复 Tab。
+- [x] `NATIVE-FILE-OPEN-007`：检查后被替换为二进制文件时拒绝打开。
 - [x] `NATIVE-FILE-EDIT-001`：其他进程修改真实文件后干净文档自动重载。
 - [x] `NATIVE-FILE-EDIT-002`：脏文档保留本地内容，选择磁盘版本时读取点击时的最新内容。
 - [x] `NATIVE-FILE-EDIT-003`：真实删除后文件树刷新，活动文档显示删除冲突。
@@ -28,12 +33,12 @@
 ### 2.1 打开与外部变化
 
 - [x] `NATIVE-FILE-OPEN-001` 打开真实 UTF-8 文件，编辑器内容、Tab 名称和路径正确。
-- [ ] `NATIVE-FILE-OPEN-002` 打开 UTF-8 BOM、UTF-16 LE/BE 文件不出现 BOM 字符或乱码。
+- [x] `NATIVE-FILE-OPEN-002` 打开 UTF-8 BOM、UTF-16 LE/BE 文件不出现 BOM 字符或乱码。
 - [x] `NATIVE-FILE-OPEN-003` 中文、空格、emoji、`#`、`%` 和方括号路径能够打开。
-- [ ] `NATIVE-FILE-OPEN-004` 打开过程中真实文件被删除，不创建半初始化 Tab。
-- [ ] `NATIVE-FILE-OPEN-005` 打开过程中真实文件被其他进程修改，内容和元数据来自同一版本。
-- [ ] `NATIVE-FILE-OPEN-006` 打开过程中真实文件被重命名，不产生旧、新重复 Tab。
-- [ ] `NATIVE-FILE-OPEN-007` 读取前替换为二进制文件时拒绝打开。
+- [x] `NATIVE-FILE-OPEN-004` 打开过程中真实文件被删除，不创建半初始化 Tab。
+- [x] `NATIVE-FILE-OPEN-005` 打开过程中真实文件被其他进程修改，内容和元数据来自同一版本。
+- [x] `NATIVE-FILE-OPEN-006` 打开过程中真实文件被重命名，不产生旧、新重复 Tab。
+- [x] `NATIVE-FILE-OPEN-007` 读取前替换为二进制文件时拒绝打开。
 - [x] `NATIVE-FILE-EDIT-001` 干净文档被外部进程修改后通过真实 watcher 自动重载。
 - [x] `NATIVE-FILE-EDIT-002` 脏文档被外部进程修改后保留本地内容并显示冲突。
 - [x] `NATIVE-FILE-EDIT-003` 干净文档被外部删除后显示删除冲突。

@@ -574,6 +574,7 @@ async fn open_save_dialog(app: tauri::AppHandle, default_name: Option<String>) -
 #[tauri::command]
 async fn read_text_file(path: String, encoding: Option<String>) -> Result<TextFile, String> {
     let path = PathBuf::from(path);
+    wait_for_native_e2e_hook("read_text_file", &path)?;
     let metadata = fs::metadata(&path)
         .map_err(|error| format_file_error("Unable to read file metadata", &path, error))?;
 
@@ -719,6 +720,7 @@ async fn inspect_text_file(path: String) -> Result<TextFileInspection, String> {
     const SAMPLE_BYTES: usize = 16 * 1024;
 
     let path = PathBuf::from(path);
+    wait_for_native_e2e_hook("inspect_text_file", &path)?;
     let metadata = fs::metadata(&path)
         .map_err(|error| format_file_error("Unable to read file metadata", &path, error))?;
 
@@ -2290,6 +2292,54 @@ fn save_error_from_io(context: &str, path: &Path, error: std::io::Error) -> Save
     };
 
     save_error(kind, format_file_error(context, path, error))
+}
+
+fn wait_for_native_e2e_hook(command: &str, path: &Path) -> Result<(), String> {
+    let Some(hook_dir) = std::env::var_os("NORN_NATIVE_E2E_HOOK_DIR").map(PathBuf::from) else {
+        return Ok(());
+    };
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("unknown");
+    let safe_name = file_name
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    let key = format!("{command}--{safe_name}");
+    let pause_path = hook_dir.join(format!("{key}.pause"));
+
+    if !pause_path.is_file() {
+        return Ok(());
+    }
+
+    let reached_path = hook_dir.join(format!("{key}.reached"));
+    let release_path = hook_dir.join(format!("{key}.release"));
+    fs::write(&reached_path, b"reached").map_err(|error| {
+        format_file_error("Unable to signal native E2E hook", &reached_path, error)
+    })?;
+    let deadline = Instant::now() + Duration::from_secs(20);
+
+    while !release_path.is_file() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    let released = release_path.is_file();
+    let _ = fs::remove_file(&pause_path);
+    let _ = fs::remove_file(&reached_path);
+    let _ = fs::remove_file(&release_path);
+
+    if released {
+        Ok(())
+    } else {
+        Err(format!("Timed out waiting for native E2E hook {key}"))
+    }
 }
 
 fn format_file_error(context: &str, path: &Path, error: std::io::Error) -> String {

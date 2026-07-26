@@ -10,6 +10,7 @@ const repository = join(fixtureRoot, "repository");
 const remote = join(fixtureRoot, "remote.git");
 const peer = join(fixtureRoot, "peer");
 const files = join(fixtureRoot, "files");
+const hooks = join(fixtureRoot, "hooks");
 
 const git = (cwd, ...args) =>
   execFileSync("git", args, {
@@ -45,6 +46,7 @@ try {
   mkdirSync(repository);
   mkdirSync(remote);
   mkdirSync(files);
+  mkdirSync(hooks);
   git(remote, "init", "--bare", "-b", "main");
 
   git(repository, "init", "-b", "main");
@@ -92,6 +94,7 @@ try {
     NORN_NATIVE_E2E_REMOTE: remote,
     NORN_NATIVE_E2E_PEER: peer,
     NORN_NATIVE_E2E_FILES: files,
+    NORN_NATIVE_E2E_HOOK_DIR: hooks,
   });
 } finally {
   rmSync(fixtureRoot, { force: true, recursive: true });

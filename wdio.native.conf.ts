@@ -6,6 +6,9 @@ if (!process.env.NORN_NATIVE_E2E_REPO) {
 if (!process.env.NORN_NATIVE_E2E_FILES) {
   throw new Error("NORN_NATIVE_E2E_FILES is required; use pnpm test:e2e:native");
 }
+if (!process.env.NORN_NATIVE_E2E_HOOK_DIR) {
+  throw new Error("NORN_NATIVE_E2E_HOOK_DIR is required; use pnpm test:e2e:native");
+}
 
 const application = resolve("src-tauri/target/debug/norn.exe");
 
