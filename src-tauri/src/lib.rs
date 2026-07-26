@@ -669,6 +669,41 @@ async fn save_text_file(
         ));
     }
 
+    wait_for_native_e2e_hook("save_text_file_after_version_check", &path)
+        .map_err(|message| save_error(SaveTextFileErrorKind::Io, message))?;
+
+    if should_check_mtime {
+        let latest_metadata = fs::metadata(&path).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                return save_error(
+                    SaveTextFileErrorKind::Deleted,
+                    format!(
+                        "{} no longer exists. Choose a new location to save this file.",
+                        path.display()
+                    ),
+                );
+            }
+            save_error_from_io(
+                "Unable to revalidate file metadata before saving",
+                &path,
+                error,
+            )
+        })?;
+        let changed_after_validation = modified_time_millis(&latest_metadata)
+            != current_last_modified
+            || latest_metadata.len() != metadata.len();
+
+        if changed_after_validation {
+            return Err(save_error(
+                SaveTextFileErrorKind::Modified,
+                format!(
+                    "{} was changed outside Norn after validation. Review the conflict before saving.",
+                    path.display()
+                ),
+            ));
+        }
+    }
+
     let encoding_name = encoding.as_deref().unwrap_or("utf-8");
     let encoded = encode_text_bytes(&content, encoding_name, has_bom.unwrap_or(false))?;
     atomic_write_text_file(&path, &encoded)?;
