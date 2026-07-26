@@ -99,14 +99,17 @@
 
 ### 3.1 加载、选择和键盘
 
-- [ ] 补齐 `TREE-LOAD-009`、`TREE-LOAD-012`～`TREE-LOAD-018`。
-- [ ] 补齐 `TREE-SELECT-006`、`TREE-SELECT-010`、`TREE-SELECT-011`。
+- [x] 完成 `TREE-LOAD-009`、`TREE-LOAD-012`、`TREE-LOAD-013`、`TREE-LOAD-015`、`TREE-LOAD-016`、`TREE-LOAD-018`。
+- [ ] 补齐 `TREE-LOAD-014`、`TREE-LOAD-017`。
+- [x] 完成 `TREE-SELECT-006`、`TREE-SELECT-010`、`TREE-SELECT-011`。
 - [x] 完成 `TREE-KEY-001`～`TREE-KEY-014`：方向键、Home/End、展开折叠、Enter、Esc、多选、剪贴板、即时搜索和虚拟滚动。
 - [x] `TREE-KEY-015`：编辑器、命名输入框和上下文菜单中的按键不会误触文件树快捷键。
 
 本批文件树测试发现并已修复的问题：
 
 - [x] `TREE-BUG-001` 上下文菜单未接管焦点，按 Delete 会误触文件树的回收站确认。
+- [ ] `TREE-BUG-002` 较旧的目录刷新响应会覆盖较新的刷新结果。
+- [ ] `TREE-BUG-003` 折叠目录后复制仍会包含不可见后代的过期选区。
 
 ### 3.2 CRUD、剪贴板和拖拽
 

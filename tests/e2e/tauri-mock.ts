@@ -10,6 +10,7 @@ export type TauriMockScenario = {
   fileDialogPath?: string | null;
   saveDialogPath?: string | null;
   gitInspection?: Record<string, unknown>;
+  gitIgnoredFiles?: string[];
   invokeGates?: string[];
   invokeErrors?: Record<string, unknown>;
   settings?: Record<string, unknown>;
@@ -29,6 +30,7 @@ export type TauriMockFileOptions = {
 type TauriMockRuntimeControl = {
   clearInvokeError: (key: string) => void;
   deletePath: (path: string) => void;
+  gateNextInvokeSnapshot: (key: string) => void;
   getFile: (path: string) => { content?: string; lastModified?: number };
   hasPendingInvoke: (key: string) => boolean;
   releaseAllInvokes: (key: string) => number;
@@ -212,6 +214,7 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
     const invokeErrors = clone(mockScenario.invokeErrors ?? {}) as Record<string, unknown>;
     const folderDialogPaths = clone(mockScenario.folderDialogPaths ?? []);
     const invokeGates = new Set(clone(mockScenario.invokeGates ?? []));
+    const snapshotInvokeGates = new Set<string>();
     const pendingInvokes = new Map<string, number>();
     const invokeWaiters = new Map<string, Array<() => void>>();
     const draftStorageKey = "__nornMockDrafts";
@@ -402,6 +405,7 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
         case "git_branches":
           return { current: "main", local: [], remote: [] };
         case "git_ignored_files":
+          return clone(mockScenario.gitIgnoredFiles ?? []);
         case "git_recent_commits":
         case "git_log":
         case "git_worktrees":
@@ -648,7 +652,22 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
       },
       invoke(cmd: string, args: Record<string, unknown> = {}) {
         const gate = configuredGate(cmd, args);
+        const shouldSnapshot = Boolean(gate && snapshotInvokeGates.delete(gate));
+        if (shouldSnapshot && gate) invokeGates.delete(gate);
+        let snapshot: { ok: true; value: unknown } | { ok: false; error: unknown } | null = null;
+        if (shouldSnapshot) {
+          try {
+            snapshot = { ok: true, value: clone(route(cmd, args)) };
+          } catch (error) {
+            snapshot = { ok: false, error };
+          }
+        }
         const execute = (resolve: (value: unknown) => void, reject: (reason?: unknown) => void) => {
+          if (snapshot) {
+            if (snapshot.ok) resolve(snapshot.value);
+            else reject(snapshot.error);
+            return;
+          }
           try {
             resolve(route(cmd, args));
           } catch (error) {
@@ -686,6 +705,10 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
     (window as unknown as { __tauriMockRuntime: TauriMockRuntimeControl }).__tauriMockRuntime = {
       clearInvokeError: (key) => delete invokeErrors[key],
       deletePath: deleteMockPath,
+      gateNextInvokeSnapshot: (key) => {
+        invokeGates.add(key);
+        snapshotInvokeGates.add(key);
+      },
       getFile: (path) => ({ content: fileContents[path], lastModified: fileLastModified[path] }),
       hasPendingInvoke: (key) => (pendingInvokes.get(key) ?? 0) > 0,
       releaseAllInvokes: (key) => {
@@ -734,6 +757,16 @@ export async function waitForMockInvoke(page: Page, key: string): Promise<void> 
   await page.waitForFunction(
     (invokeKey) =>
       (window as unknown as { __tauriMockRuntime: TauriMockRuntimeControl }).__tauriMockRuntime.hasPendingInvoke(
+        invokeKey,
+      ),
+    key,
+  );
+}
+
+export async function gateNextMockInvokeSnapshot(page: Page, key: string): Promise<void> {
+  await page.evaluate(
+    (invokeKey) =>
+      (window as unknown as { __tauriMockRuntime: TauriMockRuntimeControl }).__tauriMockRuntime.gateNextInvokeSnapshot(
         invokeKey,
       ),
     key,
