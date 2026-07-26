@@ -10,11 +10,14 @@ const packageVersion = JSON.parse(readFileSync("package.json", "utf8")).version;
 const tauriVersion = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8")).version;
 const cargoText = readFileSync("src-tauri/Cargo.toml", "utf8");
 const cargoVersion = cargoText.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+const cargoLockText = readFileSync("src-tauri/Cargo.lock", "utf8");
+const cargoLockVersion = cargoLockText.match(/^name\s*=\s*"norn"\s*\r?\nversion\s*=\s*"([^"]+)"/m)?.[1];
 
 const versions = {
   "package.json": packageVersion,
   "src-tauri/tauri.conf.json": tauriVersion,
   "src-tauri/Cargo.toml": cargoVersion,
+  "src-tauri/Cargo.lock": cargoLockVersion,
 };
 const mismatches = Object.entries(versions).filter(([, version]) => version !== expected);
 if (mismatches.length > 0) {

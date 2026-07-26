@@ -6,6 +6,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { readReleaseNotes } from "./release-notes.mjs";
+
 const REPO = "duyl328/norn";
 const REPO_URL = "https://github.com/duyl328/norn";
 const bundle = "src-tauri/target/release/bundle";
@@ -14,6 +16,7 @@ const dmgDir = join(bundle, "dmg");
 
 const version = JSON.parse(readFileSync("package.json", "utf8")).version;
 const tag = `v${version}`;
+const releaseNotes = process.env.RELEASE_NOTES ?? readReleaseNotes(tag);
 
 // 定位产物:updater 包(.app.tar.gz)+ 其签名(.sig)+ dmg。
 const find = (dir, test) => {
@@ -57,7 +60,7 @@ if (pubKeyId !== sigKeyId) {
 const assetName = updater.split("/").pop();
 const latest = {
   version,
-  notes: process.env.RELEASE_NOTES ?? `Norn ${version}`,
+  notes: releaseNotes,
   pub_date: new Date().toISOString(),
   platforms: {
     "darwin-aarch64": {
