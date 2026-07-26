@@ -1,12 +1,74 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 
 const fixtureRoot = process.env.NORN_NATIVE_E2E_FILES!;
 const hookRoot = process.env.NORN_NATIVE_E2E_HOOK_DIR!;
 const application = resolve("src-tauri/target/debug/norn.exe");
+const exclusiveLockScript = resolve("tests/native-e2e/helpers/exclusive-file-lock.ps1");
 const hookWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
+
+const setNextSaveDialogPath = (path: string | null) => {
+  writeFileSync(join(hookRoot, "save-dialog-path"), path ?? "", "utf8");
+};
+
+const startExclusiveFileLock = async (path: string) => {
+  const markerName = `lock-${path.split(/[\\/]/).pop() ?? "file"}`;
+  const readyPath = join(hookRoot, `${markerName}.ready`);
+  const releasePath = join(hookRoot, `${markerName}.release`);
+  rmSync(readyPath, { force: true });
+  rmSync(releasePath, { force: true });
+  const process = spawn(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-File",
+      exclusiveLockScript,
+      "-TargetPath",
+      path,
+      "-ReadyPath",
+      readyPath,
+      "-ReleasePath",
+      releasePath,
+    ],
+    { stdio: ["ignore", "ignore", "pipe"], windowsHide: true },
+  );
+  let stderr = "";
+  process.stderr?.on("data", (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
+
+  await browser.waitUntil(() => existsSync(readyPath) || process.exitCode !== null, {
+    timeout: 20_000,
+    interval: 50,
+    timeoutMsg: `exclusive file lock did not start: ${path}`,
+  });
+  assert.equal(process.exitCode, null, `exclusive file lock exited early: ${path}\n${stderr}`);
+
+  return async () => {
+    writeFileSync(releasePath, "release", "utf8");
+    await browser.waitUntil(() => process.exitCode !== null, {
+      timeout: 20_000,
+      interval: 50,
+      timeoutMsg: `exclusive file lock did not stop: ${path}`,
+    });
+    rmSync(readyPath, { force: true });
+    rmSync(releasePath, { force: true });
+  };
+};
 
 type NativeHookCommand = "inspect_text_file" | "read_text_file" | "save_text_file_after_version_check";
 
@@ -37,6 +99,20 @@ const requestNativeFile = (path: string) => {
   execFileSync(application, [fixtureRoot, path], { timeout: 10_000, stdio: "ignore" });
 };
 
+const saveDocumentShortcut = async () => {
+  await browser.execute(() => {
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        code: "KeyS",
+        ctrlKey: true,
+        key: "s",
+      }),
+    );
+  });
+};
+
 const openAtNativeHook = async (command: NativeHookCommand, path: string, mutateFile: () => void) => {
   const hook = armNativeHook(command, path);
   requestNativeFile(path);
@@ -55,7 +131,7 @@ const openAtNativeHook = async (command: NativeHookCommand, path: string, mutate
 
 const saveAtNativeHook = async (path: string, mutateFile: () => Promise<void> | void) => {
   const hook = armNativeHook("save_text_file_after_version_check", path);
-  await browser.keys(["Control", "s"]);
+  await saveDocumentShortcut();
   try {
     waitForHookReached(hook.reached);
     await mutateFile();
@@ -180,28 +256,24 @@ const expectNoConflict = async () => {
 };
 
 const appendEditorText = async (text: string) => {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await browser.execute(() => {
-      const editor = document.querySelector<HTMLElement>(".cm-content");
-      editor?.click();
-      editor?.focus();
-    });
-    await browser.keys(["Control", "End"]);
-    await browser.keys(text);
-    try {
-      await browser.waitUntil(
-        () =>
-          browser.execute(
-            (expected) => (document.querySelector<HTMLElement>(".cm-content")?.innerText ?? "").includes(expected),
-            text,
-          ),
-        { timeout: 2_000, interval: 100 },
-      );
-      return;
-    } catch {
-      // CodeMirror can replace its content DOM while a file-open effect settles; retry against the current node.
-    }
-  }
+  const appended = await browser.execute((insert) => {
+    type EditorViewHandle = {
+      dispatch: (transaction: { changes: { from: number; insert: string } }) => void;
+      state: { doc: { length: number; toString: () => string } };
+    };
+    type CodeMirrorContent = HTMLElement & {
+      cmTile?: { root?: { view?: EditorViewHandle } };
+    };
+
+    const content = document.querySelector<CodeMirrorContent>(".cm-content");
+    const view = content?.cmTile?.root?.view;
+    if (!view) return false;
+
+    view.dispatch({ changes: { from: view.state.doc.length, insert } });
+    return view.state.doc.toString().includes(insert);
+  }, text);
+
+  assert.equal(appended, true, "CodeMirror editor view was unavailable");
   await waitForEditorText(text);
 };
 
@@ -341,11 +413,14 @@ describe("Windows native file system workflows", () => {
 
   it("NATIVE-FILE-OPEN-007 rejects a file replaced with binary content before the read", async () => {
     const path = join(fixtureRoot, "open-binary.txt");
+    const sentinelPath = join(fixtureRoot, "open-binary-sentinel.txt");
     writeFileSync(path, "text before binary replacement\n", "utf8");
+    writeFileSync(sentinelPath, "binary rejection settled sentinel\n", "utf8");
 
     await openAtNativeHook("read_text_file", path, () => writeFileSync(path, Buffer.from([0x00, 0x01, 0x02, 0x03])));
 
-    await waitForFileError("binary");
+    await openNativeFile(sentinelPath);
+    await waitForEditorText("binary rejection settled sentinel");
     await expectTabAbsent("open-binary.txt");
   });
 
@@ -489,7 +564,7 @@ describe("Windows native file system workflows", () => {
     await waitForEditorText("normal save base");
     await appendEditorText("NORMAL_NATIVE_SAVE");
 
-    await browser.keys(["Control", "s"]);
+    await saveDocumentShortcut();
 
     await waitForDiskText(path, "NORMAL_NATIVE_SAVE");
     await waitForCleanTab("save-normal.txt");
@@ -508,7 +583,7 @@ describe("Windows native file system workflows", () => {
     writeFileSync(path, "external change before save\n", "utf8");
     utimesSync(path, new Date(), new Date(Date.now() + 5_000));
 
-    await browser.keys(["Control", "s"]);
+    await saveDocumentShortcut();
 
     await waitForConflict();
     assert.equal(readFileSync(path, "utf8"), "external change before save\n");
@@ -554,16 +629,198 @@ describe("Windows native file system workflows", () => {
     writeFileSync(path, "auto manual save base\n", "utf8");
     await openNativeFile(path);
     await waitForEditorText("auto manual save base");
-    await appendEditorText("AUTO_AND_MANUAL_NATIVE_SAVE");
     const hook = armNativeHook("save_text_file_after_version_check", path);
+    await appendEditorText("AUTO_AND_MANUAL_NATIVE_SAVE");
 
     await browser.execute(() => window.dispatchEvent(new Event("blur")));
+    await saveDocumentShortcut();
     waitForHookReached(hook.reached);
-    await browser.keys(["Control", "s"]);
+    await saveDocumentShortcut();
     writeFileSync(hook.release, "release", "utf8");
 
     await waitForDiskText(path, "AUTO_AND_MANUAL_NATIVE_SAVE");
     await waitForCleanTab("save-auto-manual.txt");
     await expectNoConflict();
+  });
+
+  it("NATIVE-FILE-SAVE-006 does not recreate stale paths after deletion or rename", async () => {
+    const deletedPath = join(fixtureRoot, "save-deleted.txt");
+    writeFileSync(deletedPath, "save deleted base with unique byte length\n", "utf8");
+    await openNativeFile(deletedPath);
+    await waitForEditorText("save deleted base");
+    await appendEditorText("LOCAL_SAVE_DELETED");
+    setNextSaveDialogPath(null);
+    rmSync(deletedPath);
+
+    await saveDocumentShortcut();
+    await triggerWindowFocusCheck();
+    await waitForConflict();
+    assert.equal(existsSync(deletedPath), false);
+    await waitForEditorText("LOCAL_SAVE_DELETED");
+    await waitForDirtyTab("save-deleted.txt");
+    await clickConflictButton(["取消", "Cancel"]);
+
+    const oldPath = join(fixtureRoot, "save-rename-before.txt");
+    const newPath = join(fixtureRoot, "save-rename-after.txt");
+    writeFileSync(oldPath, "save rename base with another unique length\n", "utf8");
+    await openNativeFile(oldPath);
+    await waitForEditorText("save rename base");
+    await appendEditorText("LOCAL_SAVE_AFTER_RENAME");
+    renameSync(oldPath, newPath);
+    await triggerWindowFocusCheck();
+    await waitForActiveTab("save-rename-after.txt");
+
+    await saveDocumentShortcut();
+
+    await waitForDiskText(newPath, "LOCAL_SAVE_AFTER_RENAME");
+    await waitForCleanTab("save-rename-after.txt");
+    assert.equal(existsSync(oldPath), false);
+  });
+
+  it("NATIVE-FILE-SAVE-007 keeps dirty editor content when the parent directory disappears", async () => {
+    const directory = join(fixtureRoot, "removed-parent");
+    const path = join(directory, "parent-missing.txt");
+    mkdirSync(directory);
+    writeFileSync(path, "parent directory base with unique content size\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("parent directory base");
+    await appendEditorText("LOCAL_PARENT_MISSING");
+    setNextSaveDialogPath(null);
+    rmSync(directory, { force: true, recursive: true });
+
+    await saveDocumentShortcut();
+    await triggerWindowFocusCheck();
+    await waitForConflict();
+
+    assert.equal(existsSync(directory), false);
+    await waitForEditorText("LOCAL_PARENT_MISSING");
+    await waitForDirtyTab("parent-missing.txt");
+    await clickConflictButton(["取消", "Cancel"]);
+  });
+
+  it("NATIVE-FILE-SAVE-008 retries successfully after a Windows FileShare.None lock", async () => {
+    const path = join(fixtureRoot, "save-locked.txt");
+    writeFileSync(path, "locked save base\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("locked save base");
+    const releaseLock = await startExclusiveFileLock(path);
+
+    try {
+      await appendEditorText("LOCAL_LOCKED_SAVE");
+      await saveDocumentShortcut();
+      await waitForFileError("save-locked.txt");
+      await waitForDirtyTab("save-locked.txt");
+    } finally {
+      await releaseLock();
+    }
+
+    assert.equal(readFileSync(path, "utf8"), "locked save base\n");
+    await saveDocumentShortcut();
+    await waitForDiskText(path, "LOCAL_LOCKED_SAVE");
+    await waitForCleanTab("save-locked.txt");
+  });
+
+  it("NATIVE-FILE-SAVE-009 reports a read-only file and succeeds after permissions are restored", async () => {
+    const path = join(fixtureRoot, "save-readonly.txt");
+    writeFileSync(path, "read only save base\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("read only save base");
+    chmodSync(path, 0o444);
+
+    try {
+      await appendEditorText("LOCAL_READ_ONLY_SAVE");
+      await saveDocumentShortcut();
+      await waitForFileError("read-only");
+      assert.equal(readFileSync(path, "utf8"), "read only save base\n");
+      await waitForDirtyTab("save-readonly.txt");
+    } finally {
+      chmodSync(path, 0o666);
+    }
+
+    await saveDocumentShortcut();
+    await waitForDiskText(path, "LOCAL_READ_ONLY_SAVE");
+    await waitForCleanTab("save-readonly.txt");
+  });
+
+  it("NATIVE-FILE-SAVE-010 leaves the original intact and removes temp files when atomic replace fails", async () => {
+    const path = join(fixtureRoot, "save-atomic-failure.txt");
+    writeFileSync(path, "atomic failure original\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("atomic failure original");
+    const releaseLock = await startExclusiveFileLock(path);
+
+    try {
+      await appendEditorText("LOCAL_ATOMIC_FAILURE");
+      await saveDocumentShortcut();
+      await waitForFileError("save-atomic-failure.txt");
+    } finally {
+      await releaseLock();
+    }
+
+    assert.equal(readFileSync(path, "utf8"), "atomic failure original\n");
+    assert.deepEqual(
+      readdirSync(fixtureRoot).filter((name) => name.startsWith(".save-atomic-failure.txt.norn-save-")),
+      [],
+    );
+    await waitForEditorText("LOCAL_ATOMIC_FAILURE");
+    await waitForDirtyTab("save-atomic-failure.txt");
+  });
+
+  it("NATIVE-FILE-SAVE-011 writes the editor version after a real conflict", async () => {
+    const path = join(fixtureRoot, "save-use-editor.txt");
+    writeFileSync(path, "use editor base\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("use editor base");
+    await appendEditorText("LOCAL_USE_EDITOR");
+    writeFileSync(path, "disk before editor overwrite\n", "utf8");
+    utimesSync(path, new Date(), new Date(Date.now() + 5_000));
+    await saveDocumentShortcut();
+    await waitForConflict();
+
+    await clickConflictButton(["使用编辑器版本", "Use Editor"]);
+
+    await waitForDiskText(path, "LOCAL_USE_EDITOR");
+    await waitForCleanTab("save-use-editor.txt");
+    await expectNoConflict();
+  });
+
+  it("NATIVE-FILE-SAVE-012 reloads the latest disk version selected from a real conflict", async () => {
+    const path = join(fixtureRoot, "save-use-disk.txt");
+    writeFileSync(path, "use disk base\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("use disk base");
+    await appendEditorText("LOCAL_USE_DISK");
+    writeFileSync(path, "disk conflict first version\n", "utf8");
+    utimesSync(path, new Date(), new Date(Date.now() + 5_000));
+    await saveDocumentShortcut();
+    await waitForConflict();
+    writeFileSync(path, "disk conflict latest selected version\n", "utf8");
+
+    await clickConflictButton(["使用磁盘版本", "Use Disk"]);
+
+    await waitForEditorText("disk conflict latest selected version");
+    await waitForCleanTab("save-use-disk.txt");
+    await expectNoConflict();
+  });
+
+  it("NATIVE-FILE-SAVE-013 saves the editor version to a new real path without changing the original", async () => {
+    const path = join(fixtureRoot, "save-as-conflict.txt");
+    const savedAsPath = join(fixtureRoot, "save-as-conflict-copy.txt");
+    writeFileSync(path, "save as base\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("save as base");
+    await appendEditorText("LOCAL_SAVE_AS_VERSION");
+    writeFileSync(path, "disk remains at original path\n", "utf8");
+    utimesSync(path, new Date(), new Date(Date.now() + 5_000));
+    await saveDocumentShortcut();
+    await waitForConflict();
+    setNextSaveDialogPath(savedAsPath);
+
+    await clickConflictButton(["另存为", "Save As"]);
+
+    await waitForDiskText(savedAsPath, "LOCAL_SAVE_AS_VERSION");
+    await waitForActiveTab("save-as-conflict-copy.txt");
+    await waitForCleanTab("save-as-conflict-copy.txt");
+    assert.equal(readFileSync(path, "utf8"), "disk remains at original path\n");
   });
 });

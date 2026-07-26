@@ -559,6 +559,10 @@ async fn open_folder_dialog(app: tauri::AppHandle) -> Option<String> {
 
 #[tauri::command]
 async fn open_save_dialog(app: tauri::AppHandle, default_name: Option<String>) -> Option<String> {
+    if let Some(path) = take_native_e2e_save_dialog_path() {
+        return path;
+    }
+
     let dialog = app.dialog().file();
     let dialog = match default_name {
         Some(default_name) => dialog.set_file_name(default_name),
@@ -569,6 +573,22 @@ async fn open_save_dialog(app: tauri::AppHandle, default_name: Option<String>) -
         .blocking_save_file()
         .and_then(|path| path.into_path().ok())
         .map(|path| path.to_string_lossy().into_owned())
+}
+
+fn take_native_e2e_save_dialog_path() -> Option<Option<String>> {
+    let hook_dir = std::env::var_os("NORN_NATIVE_E2E_HOOK_DIR").map(PathBuf::from)?;
+    let control_path = hook_dir.join("save-dialog-path");
+
+    if !control_path.is_file() {
+        return None;
+    }
+
+    let value = fs::read_to_string(&control_path).ok();
+    let _ = fs::remove_file(&control_path);
+    Some(value.and_then(|path| {
+        let path = path.trim().to_string();
+        (!path.is_empty()).then_some(path)
+    }))
 }
 
 #[tauri::command]

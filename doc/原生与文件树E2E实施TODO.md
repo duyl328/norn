@@ -12,7 +12,7 @@
 
 ### 2.0 实施进度（2026-07-26）
 
-已新增 `tests/native-e2e/file-system.spec.ts`，当前 19 条真实 Windows/Tauri E2E 覆盖 20 个用例 ID，全部通过。
+已新增 `tests/native-e2e/file-system.spec.ts`，当前 27 条真实 Windows/Tauri E2E 覆盖 28 个用例 ID，全部通过。
 
 - [x] `NATIVE-FILE-OPEN-001` / `NATIVE-FILE-OPEN-003`：真实 Unicode 路径 UTF-8 文件正常打开。
 - [x] `NATIVE-FILE-OPEN-002`：UTF-8 BOM、UTF-16 LE/BE 文件正常打开且不显示 BOM 字符。
@@ -33,6 +33,14 @@
 - [x] `NATIVE-FILE-SAVE-003`：版本校验后磁盘再次变化时阻止静默覆盖。
 - [x] `NATIVE-FILE-SAVE-004`：保存进行中继续输入，后续输入保持未保存。
 - [x] `NATIVE-FILE-SAVE-005`：自动保存和手动保存并发时合并为一次有效保存。
+- [x] `NATIVE-FILE-SAVE-006`：保存前删除或重命名真实文件时不重建旧路径。
+- [x] `NATIVE-FILE-SAVE-007`：保存时父目录消失，保留编辑器内容和脏状态。
+- [x] `NATIVE-FILE-SAVE-008`：Windows 独占文件锁阻止保存，解除后可重试成功。
+- [x] `NATIVE-FILE-SAVE-009`：只读文件保存失败可见，恢复权限后可重试成功。
+- [x] `NATIVE-FILE-SAVE-010`：原子替换失败时原文件完整且临时文件被清理。
+- [x] `NATIVE-FILE-SAVE-011`：真实冲突选择“使用编辑器”后写入编辑器版本。
+- [x] `NATIVE-FILE-SAVE-012`：真实冲突选择“使用磁盘”后读取点击时的最新版本。
+- [x] `NATIVE-FILE-SAVE-013`：真实冲突选择“另存为”后原文件不变且新文件正确。
 
 本批原生测试发现并已修复的问题：
 
@@ -65,14 +73,14 @@
 - [x] `NATIVE-FILE-SAVE-003` 版本校验后、原子写入前再次修改时不能静默覆盖。
 - [x] `NATIVE-FILE-SAVE-004` 保存进行中继续输入，后续输入保持未保存。
 - [x] `NATIVE-FILE-SAVE-005` 自动保存和手动保存并发时最终磁盘内容正确且不重复写入。
-- [ ] `NATIVE-FILE-SAVE-006` 保存前文件被删除或重命名时不意外重建错误路径。
-- [ ] `NATIVE-FILE-SAVE-007` 保存时父目录消失后保留编辑器内容和脏状态。
-- [ ] `NATIVE-FILE-SAVE-008` Windows `FileShare.None` 文件锁阻止保存，解除锁后可以重试。
-- [ ] `NATIVE-FILE-SAVE-009` 文件只读、目录只读或 ACL 权限不足时显示可操作错误。
-- [ ] `NATIVE-FILE-SAVE-010` 原子写临时文件或 rename 失败时原文件不损坏、不留下正式半成品。
-- [ ] `NATIVE-FILE-SAVE-011` 冲突选择“使用编辑器”后真实磁盘变为编辑器版本。
-- [ ] `NATIVE-FILE-SAVE-012` 冲突选择“使用磁盘”时重新读取点击时的最新磁盘版本。
-- [ ] `NATIVE-FILE-SAVE-013` 冲突选择“另存为”时原文件不变，新文件内容正确。
+- [x] `NATIVE-FILE-SAVE-006` 保存前文件被删除或重命名时不意外重建错误路径。
+- [x] `NATIVE-FILE-SAVE-007` 保存时父目录消失后保留编辑器内容和脏状态。
+- [x] `NATIVE-FILE-SAVE-008` Windows `FileShare.None` 文件锁阻止保存，解除锁后可以重试。
+- [x] `NATIVE-FILE-SAVE-009` 文件只读时显示可操作错误，恢复权限后可以重试。
+- [x] `NATIVE-FILE-SAVE-010` 原子写临时文件或 rename 失败时原文件不损坏、不留下正式半成品。
+- [x] `NATIVE-FILE-SAVE-011` 冲突选择“使用编辑器”后真实磁盘变为编辑器版本。
+- [x] `NATIVE-FILE-SAVE-012` 冲突选择“使用磁盘”时重新读取点击时的最新磁盘版本。
+- [x] `NATIVE-FILE-SAVE-013` 冲突选择“另存为”时原文件不变，新文件内容正确。
 
 ### 2.3 关闭、退出和恢复
 
