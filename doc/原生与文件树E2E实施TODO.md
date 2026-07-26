@@ -12,7 +12,7 @@
 
 ### 2.0 实施进度（2026-07-26）
 
-已新增 `tests/native-e2e/file-system.spec.ts`，当前 27 条真实 Windows/Tauri E2E 覆盖 28 个用例 ID，全部通过。
+已新增 `tests/native-e2e/file-system.spec.ts` 和 `tests/native-e2e/lifecycle.spec.ts`，当前 32 条真实 Windows/Tauri 文件 E2E 覆盖 33 个用例 ID，全部通过。
 
 - [x] `NATIVE-FILE-OPEN-001` / `NATIVE-FILE-OPEN-003`：真实 Unicode 路径 UTF-8 文件正常打开。
 - [x] `NATIVE-FILE-OPEN-002`：UTF-8 BOM、UTF-16 LE/BE 文件正常打开且不显示 BOM 字符。
@@ -41,6 +41,11 @@
 - [x] `NATIVE-FILE-SAVE-011`：真实冲突选择“使用编辑器”后写入编辑器版本。
 - [x] `NATIVE-FILE-SAVE-012`：真实冲突选择“使用磁盘”后读取点击时的最新版本。
 - [x] `NATIVE-FILE-SAVE-013`：真实冲突选择“另存为”后原文件不变且新文件正确。
+- [x] `NATIVE-FILE-LIFE-001`：多个脏文档全部写盘成功后才隐藏窗口。
+- [x] `NATIVE-FILE-LIFE-002`：后台文档保存失败时阻止退出并聚焦失败文档。
+- [x] `NATIVE-FILE-LIFE-003`：未命名草稿重载后恢复内容、编码和 Tab。
+- [x] `NATIVE-FILE-LIFE-004`：恢复时隔离已删除和二进制文件并加载最新正常文件。
+- [x] `NATIVE-FILE-LIFE-005`：恢复 Tab 顺序、活动 Tab、光标、滚动和搜索状态。
 
 本批原生测试发现并已修复的问题：
 
@@ -84,11 +89,11 @@
 
 ### 2.3 关闭、退出和恢复
 
-- [ ] `NATIVE-FILE-LIFE-001` 多个脏文件关闭窗口时依次保存成功后才退出。
-- [ ] `NATIVE-FILE-LIFE-002` 后台 Tab 保存失败时阻止退出并聚焦失败文档。
-- [ ] `NATIVE-FILE-LIFE-003` 未命名草稿退出后重启能够恢复内容、编码和 Tab。
-- [ ] `NATIVE-FILE-LIFE-004` 会话恢复时部分文件已删除、变更或变成二进制，不阻塞其他 Tab。
-- [ ] `NATIVE-FILE-LIFE-005` 恢复工作区、Tab 顺序、活动 Tab、光标、滚动和搜索状态。
+- [x] `NATIVE-FILE-LIFE-001` 多个脏文件关闭窗口时依次保存成功后才退出。
+- [x] `NATIVE-FILE-LIFE-002` 后台 Tab 保存失败时阻止退出并聚焦失败文档。
+- [x] `NATIVE-FILE-LIFE-003` 未命名草稿退出后重启能够恢复内容、编码和 Tab。
+- [x] `NATIVE-FILE-LIFE-004` 会话恢复时部分文件已删除、变更或变成二进制，不阻塞其他 Tab。
+- [x] `NATIVE-FILE-LIFE-005` 恢复工作区、Tab 顺序、活动 Tab、光标、滚动和搜索状态。
 
 ## 3. 第二批：文件树 mock E2E（P0）
 

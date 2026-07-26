@@ -2406,10 +2406,13 @@ fn format_file_error(context: &str, path: &Path, error: std::io::Error) -> Strin
 // JS 通过 read/write 命令读写;mac 原生菜单加速键也从这里取,使两者一致。
 // ---------------------------------------------------------------------------
 fn keybindings_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| format!("Unable to resolve app config directory: {error}"))?;
+    let dir = match std::env::var_os("NORN_NATIVE_E2E_HOOK_DIR") {
+        Some(hook_dir) => PathBuf::from(hook_dir).join("app-config"),
+        None => app
+            .path()
+            .app_config_dir()
+            .map_err(|error| format!("Unable to resolve app config directory: {error}"))?,
+    };
     Ok(dir.join("keybindings.json"))
 }
 
@@ -2448,10 +2451,13 @@ fn app_config_file_path<R: tauri::Runtime>(
     {
         return Err(format!("Invalid config file name: {name}"));
     }
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| format!("Unable to resolve app config directory: {error}"))?;
+    let dir = match std::env::var_os("NORN_NATIVE_E2E_HOOK_DIR") {
+        Some(hook_dir) => PathBuf::from(hook_dir).join("app-config"),
+        None => app
+            .path()
+            .app_config_dir()
+            .map_err(|error| format!("Unable to resolve app config directory: {error}"))?,
+    };
     Ok(dir.join(name))
 }
 
@@ -2487,10 +2493,13 @@ fn draft_path<R: tauri::Runtime>(app: &tauri::AppHandle<R>, id: &str) -> Result<
     {
         return Err(format!("Invalid draft id: {id}"));
     }
-    let dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| format!("Unable to resolve app config directory: {error}"))?;
+    let dir = match std::env::var_os("NORN_NATIVE_E2E_HOOK_DIR") {
+        Some(hook_dir) => PathBuf::from(hook_dir).join("drafts-config"),
+        None => app
+            .path()
+            .app_config_dir()
+            .map_err(|error| format!("Unable to resolve app config directory: {error}"))?,
+    };
     Ok(dir.join("drafts").join(format!("{id}.json")))
 }
 

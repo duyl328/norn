@@ -129,8 +129,13 @@ const openAtNativeHook = async (command: NativeHookCommand, path: string, mutate
   });
 };
 
-const saveAtNativeHook = async (path: string, mutateFile: () => Promise<void> | void) => {
+const saveAtNativeHook = async (
+  path: string,
+  mutateFile: () => Promise<void> | void,
+  prepareSave?: () => Promise<void> | void,
+) => {
   const hook = armNativeHook("save_text_file_after_version_check", path);
+  await prepareSave?.();
   await saveDocumentShortcut();
   try {
     waitForHookReached(hook.reached);
@@ -477,18 +482,18 @@ describe("Windows native file system workflows", () => {
     await waitForConflict();
     await waitForEditorText("LOCAL_DIRTY_DELETE");
     await waitForDirtyTab("external-delete-dirty.txt");
-    const buttonLabels = await browser.execute(() =>
-      [...(document.querySelector(".save-conflict-dialog")?.querySelectorAll<HTMLButtonElement>("button") ?? [])].map(
-        (button) => button.innerText.trim(),
-      ),
-    );
-    assert.equal(
-      buttonLabels.some((label) => ["另存为", "Save As"].includes(label)),
-      true,
-    );
-    assert.equal(
-      buttonLabels.some((label) => ["丢弃", "Discard"].includes(label)),
-      true,
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const labels = [
+            ...(document.querySelector(".save-conflict-dialog")?.querySelectorAll<HTMLButtonElement>("button") ?? []),
+          ].map((button) => button.innerText.trim());
+          return (
+            labels.some((label) => ["另存为", "Save As"].includes(label)) &&
+            labels.some((label) => ["丢弃", "Discard"].includes(label))
+          );
+        }),
+      { timeout: 20_000, interval: 100, timeoutMsg: "deleted-file recovery actions did not appear" },
     );
     await clickConflictButton(["丢弃", "Discard"]);
   });
@@ -596,12 +601,15 @@ describe("Windows native file system workflows", () => {
     writeFileSync(path, "save after check base\n", "utf8");
     await openNativeFile(path);
     await waitForEditorText("save after check base");
-    await appendEditorText("LOCAL_AFTER_VERSION_CHECK");
 
-    await saveAtNativeHook(path, () => {
-      writeFileSync(path, "external change after version check\n", "utf8");
-      utimesSync(path, new Date(), new Date(Date.now() + 5_000));
-    });
+    await saveAtNativeHook(
+      path,
+      () => {
+        writeFileSync(path, "external change after version check\n", "utf8");
+        utimesSync(path, new Date(), new Date(Date.now() + 5_000));
+      },
+      () => appendEditorText("LOCAL_AFTER_VERSION_CHECK"),
+    );
 
     await waitForConflict();
     assert.equal(readFileSync(path, "utf8"), "external change after version check\n");
@@ -614,9 +622,12 @@ describe("Windows native file system workflows", () => {
     writeFileSync(path, "save while editing base\n", "utf8");
     await openNativeFile(path);
     await waitForEditorText("save while editing base");
-    await appendEditorText("BEFORE_NATIVE_SAVE");
 
-    await saveAtNativeHook(path, async () => appendEditorText("AFTER_NATIVE_SAVE_STARTED"));
+    await saveAtNativeHook(
+      path,
+      async () => appendEditorText("AFTER_NATIVE_SAVE_STARTED"),
+      () => appendEditorText("BEFORE_NATIVE_SAVE"),
+    );
 
     await waitForDiskText(path, "BEFORE_NATIVE_SAVE");
     assert.equal(readFileSync(path, "utf8").includes("AFTER_NATIVE_SAVE_STARTED"), false);
@@ -633,7 +644,6 @@ describe("Windows native file system workflows", () => {
     await appendEditorText("AUTO_AND_MANUAL_NATIVE_SAVE");
 
     await browser.execute(() => window.dispatchEvent(new Event("blur")));
-    await saveDocumentShortcut();
     waitForHookReached(hook.reached);
     await saveDocumentShortcut();
     writeFileSync(hook.release, "release", "utf8");
@@ -794,9 +804,12 @@ describe("Windows native file system workflows", () => {
     utimesSync(path, new Date(), new Date(Date.now() + 5_000));
     await saveDocumentShortcut();
     await waitForConflict();
-    writeFileSync(path, "disk conflict latest selected version\n", "utf8");
+    const reloadHook = armNativeHook("read_text_file", path);
 
     await clickConflictButton(["使用磁盘版本", "Use Disk"]);
+    waitForHookReached(reloadHook.reached);
+    writeFileSync(path, "disk conflict latest selected version\n", "utf8");
+    writeFileSync(reloadHook.release, "release", "utf8");
 
     await waitForEditorText("disk conflict latest selected version");
     await waitForCleanTab("save-use-disk.txt");
