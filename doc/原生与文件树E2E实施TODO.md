@@ -101,7 +101,8 @@
 
 - [ ] 补齐 `TREE-LOAD-009`、`TREE-LOAD-012`～`TREE-LOAD-018`。
 - [ ] 补齐 `TREE-SELECT-006`、`TREE-SELECT-010`、`TREE-SELECT-011`。
-- [ ] 完成 `TREE-KEY-001`～`TREE-KEY-015`：方向键、Home/End、展开折叠、Enter、Space、Esc、多选和即时搜索。
+- [x] 完成 `TREE-KEY-001`～`TREE-KEY-014`：方向键、Home/End、展开折叠、Enter、Esc、多选、剪贴板、即时搜索和虚拟滚动。
+- [ ] `TREE-KEY-015` 已加入编辑器、命名输入框和上下文菜单隔离测试；上下文菜单按 Delete 仍会误触回收站确认，修复后勾选。
 
 ### 3.2 CRUD、剪贴板和拖拽
 
