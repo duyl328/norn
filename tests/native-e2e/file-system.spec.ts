@@ -126,6 +126,24 @@ const expectTabAbsent = async (name: string) => {
   );
 };
 
+const waitForDirtyTab = async (name: string) => {
+  await browser.waitUntil(
+    () =>
+      browser.execute((expected) => {
+        const tab = [...document.querySelectorAll<HTMLElement>(".editor-file-tab")].find((candidate) =>
+          candidate.innerText.includes(expected),
+        );
+        return (tab?.innerText ?? "").includes("•");
+      }, name),
+    { timeout: 20_000, interval: 100, timeoutMsg: `tab did not stay dirty: ${name}` },
+  );
+};
+
+const expectNoConflict = async () => {
+  const conflictVisible = await browser.execute(() => Boolean(document.querySelector(".save-conflict-dialog")));
+  assert.equal(conflictVisible, false, "unexpected save conflict dialog appeared");
+};
+
 const appendEditorText = async (text: string) => {
   await browser.execute(() => {
     const editor = document.querySelector<HTMLElement>(".cm-content");
@@ -135,7 +153,6 @@ const appendEditorText = async (text: string) => {
     selection?.selectAllChildren(editor);
     selection?.collapseToEnd();
   });
-  await browser.keys(["Control", "End"]);
   await browser.keys(text);
   await waitForEditorText(text);
 };
@@ -232,11 +249,14 @@ describe("Windows native file system workflows", () => {
 
   it("NATIVE-FILE-OPEN-004 does not create a partial tab when the file is deleted during inspection", async () => {
     const path = join(fixtureRoot, "open-delete.txt");
+    const sentinelPath = join(fixtureRoot, "open-delete-sentinel.txt");
     writeFileSync(path, "delete while opening\n", "utf8");
+    writeFileSync(sentinelPath, "open request settled sentinel\n", "utf8");
 
     await openAtNativeHook("inspect_text_file", path, () => rmSync(path));
 
-    await waitForFileError("open-delete.txt");
+    await openNativeFile(sentinelPath);
+    await waitForEditorText("open request settled sentinel");
     await expectTabAbsent("open-delete.txt");
   });
 
@@ -296,6 +316,7 @@ describe("Windows native file system workflows", () => {
     const path = join(fixtureRoot, "external-dirty.txt");
     writeFileSync(path, "dirty base\n", "utf8");
     await openNativeFile(path);
+    await waitForEditorText("dirty base");
     await appendEditorText("LOCAL_NATIVE_EDIT");
 
     writeFileSync(path, "disk conflict first\n", "utf8");
@@ -320,6 +341,35 @@ describe("Windows native file system workflows", () => {
     await clickConflictButton(["丢弃", "Discard"]);
   });
 
+  it("NATIVE-FILE-EDIT-004 preserves dirty content and recovery actions after external deletion", async () => {
+    const path = join(fixtureRoot, "external-delete-dirty.txt");
+    writeFileSync(path, "dirty deletion fixture with a deliberately unique byte length\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("dirty deletion fixture");
+    await appendEditorText("LOCAL_DIRTY_DELETE");
+
+    rmSync(path);
+    await triggerWindowFocusCheck();
+
+    await waitForConflict();
+    await waitForEditorText("LOCAL_DIRTY_DELETE");
+    await waitForDirtyTab("external-delete-dirty.txt");
+    const buttonLabels = await browser.execute(() =>
+      [...(document.querySelector(".save-conflict-dialog")?.querySelectorAll<HTMLButtonElement>("button") ?? [])].map(
+        (button) => button.innerText.trim(),
+      ),
+    );
+    assert.equal(
+      buttonLabels.some((label) => ["另存为", "Save As"].includes(label)),
+      true,
+    );
+    assert.equal(
+      buttonLabels.some((label) => ["丢弃", "Discard"].includes(label)),
+      true,
+    );
+    await clickConflictButton(["丢弃", "Discard"]);
+  });
+
   it("NATIVE-FILE-EDIT-005 follows a real external rename", async () => {
     const path = join(fixtureRoot, "rename-before.txt");
     const renamedPath = join(fixtureRoot, "rename-after.txt");
@@ -332,5 +382,54 @@ describe("Windows native file system workflows", () => {
 
     await waitForActiveTab("rename-after.txt");
     await waitForEditorText("rename fixture");
+  });
+
+  it("NATIVE-FILE-EDIT-006 preserves dirty content and state after external rename", async () => {
+    const path = join(fixtureRoot, "dirty-rename-before.txt");
+    const renamedPath = join(fixtureRoot, "dirty-rename-after.txt");
+    writeFileSync(path, "dirty rename fixture with unique content length\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("dirty rename fixture");
+    await appendEditorText("LOCAL_DIRTY_RENAME");
+
+    renameSync(path, renamedPath);
+    await triggerWindowFocusCheck();
+
+    await waitForActiveTab("dirty-rename-after.txt");
+    await waitForEditorText("LOCAL_DIRTY_RENAME");
+    await waitForDirtyTab("dirty-rename-after.txt");
+    await expectTabAbsent("dirty-rename-before.txt");
+    await expectNoConflict();
+  });
+
+  it("NATIVE-FILE-EDIT-007 recognizes an external atomic replace as a content change", async () => {
+    const path = join(fixtureRoot, "atomic-save.txt");
+    const temporaryPath = join(fixtureRoot, "atomic-save.txt.external.tmp");
+    writeFileSync(path, "atomic save base\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("atomic save base");
+
+    writeFileSync(temporaryPath, "atomic save latest from external editor\n", "utf8");
+    renameSync(temporaryPath, path);
+
+    await waitForEditorText("atomic save latest from external editor");
+    await expectNoConflict();
+  });
+
+  it("NATIVE-FILE-EDIT-008 converges to the final content after a watcher event storm", async () => {
+    const path = join(fixtureRoot, "watcher-storm.txt");
+    writeFileSync(path, "watcher storm base\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("watcher storm base");
+
+    for (let index = 0; index < 12; index += 1) {
+      writeFileSync(path, `watcher storm version ${index} ${"x".repeat(index)}\n`, "utf8");
+    }
+    writeFileSync(path, "watcher storm final stable content\n", "utf8");
+
+    await waitForEditorText("watcher storm final stable content");
+    await triggerWindowFocusCheck();
+    await waitForEditorText("watcher storm final stable content");
+    await expectNoConflict();
   });
 });

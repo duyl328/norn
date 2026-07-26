@@ -12,7 +12,7 @@
 
 ### 2.0 实施进度（2026-07-26）
 
-已新增 `tests/native-e2e/file-system.spec.ts`，当前 10 条真实 Windows/Tauri E2E 覆盖 11 个用例 ID，全部通过。
+已新增 `tests/native-e2e/file-system.spec.ts`，当前 14 条真实 Windows/Tauri E2E 覆盖 15 个用例 ID，全部通过。
 
 - [x] `NATIVE-FILE-OPEN-001` / `NATIVE-FILE-OPEN-003`：真实 Unicode 路径 UTF-8 文件正常打开。
 - [x] `NATIVE-FILE-OPEN-002`：UTF-8 BOM、UTF-16 LE/BE 文件正常打开且不显示 BOM 字符。
@@ -23,7 +23,11 @@
 - [x] `NATIVE-FILE-EDIT-001`：其他进程修改真实文件后干净文档自动重载。
 - [x] `NATIVE-FILE-EDIT-002`：脏文档保留本地内容，选择磁盘版本时读取点击时的最新内容。
 - [x] `NATIVE-FILE-EDIT-003`：真实删除后文件树刷新，活动文档显示删除冲突。
+- [x] `NATIVE-FILE-EDIT-004`：脏文档被外部删除后保留本地内容、脏状态和恢复操作。
 - [x] `NATIVE-FILE-EDIT-005`：真实重命名后文件树刷新，活动 Tab 名称和路径同步更新。
+- [x] `NATIVE-FILE-EDIT-006`：脏文档被外部重命名后保留本地内容和脏状态。
+- [x] `NATIVE-FILE-EDIT-007`：外部编辑器原子替换文件时识别为内容变化。
+- [x] `NATIVE-FILE-EDIT-008`：watcher 事件风暴后收敛到最终磁盘内容且不产生冲突。
 
 本批原生测试发现并已修复的问题：
 
@@ -42,11 +46,11 @@
 - [x] `NATIVE-FILE-EDIT-001` 干净文档被外部进程修改后通过真实 watcher 自动重载。
 - [x] `NATIVE-FILE-EDIT-002` 脏文档被外部进程修改后保留本地内容并显示冲突。
 - [x] `NATIVE-FILE-EDIT-003` 干净文档被外部删除后显示删除冲突。
-- [ ] `NATIVE-FILE-EDIT-004` 脏文档被外部删除后保留本地内容并允许另存为或丢弃。
+- [x] `NATIVE-FILE-EDIT-004` 脏文档被外部删除后保留本地内容并允许另存为或丢弃。
 - [x] `NATIVE-FILE-EDIT-005` 干净文档被外部重命名后 Tab 和路径跟随更新。
-- [ ] `NATIVE-FILE-EDIT-006` 脏文档被外部重命名后保留本地内容和脏状态。
-- [ ] `NATIVE-FILE-EDIT-007` 外部程序采用“临时文件 + rename”原子保存时识别为内容变化。
-- [ ] `NATIVE-FILE-EDIT-008` watcher 事件风暴最终只产生一次有效刷新或冲突。
+- [x] `NATIVE-FILE-EDIT-006` 脏文档被外部重命名后保留本地内容和脏状态。
+- [x] `NATIVE-FILE-EDIT-007` 外部程序采用“临时文件 + rename”原子保存时识别为内容变化。
+- [x] `NATIVE-FILE-EDIT-008` watcher 事件风暴最终只产生一次有效刷新或冲突。
 
 ### 2.2 保存与数据安全
 
