@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const fixtureRoot = process.env.NORN_NATIVE_E2E_FILES!;
@@ -8,7 +8,9 @@ const hookRoot = process.env.NORN_NATIVE_E2E_HOOK_DIR!;
 const application = resolve("src-tauri/target/debug/norn.exe");
 const hookWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
 
-const getHookPaths = (command: "inspect_text_file" | "read_text_file", path: string) => {
+type NativeHookCommand = "inspect_text_file" | "read_text_file" | "save_text_file_after_version_check";
+
+const getHookPaths = (command: NativeHookCommand, path: string) => {
   const fileName = path.split(/[\\/]/).pop() ?? "unknown";
   const key = `${command}--${fileName.replace(/[^A-Za-z0-9_.-]/g, "_")}`;
   return {
@@ -18,7 +20,7 @@ const getHookPaths = (command: "inspect_text_file" | "read_text_file", path: str
   };
 };
 
-const armNativeHook = (command: "inspect_text_file" | "read_text_file", path: string) => {
+const armNativeHook = (command: NativeHookCommand, path: string) => {
   const hook = getHookPaths(command, path);
   for (const marker of Object.values(hook)) rmSync(marker, { force: true });
   writeFileSync(hook.pause, "pause", "utf8");
@@ -35,11 +37,7 @@ const requestNativeFile = (path: string) => {
   execFileSync(application, [fixtureRoot, path], { timeout: 10_000, stdio: "ignore" });
 };
 
-const openAtNativeHook = async (
-  command: "inspect_text_file" | "read_text_file",
-  path: string,
-  mutateFile: () => void,
-) => {
+const openAtNativeHook = async (command: NativeHookCommand, path: string, mutateFile: () => void) => {
   const hook = armNativeHook(command, path);
   requestNativeFile(path);
   try {
@@ -52,6 +50,22 @@ const openAtNativeHook = async (
     timeout: 20_000,
     interval: 50,
     timeoutMsg: `native E2E hook was not consumed: ${hook.pause}`,
+  });
+};
+
+const saveAtNativeHook = async (path: string, mutateFile: () => Promise<void> | void) => {
+  const hook = armNativeHook("save_text_file_after_version_check", path);
+  await browser.keys(["Control", "s"]);
+  try {
+    waitForHookReached(hook.reached);
+    await mutateFile();
+  } finally {
+    writeFileSync(hook.release, "release", "utf8");
+  }
+  await browser.waitUntil(() => !existsSync(hook.pause) && !existsSync(hook.reached) && !existsSync(hook.release), {
+    timeout: 20_000,
+    interval: 50,
+    timeoutMsg: `native save hook was not consumed: ${hook.pause}`,
   });
 };
 
@@ -139,21 +153,55 @@ const waitForDirtyTab = async (name: string) => {
   );
 };
 
+const waitForCleanTab = async (name: string) => {
+  await browser.waitUntil(
+    () =>
+      browser.execute((expected) => {
+        const tab = [...document.querySelectorAll<HTMLElement>(".editor-file-tab")].find((candidate) =>
+          candidate.innerText.includes(expected),
+        );
+        return Boolean(tab) && !(tab?.innerText ?? "").includes("•");
+      }, name),
+    { timeout: 20_000, interval: 100, timeoutMsg: `tab did not become clean: ${name}` },
+  );
+};
+
+const waitForDiskText = async (path: string, text: string) => {
+  await browser.waitUntil(() => existsSync(path) && readFileSync(path, "utf8").includes(text), {
+    timeout: 20_000,
+    interval: 50,
+    timeoutMsg: `disk file did not contain ${text}: ${path}`,
+  });
+};
+
 const expectNoConflict = async () => {
   const conflictVisible = await browser.execute(() => Boolean(document.querySelector(".save-conflict-dialog")));
   assert.equal(conflictVisible, false, "unexpected save conflict dialog appeared");
 };
 
 const appendEditorText = async (text: string) => {
-  await browser.execute(() => {
-    const editor = document.querySelector<HTMLElement>(".cm-content");
-    if (!editor) return;
-    editor.focus();
-    const selection = window.getSelection();
-    selection?.selectAllChildren(editor);
-    selection?.collapseToEnd();
-  });
-  await browser.keys(text);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await browser.execute(() => {
+      const editor = document.querySelector<HTMLElement>(".cm-content");
+      editor?.click();
+      editor?.focus();
+    });
+    await browser.keys(["Control", "End"]);
+    await browser.keys(text);
+    try {
+      await browser.waitUntil(
+        () =>
+          browser.execute(
+            (expected) => (document.querySelector<HTMLElement>(".cm-content")?.innerText ?? "").includes(expected),
+            text,
+          ),
+        { timeout: 2_000, interval: 100 },
+      );
+      return;
+    } catch {
+      // CodeMirror can replace its content DOM while a file-open effect settles; retry against the current node.
+    }
+  }
   await waitForEditorText(text);
 };
 
@@ -430,6 +478,92 @@ describe("Windows native file system workflows", () => {
     await waitForEditorText("watcher storm final stable content");
     await triggerWindowFocusCheck();
     await waitForEditorText("watcher storm final stable content");
+    await expectNoConflict();
+  });
+
+  it("NATIVE-FILE-SAVE-001 saves matching editor content, bytes, mtime, and clean state", async () => {
+    const path = join(fixtureRoot, "save-normal.txt");
+    writeFileSync(path, "normal save base\n", "utf8");
+    const initialMtime = statSync(path).mtimeMs;
+    await openNativeFile(path);
+    await waitForEditorText("normal save base");
+    await appendEditorText("NORMAL_NATIVE_SAVE");
+
+    await browser.keys(["Control", "s"]);
+
+    await waitForDiskText(path, "NORMAL_NATIVE_SAVE");
+    await waitForCleanTab("save-normal.txt");
+    const disk = readFileSync(path, "utf8");
+    assert.equal(disk.includes("normal save base"), true);
+    assert.equal(statSync(path).size, Buffer.byteLength(disk));
+    assert.equal(statSync(path).mtimeMs >= initialMtime, true);
+  });
+
+  it("NATIVE-FILE-SAVE-002 prevents overwrite when the disk changes before save", async () => {
+    const path = join(fixtureRoot, "save-prechanged.txt");
+    writeFileSync(path, "save conflict base\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("save conflict base");
+    await appendEditorText("LOCAL_BEFORE_SAVE_CONFLICT");
+    writeFileSync(path, "external change before save\n", "utf8");
+    utimesSync(path, new Date(), new Date(Date.now() + 5_000));
+
+    await browser.keys(["Control", "s"]);
+
+    await waitForConflict();
+    assert.equal(readFileSync(path, "utf8"), "external change before save\n");
+    await waitForEditorText("LOCAL_BEFORE_SAVE_CONFLICT");
+    await clickConflictButton(["取消", "Cancel"]);
+  });
+
+  it("NATIVE-FILE-SAVE-003 prevents overwrite when the disk changes after version validation", async () => {
+    const path = join(fixtureRoot, "save-after-check.txt");
+    writeFileSync(path, "save after check base\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("save after check base");
+    await appendEditorText("LOCAL_AFTER_VERSION_CHECK");
+
+    await saveAtNativeHook(path, () => {
+      writeFileSync(path, "external change after version check\n", "utf8");
+      utimesSync(path, new Date(), new Date(Date.now() + 5_000));
+    });
+
+    await waitForConflict();
+    assert.equal(readFileSync(path, "utf8"), "external change after version check\n");
+    await waitForEditorText("LOCAL_AFTER_VERSION_CHECK");
+    await clickConflictButton(["取消", "Cancel"]);
+  });
+
+  it("NATIVE-FILE-SAVE-004 keeps edits made while a save is in progress dirty", async () => {
+    const path = join(fixtureRoot, "save-while-editing.txt");
+    writeFileSync(path, "save while editing base\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("save while editing base");
+    await appendEditorText("BEFORE_NATIVE_SAVE");
+
+    await saveAtNativeHook(path, async () => appendEditorText("AFTER_NATIVE_SAVE_STARTED"));
+
+    await waitForDiskText(path, "BEFORE_NATIVE_SAVE");
+    assert.equal(readFileSync(path, "utf8").includes("AFTER_NATIVE_SAVE_STARTED"), false);
+    await waitForEditorText("AFTER_NATIVE_SAVE_STARTED");
+    await waitForDirtyTab("save-while-editing.txt");
+  });
+
+  it("NATIVE-FILE-SAVE-005 coalesces automatic and manual saves", async () => {
+    const path = join(fixtureRoot, "save-auto-manual.txt");
+    writeFileSync(path, "auto manual save base\n", "utf8");
+    await openNativeFile(path);
+    await waitForEditorText("auto manual save base");
+    await appendEditorText("AUTO_AND_MANUAL_NATIVE_SAVE");
+    const hook = armNativeHook("save_text_file_after_version_check", path);
+
+    await browser.execute(() => window.dispatchEvent(new Event("blur")));
+    waitForHookReached(hook.reached);
+    await browser.keys(["Control", "s"]);
+    writeFileSync(hook.release, "release", "utf8");
+
+    await waitForDiskText(path, "AUTO_AND_MANUAL_NATIVE_SAVE");
+    await waitForCleanTab("save-auto-manual.txt");
     await expectNoConflict();
   });
 });

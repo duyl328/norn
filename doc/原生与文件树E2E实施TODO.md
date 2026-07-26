@@ -12,7 +12,7 @@
 
 ### 2.0 实施进度（2026-07-26）
 
-已新增 `tests/native-e2e/file-system.spec.ts`，当前 14 条真实 Windows/Tauri E2E 覆盖 15 个用例 ID，全部通过。
+已新增 `tests/native-e2e/file-system.spec.ts`，当前 19 条真实 Windows/Tauri E2E 覆盖 20 个用例 ID，全部通过。
 
 - [x] `NATIVE-FILE-OPEN-001` / `NATIVE-FILE-OPEN-003`：真实 Unicode 路径 UTF-8 文件正常打开。
 - [x] `NATIVE-FILE-OPEN-002`：UTF-8 BOM、UTF-16 LE/BE 文件正常打开且不显示 BOM 字符。
@@ -28,11 +28,17 @@
 - [x] `NATIVE-FILE-EDIT-006`：脏文档被外部重命名后保留本地内容和脏状态。
 - [x] `NATIVE-FILE-EDIT-007`：外部编辑器原子替换文件时识别为内容变化。
 - [x] `NATIVE-FILE-EDIT-008`：watcher 事件风暴后收敛到最终磁盘内容且不产生冲突。
+- [x] `NATIVE-FILE-SAVE-001`：正常保存后磁盘字节、mtime、编辑器内容和脏状态一致。
+- [x] `NATIVE-FILE-SAVE-002`：保存前磁盘变化时阻止覆盖并进入冲突。
+- [x] `NATIVE-FILE-SAVE-003`：版本校验后磁盘再次变化时阻止静默覆盖。
+- [x] `NATIVE-FILE-SAVE-004`：保存进行中继续输入，后续输入保持未保存。
+- [x] `NATIVE-FILE-SAVE-005`：自动保存和手动保存并发时合并为一次有效保存。
 
 本批原生测试发现并已修复的问题：
 
 - [x] `NATIVE-BUG-001` 中文 Windows 的文件不存在错误未被识别，导致活动文档未进入删除冲突。
 - [x] `NATIVE-BUG-002` 中文 Windows 的文件不存在错误未被识别，导致重命名检测未更新活动 Tab。
+- [x] `NATIVE-BUG-003` 初次版本校验与原子写入之间发生外部修改时会被静默覆盖。
 
 ### 2.1 打开与外部变化
 
@@ -54,11 +60,11 @@
 
 ### 2.2 保存与数据安全
 
-- [ ] `NATIVE-FILE-SAVE-001` 正常保存真实文件后磁盘字节、mtime 和编辑器保存状态一致。
-- [ ] `NATIVE-FILE-SAVE-002` 保存前文件被外部修改时版本校验阻止覆盖。
-- [ ] `NATIVE-FILE-SAVE-003` 版本校验后、原子写入前再次修改时不能静默覆盖。
-- [ ] `NATIVE-FILE-SAVE-004` 保存进行中继续输入，后续输入保持未保存。
-- [ ] `NATIVE-FILE-SAVE-005` 自动保存和手动保存并发时最终磁盘内容正确且不重复写入。
+- [x] `NATIVE-FILE-SAVE-001` 正常保存真实文件后磁盘字节、mtime 和编辑器保存状态一致。
+- [x] `NATIVE-FILE-SAVE-002` 保存前文件被外部修改时版本校验阻止覆盖。
+- [x] `NATIVE-FILE-SAVE-003` 版本校验后、原子写入前再次修改时不能静默覆盖。
+- [x] `NATIVE-FILE-SAVE-004` 保存进行中继续输入，后续输入保持未保存。
+- [x] `NATIVE-FILE-SAVE-005` 自动保存和手动保存并发时最终磁盘内容正确且不重复写入。
 - [ ] `NATIVE-FILE-SAVE-006` 保存前文件被删除或重命名时不意外重建错误路径。
 - [ ] `NATIVE-FILE-SAVE-007` 保存时父目录消失后保留编辑器内容和脏状态。
 - [ ] `NATIVE-FILE-SAVE-008` Windows `FileShare.None` 文件锁阻止保存，解除锁后可以重试。
