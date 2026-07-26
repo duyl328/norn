@@ -1418,8 +1418,29 @@ mod tests {
         sh(p, &["config", "user.email", "tester@example.com"]);
         sh(p, &["config", "user.name", "Tester"]);
         sh(p, &["config", "commit.gpgsign", "false"]);
-        // 屏蔽可能存在的全局钩子，避免环境干扰提交。
-        sh(p, &["config", "core.hooksPath", "/dev/null"]);
+        sh(p, &["config", "core.autocrlf", "false"]);
+        sh(p, &["config", "core.safecrlf", "false"]);
+        sh(p, &["config", "pull.rebase", "false"]);
+        // 屏蔽可能存在的全局钩子，避免环境干扰提交。钩子目录放在 .git 内，既不被提交，
+        // 也不依赖 Unix 专有的 /dev/null。
+        let hooks = p.join(".git").join("norn-test-hooks");
+        std::fs::create_dir_all(&hooks).unwrap();
+        sh(
+            p,
+            &["config", "core.hooksPath", hooks.to_string_lossy().as_ref()],
+        );
+        // 不读取开发机的全局 ignore；某些受限环境会对默认 ~/.config/git/ignore 输出
+        // Permission denied，污染被测命令的 stderr 和错误分类。
+        let excludes = p.join(".git").join("norn-test-global-ignore");
+        std::fs::write(&excludes, "").unwrap();
+        sh(
+            p,
+            &[
+                "config",
+                "core.excludesFile",
+                excludes.to_string_lossy().as_ref(),
+            ],
+        );
     }
 
     fn ws(dir: &tempfile::TempDir) -> String {
@@ -1435,6 +1456,135 @@ mod tests {
 
     fn run<F: std::future::Future>(f: F) -> F::Output {
         tauri::async_runtime::block_on(f)
+    }
+
+    fn assert_kind(actual: &GitErrorKind, expected: GitErrorKind) {
+        assert_eq!(
+            std::mem::discriminant(actual),
+            std::mem::discriminant(&expected)
+        );
+    }
+
+    fn assert_error_kind(actual: &GitError, expected: GitErrorKind) {
+        assert_eq!(
+            std::mem::discriminant(&actual.kind),
+            std::mem::discriminant(&expected),
+            "unexpected Git error: {}",
+            actual.message
+        );
+    }
+
+    fn bare_repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        sh(dir.path(), &["init", "--bare", "-b", "main"]);
+        dir
+    }
+
+    fn add_origin(dir: &Path, origin: &Path) {
+        let origin = origin.to_string_lossy();
+        sh(dir, &["remote", "add", "origin", origin.as_ref()]);
+    }
+
+    fn clone_repo(origin: &Path) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let origin = origin.to_string_lossy();
+        let target = dir.path().to_string_lossy();
+        let output = Command::new("git")
+            .args(["clone", origin.as_ref(), target.as_ref()])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "clone failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        sh(dir.path(), &["config", "user.email", "clone@example.com"]);
+        sh(dir.path(), &["config", "user.name", "Clone Tester"]);
+        sh(dir.path(), &["config", "commit.gpgsign", "false"]);
+        sh(dir.path(), &["config", "core.autocrlf", "false"]);
+        sh(dir.path(), &["config", "pull.rebase", "false"]);
+        let excludes = dir.path().join(".git").join("norn-test-global-ignore");
+        std::fs::write(&excludes, "").unwrap();
+        sh(
+            dir.path(),
+            &[
+                "config",
+                "core.excludesFile",
+                excludes.to_string_lossy().as_ref(),
+            ],
+        );
+        dir
+    }
+
+    fn write_hook(path: &Path, body: &str) {
+        std::fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(path).unwrap().permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(path, permissions).unwrap();
+        }
+    }
+
+    // --- 错误分类 ----------------------------------------------------------
+
+    #[test]
+    fn classifies_documented_git_failures() {
+        let cases = [
+            (
+                "fatal: not a git repository (or any of the parent directories): .git",
+                GitErrorKind::NotRepository,
+            ),
+            (
+                "Author identity unknown\n*** Please tell me who you are.",
+                GitErrorKind::IdentityMissing,
+            ),
+            (
+                "nothing to commit, working tree clean",
+                GitErrorKind::NothingToCommit,
+            ),
+            ("pre-commit hook declined", GitErrorKind::HookFailed),
+            (
+                "fatal: The current branch feature has no upstream branch.",
+                GitErrorKind::NoUpstream,
+            ),
+            (
+                "git@github.com: Permission denied (publickey).",
+                GitErrorKind::AuthFailed,
+            ),
+            (
+                "CONFLICT (content): Merge conflict in a.txt",
+                GitErrorKind::Conflict,
+            ),
+        ];
+
+        for (stderr, expected) in cases {
+            assert_kind(&classify(stderr, ""), expected);
+        }
+    }
+
+    #[test]
+    fn classifies_common_host_permission_errors_as_auth_failed() {
+        for stderr in [
+            "remote: Permission to owner/project.git denied to somebody.\nfatal: unable to access repository: The requested URL returned error: 403",
+            "fatal: unable to access repository: The requested URL returned error: 401",
+        ] {
+            assert_kind(&classify(stderr, ""), GitErrorKind::AuthFailed);
+        }
+    }
+
+    #[test]
+    fn classifies_non_fast_forward_as_conflict() {
+        let stderr =
+            "! [rejected] main -> main (non-fast-forward)\nerror: failed to push some refs";
+        assert_kind(&classify(stderr, ""), GitErrorKind::Conflict);
+    }
+
+    #[test]
+    fn conflict_wins_over_unrelated_permission_warning() {
+        let stderr = "warning: unable to access global ignore: Permission denied\nCONFLICT (content): Merge conflict in a.txt";
+        assert_kind(&classify(stderr, ""), GitErrorKind::Conflict);
     }
 
     // --- 仓库初始化 -------------------------------------------------------
@@ -1751,7 +1901,7 @@ mod tests {
         write(dir.path(), "a.txt", "main\n");
         sh(dir.path(), &["commit", "-am", "mc"]);
         let err = run(git_merge(ws(&dir), "feature".into())).unwrap_err();
-        assert!(matches!(err.kind, GitErrorKind::Conflict));
+        assert_error_kind(&err, GitErrorKind::Conflict);
         assert_eq!(run(git_pending_op(ws(&dir))).unwrap(), "merge");
         run(git_abort_op(ws(&dir), "merge".into())).unwrap();
         assert_eq!(run(git_pending_op(ws(&dir))).unwrap(), "");
@@ -1956,5 +2106,388 @@ mod tests {
             assert_eq!(div.own_commits.len(), 2);
             assert_eq!(div.base_new_commits.len(), 1);
         }
+    }
+
+    // --- 扩展稳定性场景：状态与提交 ----------------------------------------
+
+    #[test]
+    fn status_handles_unicode_spaces_delete_and_rename() {
+        let dir = repo();
+        commit_file(dir.path(), "旧 目录/文件.txt", "old\n", "init");
+        commit_file(dir.path(), "delete me.txt", "delete\n", "add delete target");
+        sh(
+            dir.path(),
+            &["mv", "旧 目录/文件.txt", "旧 目录/重命名😀.txt"],
+        );
+        std::fs::remove_file(dir.path().join("delete me.txt")).unwrap();
+        write(dir.path(), "新增 文件😀.txt", "new\n");
+
+        let status = run(git_status(ws(&dir))).unwrap();
+        let renamed = status
+            .changes
+            .iter()
+            .find(|change| change.path == "旧 目录/重命名😀.txt")
+            .unwrap();
+        assert_eq!(renamed.status, "renamed");
+        assert_eq!(renamed.previous_path.as_deref(), Some("旧 目录/文件.txt"));
+        assert!(status
+            .changes
+            .iter()
+            .any(|change| change.path == "delete me.txt" && change.status == "deleted"));
+        assert!(status
+            .changes
+            .iter()
+            .any(|change| change.path == "新增 文件😀.txt" && change.status == "untracked"));
+    }
+
+    #[test]
+    fn commit_selected_deletion_preserves_unselected_change() {
+        let dir = repo();
+        commit_file(dir.path(), "delete.txt", "delete\n", "init delete");
+        commit_file(dir.path(), "keep.txt", "v1\n", "init keep");
+        std::fs::remove_file(dir.path().join("delete.txt")).unwrap();
+        write(dir.path(), "keep.txt", "v2\n");
+
+        run(git_commit(
+            ws(&dir),
+            "delete selected".into(),
+            false,
+            false,
+            vec!["delete.txt".into()],
+        ))
+        .unwrap();
+
+        assert!(!sh_out(dir.path(), &["ls-tree", "--name-only", "HEAD"])
+            .lines()
+            .any(|line| line == "delete.txt"));
+        assert_eq!(sh_out(dir.path(), &["show", "HEAD:keep.txt"]), "v1");
+        assert_eq!(read(dir.path(), "keep.txt"), "v2\n");
+    }
+
+    #[test]
+    fn commit_message_is_passed_as_literal_argument() {
+        let dir = repo();
+        write(dir.path(), "a.txt", "a\n");
+        let message = "修复引号 \"x\" 与 --amend\n\n正文 😀";
+        run(git_commit(ws(&dir), message.into(), false, false, vec![])).unwrap();
+        assert_eq!(sh_out(dir.path(), &["log", "-1", "--pretty=%B"]), message);
+        assert_eq!(sh_out(dir.path(), &["rev-list", "--count", "HEAD"]), "1");
+    }
+
+    #[test]
+    fn commit_without_identity_returns_identity_missing() {
+        let dir = repo();
+        sh(dir.path(), &["config", "user.name", ""]);
+        sh(dir.path(), &["config", "user.email", ""]);
+        write(dir.path(), "a.txt", "a\n");
+
+        let error = run(git_commit(
+            ws(&dir),
+            "identity required".into(),
+            false,
+            false,
+            vec![],
+        ))
+        .unwrap_err();
+        assert_error_kind(&error, GitErrorKind::IdentityMissing);
+    }
+
+    #[test]
+    fn commit_hook_failure_preserves_changes() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "v1\n", "init");
+        let hooks = PathBuf::from(sh_out(dir.path(), &["config", "core.hooksPath"]));
+        write_hook(
+            &hooks.join("pre-commit"),
+            "echo 'pre-commit hook rejected by test' >&2; exit 1",
+        );
+        write(dir.path(), "a.txt", "v2\n");
+
+        let error = run(git_commit(ws(&dir), "blocked".into(), false, false, vec![])).unwrap_err();
+        assert_error_kind(&error, GitErrorKind::HookFailed);
+        assert_eq!(sh_out(dir.path(), &["rev-list", "--count", "HEAD"]), "1");
+        assert_eq!(read(dir.path(), "a.txt"), "v2\n");
+    }
+
+    #[test]
+    fn index_lock_blocks_commit_without_losing_worktree_content() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "v1\n", "init");
+        write(dir.path(), "a.txt", "v2\n");
+        std::fs::write(dir.path().join(".git/index.lock"), "locked").unwrap();
+
+        let error = run(git_commit(
+            ws(&dir),
+            "must fail".into(),
+            false,
+            false,
+            vec![],
+        ))
+        .unwrap_err();
+        assert_error_kind(&error, GitErrorKind::Io);
+        assert_eq!(sh_out(dir.path(), &["rev-list", "--count", "HEAD"]), "1");
+        assert_eq!(read(dir.path(), "a.txt"), "v2\n");
+    }
+
+    // --- 扩展稳定性场景：远端 ----------------------------------------------
+
+    #[test]
+    fn push_without_remote_reports_no_upstream() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "a\n", "init");
+        let error = run(git_push(ws(&dir))).unwrap_err();
+        assert_error_kind(&error, GitErrorKind::NoUpstream);
+    }
+
+    #[test]
+    fn push_non_fast_forward_is_classified_as_conflict() {
+        let origin = bare_repo();
+        let local = repo();
+        commit_file(local.path(), "a.txt", "base\n", "base");
+        add_origin(local.path(), origin.path());
+        run(git_push(ws(&local))).unwrap();
+
+        let other = clone_repo(origin.path());
+        commit_file(other.path(), "remote.txt", "remote\n", "remote advance");
+        sh(other.path(), &["push"]);
+
+        commit_file(local.path(), "local.txt", "local\n", "local advance");
+        let error = run(git_push(ws(&local))).unwrap_err();
+        assert_error_kind(&error, GitErrorKind::Conflict);
+        assert_eq!(
+            sh_out(origin.path(), &["show", "main:remote.txt"]),
+            "remote"
+        );
+    }
+
+    #[test]
+    fn remote_pre_receive_hook_rejection_is_reported() {
+        let origin = bare_repo();
+        let local = repo();
+        commit_file(local.path(), "a.txt", "base\n", "base");
+        add_origin(local.path(), origin.path());
+        run(git_push(ws(&local))).unwrap();
+
+        write_hook(
+            &origin.path().join("hooks/pre-receive"),
+            "echo 'pre-receive hook declined by policy' >&2; exit 1",
+        );
+        commit_file(local.path(), "b.txt", "next\n", "next");
+        let error = run(git_push(ws(&local))).unwrap_err();
+        assert_error_kind(&error, GitErrorKind::HookFailed);
+        assert!(error.message.contains("hook"));
+    }
+
+    #[test]
+    fn commit_then_failed_push_keeps_local_commit() {
+        let local = repo();
+        let missing = local.path().join("remote-that-does-not-exist");
+        add_origin(local.path(), &missing);
+        write(local.path(), "a.txt", "committed locally\n");
+
+        let result = run(git_commit(
+            ws(&local),
+            "local commit survives".into(),
+            true,
+            false,
+            vec![],
+        ));
+        assert!(result.is_err());
+        assert_eq!(
+            sh_out(local.path(), &["log", "-1", "--pretty=%s"]),
+            "local commit survives"
+        );
+        assert!(run(git_status(ws(&local))).unwrap().changes.is_empty());
+    }
+
+    #[test]
+    fn pull_without_upstream_reports_no_upstream() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "a\n", "init");
+        let error = run(git_pull(ws(&dir))).unwrap_err();
+        assert_error_kind(&error, GitErrorKind::NoUpstream);
+    }
+
+    #[test]
+    fn pull_conflict_is_pending_and_abort_restores_local_commit() {
+        let origin = bare_repo();
+        let local = repo();
+        commit_file(local.path(), "a.txt", "base\n", "base");
+        add_origin(local.path(), origin.path());
+        run(git_push(ws(&local))).unwrap();
+
+        let other = clone_repo(origin.path());
+        write(other.path(), "a.txt", "remote\n");
+        sh(other.path(), &["commit", "-am", "remote change"]);
+        sh(other.path(), &["push"]);
+
+        write(local.path(), "a.txt", "local\n");
+        sh(local.path(), &["commit", "-am", "local change"]);
+        let local_head = sh_out(local.path(), &["rev-parse", "HEAD"]);
+
+        let error = run(git_pull(ws(&local))).unwrap_err();
+        assert_error_kind(&error, GitErrorKind::Conflict);
+        assert_eq!(run(git_pending_op(ws(&local))).unwrap(), "merge");
+        assert!(read(local.path(), "a.txt").contains("<<<<<<<"));
+
+        run(git_abort_op(ws(&local), "merge".into())).unwrap();
+        assert_eq!(sh_out(local.path(), &["rev-parse", "HEAD"]), local_head);
+        assert_eq!(read(local.path(), "a.txt"), "local\n");
+    }
+
+    // --- 扩展稳定性场景：分支与合并 ----------------------------------------
+
+    #[test]
+    fn checkout_that_would_overwrite_dirty_file_is_rejected() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "base\n", "base");
+        sh(dir.path(), &["checkout", "-b", "feature"]);
+        write(dir.path(), "a.txt", "feature\n");
+        sh(dir.path(), &["commit", "-am", "feature change"]);
+        sh(dir.path(), &["checkout", "main"]);
+        write(dir.path(), "a.txt", "local dirty\n");
+
+        let error = run(git_checkout(ws(&dir), "feature".into())).unwrap_err();
+        assert_error_kind(&error, GitErrorKind::Conflict);
+        assert_eq!(sh_out(dir.path(), &["branch", "--show-current"]), "main");
+        assert_eq!(read(dir.path(), "a.txt"), "local dirty\n");
+    }
+
+    #[test]
+    fn checkout_remote_branch_creates_tracking_branch() {
+        let origin = bare_repo();
+        let local = repo();
+        commit_file(local.path(), "a.txt", "base\n", "base");
+        add_origin(local.path(), origin.path());
+        run(git_push(ws(&local))).unwrap();
+
+        let other = clone_repo(origin.path());
+        sh(other.path(), &["checkout", "-b", "feature/remote"]);
+        commit_file(other.path(), "feature.txt", "feature\n", "feature");
+        sh(other.path(), &["push", "-u", "origin", "feature/remote"]);
+        run(git_fetch(ws(&local))).unwrap();
+
+        run(git_checkout(ws(&local), "feature/remote".into())).unwrap();
+        assert_eq!(
+            sh_out(local.path(), &["branch", "--show-current"]),
+            "feature/remote"
+        );
+        assert_eq!(
+            sh_out(local.path(), &["rev-parse", "--abbrev-ref", "@{upstream}"]),
+            "origin/feature/remote"
+        );
+    }
+
+    #[test]
+    fn merge_already_up_to_date_is_safe() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "a\n", "base");
+        sh(dir.path(), &["branch", "feature"]);
+        let before = sh_out(dir.path(), &["rev-parse", "HEAD"]);
+        run(git_merge(ws(&dir), "feature".into())).unwrap();
+        assert_eq!(sh_out(dir.path(), &["rev-parse", "HEAD"]), before);
+        assert_eq!(sh_out(dir.path(), &["rev-list", "--count", "HEAD"]), "1");
+    }
+
+    // --- 扩展稳定性场景：worktree 与失效路径 -------------------------------
+
+    #[test]
+    fn linked_worktree_can_commit_through_gitdir_file() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "base\n", "base");
+        let parent = tempfile::tempdir().unwrap();
+        let target = parent.path().join("linked-worktree");
+        let target_string = target.to_string_lossy().into_owned();
+        run(git_worktree_add(
+            ws(&dir),
+            target_string.clone(),
+            "feature/worktree".into(),
+            true,
+            None,
+        ))
+        .unwrap();
+        assert!(target.join(".git").is_file());
+
+        write(&target, "from-worktree.txt", "worktree\n");
+        run(git_commit(
+            target_string,
+            "commit from linked worktree".into(),
+            false,
+            false,
+            vec![],
+        ))
+        .unwrap();
+        assert_eq!(
+            sh_out(
+                dir.path(),
+                &["log", "feature/worktree", "-1", "--pretty=%s"]
+            ),
+            "commit from linked worktree"
+        );
+    }
+
+    #[test]
+    fn manually_deleted_worktree_is_pruned_idempotently() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "base\n", "base");
+        let parent = tempfile::tempdir().unwrap();
+        let target = parent.path().join("stale-worktree");
+        let target_string = target.to_string_lossy().into_owned();
+        run(git_worktree_add(
+            ws(&dir),
+            target_string.clone(),
+            "stale".into(),
+            true,
+            None,
+        ))
+        .unwrap();
+        std::fs::remove_dir_all(&target).unwrap();
+
+        // Git 可能在 list 时按自身配置提前清理登记，也可能先返回 prunable；无论哪种，
+        // 显式 prune 都必须成功且可重复。
+        let _ = run(git_worktrees(ws(&dir))).unwrap();
+        run(git_worktree_prune(ws(&dir))).unwrap();
+        run(git_worktree_prune(ws(&dir))).unwrap();
+        let after = run(git_worktrees(ws(&dir))).unwrap();
+        assert!(!after.iter().any(|worktree| worktree.path == target_string));
+    }
+
+    #[test]
+    fn missing_workspace_is_reported_as_not_repository() {
+        let parent = tempfile::tempdir().unwrap();
+        let missing = parent.path().join("deleted-worktree");
+        let error = match run(git_status(missing.to_string_lossy().into_owned())) {
+            Err(error) => error,
+            Ok(_) => panic!("missing workspace unexpectedly reported Git status"),
+        };
+        assert_error_kind(&error, GitErrorKind::NotRepository);
+    }
+
+    #[test]
+    fn broken_linked_worktree_gitdir_is_reported_without_panic() {
+        let dir = repo();
+        commit_file(dir.path(), "a.txt", "base\n", "base");
+        let parent = tempfile::tempdir().unwrap();
+        let target = parent.path().join("broken-worktree");
+        let target_string = target.to_string_lossy().into_owned();
+        run(git_worktree_add(
+            ws(&dir),
+            target_string.clone(),
+            "broken".into(),
+            true,
+            None,
+        ))
+        .unwrap();
+        std::fs::write(
+            target.join(".git"),
+            "gitdir: Z:/definitely/missing/gitdir\n",
+        )
+        .unwrap();
+
+        let error = match run(git_status(target_string)) {
+            Err(error) => error,
+            Ok(_) => panic!("broken linked worktree unexpectedly reported Git status"),
+        };
+        assert_error_kind(&error, GitErrorKind::NotRepository);
     }
 }

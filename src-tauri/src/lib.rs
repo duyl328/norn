@@ -3169,6 +3169,19 @@ mod tests {
     }
 
     #[test]
+    fn git_state_changed_tracks_linked_worktree_gitdir_events() {
+        // linked worktree 的 .git 是一个普通 gitdir 文件；文件本身被替换时需要重新解析监听目标。
+        assert!(git_state_changed(Path::new("/repo-worktree/.git")));
+        // linked worktree 的真实 HEAD/index 位于主仓库 .git/worktrees/<name>/ 下。
+        assert!(git_state_changed(Path::new(
+            "/repo/.git/worktrees/feature/HEAD"
+        )));
+        assert!(git_state_changed(Path::new(
+            "/repo/.git/worktrees/feature/index"
+        )));
+    }
+
+    #[test]
     fn pending_open_files_buffers_until_ready_then_emits_live() {
         let mut state = PendingOpenFiles::default();
         // 未就绪（冷启动 Opened 早于前端 listener）→ 缓冲，不实时 emit。

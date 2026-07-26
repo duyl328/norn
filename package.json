@@ -17,6 +17,11 @@
   "engines": {
     "node": ">=20"
   },
+  "pnpm": {
+    "overrides": {
+      "@wdio/native-utils": "2.5.0"
+    }
+  },
   "scripts": {
     "dev": "vite",
     "tauri:dev": "node scripts/tauri-dev-instance.mjs",
@@ -34,6 +39,7 @@
     "test:unit": "vitest run tests/unit tests/components",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:native": "node scripts/native-e2e.mjs",
     "test:rust": "cd src-tauri && cargo test",
     "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm test:coverage && pnpm build",
     "check:all": "pnpm check && pnpm test:rust && pnpm test:e2e",
@@ -78,6 +84,12 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^4.1.9",
+    "@wdio/cli": "^9.30.0",
+    "@wdio/local-runner": "^9.30.0",
+    "@wdio/mocha-framework": "^9.30.0",
+    "@wdio/native-utils": "2.5.0",
+    "@wdio/spec-reporter": "^9.29.1",
+    "@wdio/tauri-service": "^1.2.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.39.4",
     "eslint-config-prettier": "^10.1.8",
