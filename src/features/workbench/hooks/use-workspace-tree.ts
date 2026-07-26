@@ -891,6 +891,18 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
       closeFileTreeNameDialog();
     } catch (error) {
       setFileTreeError(error, "Unable to update the file tree.");
+      if (dialogScope === "scratch") {
+        await refreshScratchFolder();
+      } else if (fileTreeNameDialog.kind === "rename") {
+        await refreshFolderPath(getParentPath(fileTreeNameDialog.node.path) ?? workspaceRoot, {
+          preserveExpansion: true,
+        });
+      } else {
+        const failedParent = fileTreeNameDialog.parentPath;
+        const refreshPath =
+          failedParent === workspaceRoot ? workspaceRoot : (getParentPath(failedParent) ?? workspaceRoot);
+        await refreshFolderPath(refreshPath, { preserveExpansion: true });
+      }
     }
   };
 
@@ -903,7 +915,11 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   };
 
   const cutTreeNode = (node: FileTreeNode) => {
-    putNodesOnClipboard(contextActionNodes(node, clipboardScope()), "cut");
+    const scope = clipboardScope();
+    const rootPath = scope === "scratch" ? scratchFolder?.path : folderView?.rootPath;
+    if (node.path !== rootPath) {
+      putNodesOnClipboard(contextActionNodes(node, scope), "cut");
+    }
     setFileTreeContextMenu(null);
   };
 

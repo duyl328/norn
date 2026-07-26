@@ -757,7 +757,7 @@ export function FileTreeContextMenu({
       </button>
       <button
         className="file-tree-context-item"
-        disabled={!node}
+        disabled={!node || isRootNode}
         role="menuitem"
         type="button"
         onClick={() => node && onCutNode(node)}
