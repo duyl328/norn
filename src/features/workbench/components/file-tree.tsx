@@ -682,14 +682,26 @@ export function FileTreeContextMenu({
   y: number;
 }) {
   const { t } = useI18n();
+  const menuRef = useRef<HTMLDivElement>(null);
   const isRootNode = Boolean(node && node.kind === "directory" && node.path === rootPath);
   const menuStyle = {
     left: Math.min(x, window.innerWidth - 216),
     top: Math.min(y, window.innerHeight - 260),
   } satisfies CSSProperties;
 
+  useEffect(() => {
+    menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
+  }, []);
+
   const menu = (
-    <div className="file-tree-context-menu" role="menu" style={menuStyle} onClick={(event) => event.stopPropagation()}>
+    <div
+      className="file-tree-context-menu"
+      ref={menuRef}
+      role="menu"
+      style={menuStyle}
+      onClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => (event.key === "Escape" ? undefined : event.stopPropagation())}
+    >
       <button className="file-tree-context-item" role="menuitem" type="button" onClick={onRequestCreateFile}>
         <FilePlus className="file-tree-context-icon" />
         {t("fileTree.newFile")}

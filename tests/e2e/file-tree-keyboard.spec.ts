@@ -105,9 +105,9 @@ test("TREE-KEY-006/007：Delete 请求确认、Backspace 安全且全选仅包�
   await expect(page.getByRole("dialog")).toContainText("Move to Trash");
   await page.keyboard.press("Escape");
   await tree(page).press("Control+A");
-  await expect(row(page, "src")).toHaveAttribute("aria-selected", "true");
-  await tree(page).press("End");
   await expect(row(page, "file-23.txt")).toHaveAttribute("aria-selected", "true");
+  await page.locator(".file-tree-scroll").first().evaluate((element) => element.scrollTo({ top: 0 }));
+  await expect(row(page, "src")).toHaveAttribute("aria-selected", "true");
   await expect(row(page, "child.ts")).toHaveCount(0);
 });
 
