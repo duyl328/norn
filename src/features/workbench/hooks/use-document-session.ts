@@ -48,6 +48,9 @@ import {
   upsertOpenDocument,
 } from "../workbench-utils";
 
+const isMissingFileError = (message: string) =>
+  /not found|no such file|cannot find|does not exist|\(os error (?:2|3)\)/i.test(message);
+
 export function useDocumentSession() {
   const document = useWorkbenchStore((state) => state.document);
   const setDocument = useWorkbenchStore((state) => state.setDocument);
@@ -656,7 +659,7 @@ export function useDocumentSession() {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
 
-        if (/not found|no such file|cannot find|does not exist/i.test(message)) {
+        if (isMissingFileError(message)) {
           updateOpenDocumentById(openDocument.id, (currentDocument) => ({
             ...currentDocument,
             diskConflict: {
@@ -762,7 +765,7 @@ export function useDocumentSession() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
 
-      if (/not found|no such file|cannot find|does not exist/i.test(message)) {
+      if (isMissingFileError(message)) {
         try {
           const renamed = await resolveRenamedDocument();
 
