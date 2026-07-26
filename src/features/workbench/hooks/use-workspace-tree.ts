@@ -331,16 +331,20 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
 
   const openFolderView = async (rootPath: string, origin: FolderView["origin"]) => {
     const requestId = ++folderOpenRequestRef.current;
+    const previousView = useWorkbenchStore.getState().folderView;
     setLeftPanelOpen(true);
-    setFolderView({
-      rootPath,
-      rootName: getPathName(rootPath),
-      origin,
-      nodes: [],
-      rootExpanded: true,
-      loadingPath: rootPath,
-      error: null,
-    });
+    setFileError(null);
+    if (!previousView) {
+      setFolderView({
+        rootPath,
+        rootName: getPathName(rootPath),
+        origin,
+        nodes: [],
+        rootExpanded: true,
+        loadingPath: rootPath,
+        error: null,
+      });
+    }
 
     try {
       const nodes = await readFolderEntries(rootPath);
@@ -360,6 +364,11 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
       void inspectGitWorkspace(rootPath);
     } catch (error) {
       if (requestId !== folderOpenRequestRef.current) return;
+      const message = error instanceof Error ? error.message : String(error);
+      if (previousView) {
+        setFileError(message);
+        return;
+      }
       setFolderView({
         rootPath,
         rootName: getPathName(rootPath),
@@ -367,7 +376,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
         nodes: [],
         rootExpanded: true,
         loadingPath: null,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       });
       setGitWorkspace({ kind: "idle" });
     }
