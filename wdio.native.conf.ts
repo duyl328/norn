@@ -3,6 +3,9 @@ import { resolve } from "node:path";
 if (!process.env.NORN_NATIVE_E2E_REPO) {
   throw new Error("NORN_NATIVE_E2E_REPO is required; use pnpm test:e2e:native");
 }
+if (!process.env.NORN_NATIVE_E2E_FILES) {
+  throw new Error("NORN_NATIVE_E2E_FILES is required; use pnpm test:e2e:native");
+}
 
 const application = resolve("src-tauri/target/debug/norn.exe");
 

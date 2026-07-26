@@ -9,6 +9,7 @@ const fixtureRoot = mkdtempSync(join(tmpdir(), "norn-native-e2e-"));
 const repository = join(fixtureRoot, "repository");
 const remote = join(fixtureRoot, "remote.git");
 const peer = join(fixtureRoot, "peer");
+const files = join(fixtureRoot, "files");
 
 const git = (cwd, ...args) =>
   execFileSync("git", args, {
@@ -43,6 +44,7 @@ const run = (command, args, extraEnv = {}) => {
 try {
   mkdirSync(repository);
   mkdirSync(remote);
+  mkdirSync(files);
   git(remote, "init", "--bare", "-b", "main");
 
   git(repository, "init", "-b", "main");
@@ -82,10 +84,14 @@ try {
   }
 
   const wdioCli = join(workspace, "node_modules", "@wdio", "cli", "bin", "wdio.js");
-  run(process.execPath, [wdioCli, "run", "wdio.native.conf.ts"], {
+  const requestedSpec = process.argv[2];
+  const wdioArgs = [wdioCli, "run", "wdio.native.conf.ts"];
+  if (requestedSpec) wdioArgs.push("--spec", requestedSpec);
+  run(process.execPath, wdioArgs, {
     NORN_NATIVE_E2E_REPO: repository,
     NORN_NATIVE_E2E_REMOTE: remote,
     NORN_NATIVE_E2E_PEER: peer,
+    NORN_NATIVE_E2E_FILES: files,
   });
 } finally {
   rmSync(fixtureRoot, { force: true, recursive: true });

@@ -124,6 +124,7 @@ describe("FileTreePanel", () => {
     render(
       <I18nProvider>
         <FileTreeRow
+          activePath="/mock/project/README.md"
           ancestorCanonicalPaths={[]}
           draggedNode={null}
           dropTarget={null}
@@ -144,6 +145,7 @@ describe("FileTreePanel", () => {
           onToggleDirectory={noop}
         />
         <FileTreeRow
+          activePath="/mock/project/README.md"
           ancestorCanonicalPaths={[]}
           draggedNode={null}
           dropTarget={null}
@@ -164,6 +166,7 @@ describe("FileTreePanel", () => {
           onToggleDirectory={noop}
         />
         <FileTreeRow
+          activePath="/mock/project/README.md"
           ancestorCanonicalPaths={[]}
           draggedNode={null}
           dropTarget={null}
