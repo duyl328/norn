@@ -105,6 +105,8 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   const setTreeSearch = useWorkbenchStore((state) => state.setTreeSearch);
 
   const dropTargetRef = useRef<TreeDropTarget | null>(null);
+  const folderOpenRequestRef = useRef(0);
+  const loadingDirectoriesRef = useRef(new Set<string>());
   const isDirty = isDocumentDirty(document);
 
   const readFolderEntries = async (path: string) => {
@@ -163,6 +165,39 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     try {
       const children = await readFolderEntries(path);
       const nextChildren = collapseChildren ? collapseTreeNodesDeep(children) : children;
+
+      const state = useWorkbenchStore.getState();
+      const currentView = state.folderView;
+      const selection = state.treeSelection;
+      if (currentView && selection?.scope === "main") {
+        const previousChildren =
+          path === currentView.rootPath ? currentView.nodes : (findTreeNode(currentView.nodes, path)?.children ?? []);
+        const previousPaths = new Set(previousChildren.map((child) => child.path));
+        const nextPaths = new Set(nextChildren.map((child) => child.path));
+        const replacements = new Map<string, string>();
+        for (const selectedPath of selection.paths) {
+          if (getParentPath(selectedPath) !== path || nextPaths.has(selectedPath)) continue;
+          const previous = previousChildren.find((child) => child.path === selectedPath);
+          if (!previous) continue;
+          const candidates = nextChildren.filter(
+            (child) =>
+              !previousPaths.has(child.path) &&
+              child.kind === previous.kind &&
+              child.size === previous.size &&
+              (previous.lastModified === undefined || child.lastModified === previous.lastModified),
+          );
+          if (candidates.length === 1) replacements.set(selectedPath, candidates[0].path);
+        }
+        if (replacements.size > 0) {
+          const remap = (selectedPath: string) => replacements.get(selectedPath) ?? selectedPath;
+          setTreeSelection({
+            ...selection,
+            anchorPath: remap(selection.anchorPath),
+            leadPath: remap(selection.leadPath),
+            paths: selection.paths.map((selectedPath) => replacements.get(selectedPath) ?? selectedPath),
+          });
+        }
+      }
 
       setFolderView((currentView) =>
         currentView ? applyFolderEntries(currentView, path, nextChildren, preserveExpansion) : currentView,
@@ -278,6 +313,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   };
 
   const openFolderView = async (rootPath: string, origin: FolderView["origin"]) => {
+    const requestId = ++folderOpenRequestRef.current;
     setLeftPanelOpen(true);
     setFolderView({
       rootPath,
@@ -292,6 +328,8 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     try {
       const nodes = await readFolderEntries(rootPath);
 
+      if (requestId !== folderOpenRequestRef.current) return;
+
       setFolderView({
         rootPath,
         rootName: getPathName(rootPath),
@@ -304,6 +342,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
       rememberRecentFolder(rootPath);
       void inspectGitWorkspace(rootPath);
     } catch (error) {
+      if (requestId !== folderOpenRequestRef.current) return;
       setFolderView({
         rootPath,
         rootName: getPathName(rootPath),
@@ -344,6 +383,9 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
       return;
     }
 
+    if (loadingDirectoriesRef.current.has(node.path)) return;
+    loadingDirectoriesRef.current.add(node.path);
+
     setFolderView((currentView) => (currentView ? markFolderNodeExpanding(currentView, node.path) : currentView));
 
     try {
@@ -355,6 +397,8 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setFolderView((currentView) => (currentView ? applyFolderError(currentView, node.path, message) : currentView));
+    } finally {
+      loadingDirectoriesRef.current.delete(node.path);
     }
   };
 

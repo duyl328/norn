@@ -58,6 +58,7 @@ import type {
   TreeSelectionModifiers,
 } from "../types";
 import {
+  arePathsEqual,
   flattenVisibleTreeRows,
   formatFileSize,
   getFileTreeDisplayIcon,
@@ -140,10 +141,7 @@ export function FileTreePanel({
   const { t } = useI18n();
   const scrollParentRef = useRef<HTMLDivElement>(null);
   // 该作用域当前选中的路径集合与光标行(跨作用域时为空,避免另一棵树误高亮)。
-  const selectedPaths = useMemo(
-    () => new Set(selection?.scope === scope ? selection.paths : []),
-    [selection, scope],
-  );
+  const selectedPaths = useMemo(() => new Set(selection?.scope === scope ? selection.paths : []), [selection, scope]);
   const leadPath = selection?.scope === scope ? selection.leadPath : null;
   // 即输即搜:本作用域的查询(空 = 未搜索)。匹配在行内按子串高亮,命中数显示在搜索条上。
   const searchQuery = search?.scope === scope ? search.query : "";
@@ -278,6 +276,7 @@ export function FileTreePanel({
                   style={{ top: `${virtualRow.start}px` }}
                 >
                   <FileTreeRow
+                    activePath={activePath}
                     selectedPaths={selectedPaths}
                     leadPath={leadPath}
                     searchQuery={searchQuery}
@@ -467,6 +466,7 @@ function highlightMatch(name: string, query: string) {
 }
 
 export function FileTreeRow({
+  activePath,
   selectedPaths,
   leadPath,
   searchQuery,
@@ -487,6 +487,7 @@ export function FileTreeRow({
   onSelectNode,
   onToggleDirectory,
 }: {
+  activePath: string;
   selectedPaths: Set<string>;
   leadPath: string | null;
   searchQuery: string;
@@ -509,6 +510,7 @@ export function FileTreeRow({
 }) {
   const { t } = useI18n();
   const isDirectory = node.kind === "directory";
+  const isDocumentActive = !isDirectory && arePathsEqual(node.path, activePath);
   const isSelected = selectedPaths.has(node.path);
   const isLead = node.path === leadPath;
   const isLoading = loadingPath === node.path;
@@ -585,6 +587,7 @@ export function FileTreeRow({
         className={cn(
           "tree-row w-full text-left",
           isSelected && "tree-row-active",
+          isDocumentActive && "tree-row-document-active",
           isLead && "tree-row-lead",
           (node.error || wouldCycle) && "tree-row-muted",
           node.isHidden && "tree-row-hidden",
@@ -750,7 +753,13 @@ export function FileTreeContextMenu({
         <Scissors className="file-tree-context-icon" />
         {t("common.cut")}
       </button>
-      <button className="file-tree-context-item" disabled={!clipboard} role="menuitem" type="button" onClick={onPasteNode}>
+      <button
+        className="file-tree-context-item"
+        disabled={!clipboard}
+        role="menuitem"
+        type="button"
+        onClick={onPasteNode}
+      >
         <ClipboardPaste className="file-tree-context-icon" />
         {t("common.paste")}
       </button>

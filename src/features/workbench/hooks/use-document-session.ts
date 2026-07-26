@@ -65,6 +65,11 @@ export function useDocumentSession() {
   const setLeftPanelOpen = useWorkbenchStore((state) => state.setLeftPanelOpen);
 
   const diskChangePromptRef = useRef<string | null>(null);
+  const latestFileOpenRequestRef = useRef(0);
+  const pendingFileOpensRef = useRef(new Map<string, Promise<void>>());
+  const savingPathsRef = useRef(new Set<string>());
+  const workspaceChangeTimerRef = useRef<number | null>(null);
+  const pendingChangedDirectoriesRef = useRef(new Set<string>());
   const isDirty = isDocumentDirty(document);
   const t = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) =>
     translate(useWorkbenchStore.getState().language, key, params);
@@ -251,18 +256,27 @@ export function useDocumentSession() {
     activateDocument(createUntitledDocument());
   };
 
-  const applySavedDocument = (savedFile: NativeSavedTextFile, content: string): WorkbenchDocument => {
+  const applySavedDocument = (
+    savedFile: NativeSavedTextFile,
+    content: string,
+    sourceDocument: WorkbenchDocument = document,
+  ): WorkbenchDocument => {
+    const latestSourceDocument =
+      useWorkbenchStore.getState().openDocuments.find((openDocument) => openDocument.id === sourceDocument.id) ??
+      sourceDocument;
     // 未命名文件落盘成真实文件后,清掉它的草稿缓存(已有归宿,不再需要恢复)。
-    if (document.isUntitled) {
-      void deleteDraft(document.id);
+    if (sourceDocument.isUntitled) {
+      void deleteDraft(sourceDocument.id);
     }
-    const shouldPreserveDocumentId = !document.isUntitled && arePathsEqual(document.path, savedFile.path);
+    const shouldPreserveDocumentId = !sourceDocument.isUntitled && arePathsEqual(sourceDocument.path, savedFile.path);
+    const contentChangedDuringSave = latestSourceDocument.content !== sourceDocument.content;
+    const editorContent = contentChangedDuringSave ? latestSourceDocument.content : content;
     const nextDocument = {
-      ...document,
-      id: shouldPreserveDocumentId ? document.id : getFileOpenId(savedFile.path, savedFile.lastModified),
+      ...latestSourceDocument,
+      id: shouldPreserveDocumentId ? sourceDocument.id : getFileOpenId(savedFile.path, savedFile.lastModified),
       name: savedFile.name,
       path: savedFile.path,
-      content,
+      content: editorContent,
       savedContent: content,
       diskConflict: undefined,
       size: savedFile.size,
@@ -281,12 +295,12 @@ export function useDocumentSession() {
         return upsertOpenDocument(currentDocuments, nextDocument);
       }
 
-      const withoutPreviousDocument = currentDocuments.filter((openDocument) => openDocument.id !== document.id);
+      const withoutPreviousDocument = currentDocuments.filter((openDocument) => openDocument.id !== sourceDocument.id);
 
       return upsertOpenDocument(withoutPreviousDocument, nextDocument);
     });
     setSaveConflict(null);
-    setSaveState("saved");
+    setSaveState(editorContent === content ? "saved" : "idle");
     setFileError(null);
 
     return nextDocument;
@@ -386,6 +400,10 @@ export function useDocumentSession() {
       return await saveDocumentAs();
     }
 
+    if (savingPathsRef.current.has(document.path)) {
+      return null;
+    }
+
     if (!isTauriRuntime()) {
       setSaveState("error");
       setFileError(t("editor.nativeSavingDesktopOnly"));
@@ -404,6 +422,7 @@ export function useDocumentSession() {
     }
     setSaveState("saving");
     setFileError(null);
+    savingPathsRef.current.add(document.path);
 
     try {
       const savedFile = await invoke<NativeSavedTextFile>("save_text_file", {
@@ -415,7 +434,7 @@ export function useDocumentSession() {
         hasBom: document.hasBom ?? false,
       });
 
-      return applySavedDocument(savedFile, content);
+      return applySavedDocument(savedFile, content, document);
     } catch (error) {
       const saveError = getNativeSaveError(error);
 
@@ -439,6 +458,8 @@ export function useDocumentSession() {
       setSaveState("error");
       setFileError(saveError.message ?? t("editor.unableSave"));
       return null;
+    } finally {
+      savingPathsRef.current.delete(document.path);
     }
   };
 
@@ -453,9 +474,19 @@ export function useDocumentSession() {
       return;
     }
 
-    setSaveConflict(null);
-    clearDocumentDiskConflict(document.id);
-    await openNativeFile(conflict.path);
+    try {
+      const inspection = await invoke<NativeTextFileInspection>("inspect_text_file", { path: conflict.path });
+      if (inspection.isBinary || !inspection.isText) {
+        setFileError(t("editor.changedUnsupported", { name: inspection.name }));
+        return;
+      }
+      const file = await invoke<NativeTextFile>("read_text_file", { path: conflict.path });
+      setSaveConflict(null);
+      clearDocumentDiskConflict(document.id);
+      applyReloadedDocument(file);
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : String(error));
+    }
   };
 
   const showDeletedDocumentConflict = (message?: string) => {
@@ -559,7 +590,11 @@ export function useDocumentSession() {
         const inspection = await invoke<NativeTextFileInspection>("inspect_text_file", { path: openDocument.path });
         const diskLastModified = inspection.lastModified ?? undefined;
 
-        if (!diskLastModified || !openDocument.lastModified || diskLastModified === openDocument.lastModified) {
+        if (
+          !diskLastModified ||
+          !openDocument.lastModified ||
+          (diskLastModified === openDocument.lastModified && !changedDirectories)
+        ) {
           if (openDocument.diskConflict) {
             updateOpenDocumentById(openDocument.id, (currentDocument) => ({
               ...currentDocument,
@@ -603,6 +638,10 @@ export function useDocumentSession() {
           }
         }
 
+        if (diskContent === openDocument.savedContent) {
+          continue;
+        }
+
         updateOpenDocumentById(openDocument.id, (currentDocument) => ({
           ...currentDocument,
           diskConflict: {
@@ -633,7 +672,7 @@ export function useDocumentSession() {
     }
   };
 
-  const checkCurrentDocumentOnDisk = async () => {
+  const checkCurrentDocumentOnDisk = async (forceContentCheck = false) => {
     if (
       !isTauriRuntime() ||
       saveConflict ||
@@ -649,7 +688,11 @@ export function useDocumentSession() {
       const inspection = await invoke<NativeTextFileInspection>("inspect_text_file", { path: document.path });
       const diskLastModified = inspection.lastModified ?? undefined;
 
-      if (!diskLastModified || !document.lastModified || diskLastModified === document.lastModified) {
+      if (
+        !diskLastModified ||
+        !document.lastModified ||
+        (diskLastModified === document.lastModified && !forceContentCheck)
+      ) {
         diskChangePromptRef.current = null;
         return;
       }
@@ -703,6 +746,11 @@ export function useDocumentSession() {
         }
       }
 
+      if (diskContent === latestDocument.savedContent) {
+        diskChangePromptRef.current = null;
+        return;
+      }
+
       setSaveConflict({
         content: latestDocument.content,
         diskContent,
@@ -730,17 +778,30 @@ export function useDocumentSession() {
     }
   };
 
-  const openNativeFile = async (path: string, options: { clearFolderView?: boolean; size?: number } = {}) => {
-    const { clearFolderView = false, size } = options;
+  const openNativeFile = async (
+    path: string,
+    options: { clearFolderView?: boolean; requestId?: number; size?: number } = {},
+  ) => {
+    const { clearFolderView = false, requestId, size } = options;
+    const shouldActivate = () => requestId === undefined || requestId === latestFileOpenRequestRef.current;
+    const commitOpenedDocument = (nextDocument: WorkbenchDocument) => {
+      if (shouldActivate()) {
+        activateOpenedDocument(nextDocument);
+        return;
+      }
+      setOpenDocuments((currentDocuments) => upsertOpenDocument(currentDocuments, nextDocument));
+    };
 
     setFileError(null);
     setSaveConflict(null);
 
     try {
-      const openDocument = openDocuments.find((currentDocument) => currentDocument.path === path);
+      const openDocument = useWorkbenchStore
+        .getState()
+        .openDocuments.find((currentDocument) => arePathsEqual(currentDocument.path, path));
 
       if (openDocument) {
-        activateDocument(openDocument);
+        if (shouldActivate()) activateDocument(openDocument);
 
         if (clearFolderView) {
           setFolderView(null);
@@ -769,7 +830,7 @@ export function useDocumentSession() {
         const contentSuffix = range.hasMoreAfter ? `\n\n${t("editor.largeFileOmittedAfter")}` : "";
         const rangeContent = `${contentPrefix}${range.content}${contentSuffix}`;
 
-        activateOpenedDocument({
+        commitOpenedDocument({
           id: getFileOpenId(inspection.path, inspection.lastModified),
           name: inspection.name,
           path: inspection.path,
@@ -809,7 +870,7 @@ export function useDocumentSession() {
 
       const file = await invoke<NativeTextFile>("read_text_file", { path });
 
-      activateOpenedDocument({
+      commitOpenedDocument({
         id: getFileOpenId(file.path, file.lastModified),
         name: file.name,
         path: file.path,
@@ -896,10 +957,11 @@ export function useDocumentSession() {
     }
   };
 
-  const continueFileOpen = async (pendingOpen: PendingFileOpen) => {
+  const continueFileOpen = async (pendingOpen: PendingFileOpen, requestId: number) => {
     if (pendingOpen.kind === "path") {
       await openNativeFile(pendingOpen.path, {
         clearFolderView: pendingOpen.clearFolderView,
+        requestId,
         size: pendingOpen.size,
       });
       return;
@@ -914,7 +976,7 @@ export function useDocumentSession() {
       const path = await invoke<string | null>("open_file_dialog");
 
       if (path) {
-        await openNativeFile(path, { clearFolderView: true });
+        await openNativeFile(path, { clearFolderView: true, requestId });
       }
     } catch (error) {
       setFileError(error instanceof Error ? error.message : String(error));
@@ -922,7 +984,13 @@ export function useDocumentSession() {
   };
 
   const requestFileOpen = (pendingOpen: PendingFileOpen) => {
-    void continueFileOpen(pendingOpen);
+    const key = pendingOpen.kind === "path" ? pendingOpen.path : "__file-dialog__";
+    if (pendingFileOpensRef.current.has(key)) return;
+    const requestId = ++latestFileOpenRequestRef.current;
+    const pending = continueFileOpen(pendingOpen, requestId).finally(() => {
+      if (pendingFileOpensRef.current.get(key) === pending) pendingFileOpensRef.current.delete(key);
+    });
+    pendingFileOpensRef.current.set(key, pending);
   };
 
   const openFilePicker = () => {
@@ -954,6 +1022,9 @@ export function useDocumentSession() {
     ) {
       return !doc.diskConflict;
     }
+    if (savingPathsRef.current.has(doc.path)) {
+      return true;
+    }
     // 活动文档若正处于冲突态,交给冲突流程,别静默覆盖。
     const store = useWorkbenchStore.getState();
     if (store.saveConflict && store.document.id === doc.id) {
@@ -961,6 +1032,7 @@ export function useDocumentSession() {
     }
 
     const content = doc.content;
+    savingPathsRef.current.add(doc.path);
     try {
       const saved = await invoke<NativeSavedTextFile>("save_text_file", {
         path: doc.path,
@@ -1001,6 +1073,8 @@ export function useDocumentSession() {
         updateOpenDocumentById(doc.id, (currentDocument) => ({ ...currentDocument, diskConflict: conflict }));
       }
       return false;
+    } finally {
+      savingPathsRef.current.delete(doc.path);
     }
   };
 
@@ -1151,6 +1225,7 @@ export function useDocumentSession() {
 
     let disposed = false;
     let unlisten: UnlistenFn | undefined;
+    const pendingChangedDirectories = pendingChangedDirectoriesRef.current;
 
     const handleFocus = () => {
       void checkCurrentDocumentOnDisk();
@@ -1178,17 +1253,18 @@ export function useDocumentSession() {
     window.addEventListener("blur", handleBlur);
     globalThis.document.addEventListener("visibilitychange", handleVisibilityChange);
     listen<string[]>(workspaceFsChangeEvent, (event) => {
-      const parentPath = getParentPath(document.path);
-
-      if (!parentPath) {
-        return;
-      }
-
-      if (event.payload.some((changedDir) => arePathsEqual(changedDir, parentPath))) {
-        void checkCurrentDocumentOnDisk();
-      }
-
-      void checkOpenDocumentsOnDisk(event.payload);
+      for (const changedDirectory of event.payload) pendingChangedDirectories.add(changedDirectory);
+      if (workspaceChangeTimerRef.current !== null) window.clearTimeout(workspaceChangeTimerRef.current);
+      workspaceChangeTimerRef.current = window.setTimeout(() => {
+        workspaceChangeTimerRef.current = null;
+        const changedDirectories = [...pendingChangedDirectories];
+        pendingChangedDirectories.clear();
+        const parentPath = getParentPath(useWorkbenchStore.getState().document.path);
+        if (parentPath && changedDirectories.some((changedDir) => arePathsEqual(changedDir, parentPath))) {
+          void checkCurrentDocumentOnDisk(true);
+        }
+        void checkOpenDocumentsOnDisk(changedDirectories);
+      }, 50);
     })
       .then((cleanup) => {
         if (disposed) {
@@ -1208,6 +1284,9 @@ export function useDocumentSession() {
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("blur", handleBlur);
       globalThis.document.removeEventListener("visibilitychange", handleVisibilityChange);
+      if (workspaceChangeTimerRef.current !== null) window.clearTimeout(workspaceChangeTimerRef.current);
+      workspaceChangeTimerRef.current = null;
+      pendingChangedDirectories.clear();
       unlisten?.();
     };
   }, [

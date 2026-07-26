@@ -33,30 +33,30 @@
 
 本轮遵循“先完成测试、暂不修业务 BUG”的方式，新增 88 条 Playwright E2E：
 
-| 测试文件                                     | 对应用例                         | 结果                  |
-| -------------------------------------------- | -------------------------------- | --------------------- |
-| `tests/e2e/file-open-races.spec.ts`          | `FILE-OPEN-001`～`FILE-OPEN-015` | 13 通过，2 个产品失败 |
-| `tests/e2e/file-edit-external.spec.ts`       | `FILE-EDIT-001`～`FILE-EDIT-023` | 20 通过，3 个产品失败 |
-| `tests/e2e/file-save-races.spec.ts`          | `FILE-SAVE-001`～`FILE-SAVE-021` | 18 通过，3 个产品失败 |
-| `tests/e2e/file-lifecycle.spec.ts`           | `FILE-LIFE-001`～`FILE-LIFE-008` | 8 通过                |
-| `tests/e2e/file-tree-load-selection.spec.ts` | 首批 `TREE-LOAD` / `TREE-SELECT` | 17 通过，4 个产品失败 |
+| 测试文件                                     | 对应用例                         | 结果    |
+| -------------------------------------------- | -------------------------------- | ------- |
+| `tests/e2e/file-open-races.spec.ts`          | `FILE-OPEN-001`～`FILE-OPEN-015` | 15 通过 |
+| `tests/e2e/file-edit-external.spec.ts`       | `FILE-EDIT-001`～`FILE-EDIT-023` | 23 通过 |
+| `tests/e2e/file-save-races.spec.ts`          | `FILE-SAVE-001`～`FILE-SAVE-021` | 21 通过 |
+| `tests/e2e/file-lifecycle.spec.ts`           | `FILE-LIFE-001`～`FILE-LIFE-008` | 8 通过  |
+| `tests/e2e/file-tree-load-selection.spec.ts` | 首批 `TREE-LOAD` / `TREE-SELECT` | 21 通过 |
 
-已固定但暂未修复的产品问题：
+本轮测试固定后已修复的产品问题：
 
-- [ ] `FILE-OPEN-010` 同一路径快速重复打开会发起两次加载。
-- [ ] `FILE-OPEN-011` A 的旧读取晚返回时会覆盖用户后来打开的 B。
-- [ ] `FILE-EDIT-005` 冲突框打开后磁盘再次变化，“使用磁盘”没有读取最新版本。
-- [ ] `FILE-EDIT-021` 内容变化但 mtime 相同时无法发现外部修改。
-- [ ] `FILE-EDIT-022` watcher 事件风暴未合并，10 个事件触发 10 次检查。
-- [ ] `FILE-SAVE-009` 保存进行中继续输入，旧保存结果会覆盖后续输入。
-- [ ] `FILE-SAVE-011` 自动保存与手动保存并发时发生重复写入。
-- [ ] `FILE-SAVE-014` 保存冲突选择“使用磁盘”没有重载磁盘内容。
-- [ ] `TREE-LOAD-004` 工作区 A 的慢响应会覆盖后来打开的工作区 B。
-- [ ] `TREE-LOAD-005` 同一目录快速重复展开会执行两次 `list_directory`。
-- [ ] `TREE-SELECT-012` 活动文件在文件树中没有区别于普通节点的独立高亮。
-- [ ] `TREE-SELECT-014` 外部重命名已选文件后，选择没有跟随新路径。
+- [x] `FILE-OPEN-010` 同一路径快速重复打开会发起两次加载。
+- [x] `FILE-OPEN-011` A 的旧读取晚返回时会覆盖用户后来打开的 B。
+- [x] `FILE-EDIT-005` 冲突框打开后磁盘再次变化，“使用磁盘”没有读取最新版本。
+- [x] `FILE-EDIT-021` 内容变化但 mtime 相同时无法发现外部修改。
+- [x] `FILE-EDIT-022` watcher 事件风暴未合并，10 个事件触发 10 次检查。
+- [x] `FILE-SAVE-009` 保存进行中继续输入，旧保存结果会覆盖后续输入。
+- [x] `FILE-SAVE-011` 自动保存与手动保存并发时发生重复写入。
+- [x] `FILE-SAVE-014` 保存冲突选择“使用磁盘”没有重载磁盘内容。
+- [x] `TREE-LOAD-004` 工作区 A 的慢响应会覆盖后来打开的工作区 B。
+- [x] `TREE-LOAD-005` 同一目录快速重复展开会执行两次 `list_directory`。
+- [x] `TREE-SELECT-012` 活动文件在文件树中没有区别于普通节点的独立高亮。
+- [x] `TREE-SELECT-014` 外部重命名已选文件后，选择没有跟随新路径。
 
-回归检查：原有 32 条 Playwright E2E 全部通过；新增文件通过 TypeScript、ESLint、Prettier 和 `git diff --check`。
+回归检查：新增 88 条 Playwright E2E 全部通过；原有 32 条 Playwright E2E 全部通过；新增文件通过 TypeScript、ESLint、Prettier 和 `git diff --check`。
 
 ## 3. 文本编辑与文件系统测试
 
