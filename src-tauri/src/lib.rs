@@ -61,13 +61,19 @@ fn git_state_changed(path: &Path) -> bool {
         .map(|c| c.as_os_str().to_string_lossy().into_owned())
         .collect::<Vec<_>>();
     let Some(first) = after_git.first() else {
-        return false;
+        // linked worktree 的 `.git` 是 gitdir 指针文件；文件本身被替换时需要重建监听。
+        return name == ".git";
     };
 
     // *_HEAD 覆盖 MERGE_HEAD / CHERRY_PICK_HEAD / REVERT_HEAD。
-    matches!(first.as_str(), "HEAD" | "index" | "packed-refs" | "refs")
-        || first.starts_with("rebase-")
-        || first.ends_with("_HEAD")
+    let is_state_entry = |entry: &str| {
+        matches!(entry, "HEAD" | "index" | "packed-refs" | "refs")
+            || entry.starts_with("rebase-")
+            || entry.ends_with("_HEAD")
+    };
+    is_state_entry(first)
+        // linked worktree 的真实元数据位于主仓库 `.git/worktrees/<name>/`。
+        || (first == "worktrees" && after_git.get(2).is_some_and(|entry| is_state_entry(entry)))
 }
 
 // 当前打开文件夹的文件系统监听器。切换文件夹时整体替换;drop 旧 debouncer 即停止其监听。
@@ -2878,6 +2884,15 @@ where
         .collect()
 }
 
+/// single-instance 插件转发的是完整 argv，第一项是应用可执行文件而不是用户参数。
+fn collect_forwarded_open_path_args<I, S>(args: I) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    collect_open_path_args(args.into_iter().skip(1))
+}
+
 fn emit_open_files<R: tauri::Runtime>(app: &tauri::AppHandle<R>, paths: Vec<String>) {
     if paths.is_empty() {
         return;
@@ -2979,7 +2994,7 @@ pub fn run() {
                 let _ = window.show();
                 let _ = window.set_focus();
             }
-            emit_open_files(app, collect_open_path_args(args));
+            emit_open_files(app, collect_forwarded_open_path_args(args));
         }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -3252,6 +3267,21 @@ mod tests {
         ]);
 
         assert_eq!(paths, vec![file, dir]);
+    }
+
+    #[test]
+    fn collect_forwarded_open_path_args_skips_executable() {
+        let workspace = TestWorkspace::new();
+        let executable_path = workspace.root.join("norn.exe");
+        let repository_path = workspace.root.join("repository");
+        fs::write(&executable_path, b"binary").expect("executable fixture should be written");
+        fs::create_dir_all(&repository_path).expect("repository fixture should be created");
+
+        let executable = workspace.path_string(&executable_path);
+        let repository = workspace.path_string(&repository_path);
+        let paths = collect_forwarded_open_path_args([executable, repository.clone()]);
+
+        assert_eq!(paths, vec![repository]);
     }
 
     #[test]

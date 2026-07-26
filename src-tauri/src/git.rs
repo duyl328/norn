@@ -242,7 +242,7 @@ fn map_failure(output: &std::process::Output) -> GitError {
 fn classify(stderr: &str, stdout: &str) -> GitErrorKind {
     let haystack = format!("{stderr}\n{stdout}").to_lowercase();
     let has = |needle: &str| haystack.contains(needle);
-    if has("not a git repository") {
+    if has("not a git repository") || has("fatal: cannot change to") {
         GitErrorKind::NotRepository
     } else if has("please tell me who you are") || has("empty ident") || has("user.name") {
         GitErrorKind::IdentityMissing
@@ -250,16 +250,31 @@ fn classify(stderr: &str, stdout: &str) -> GitErrorKind {
         GitErrorKind::NothingToCommit
     } else if has("hook") {
         GitErrorKind::HookFailed
-    } else if has("has no upstream branch") || has("no upstream configured") {
+    } else if has("has no upstream branch")
+        || has("no upstream configured")
+        || has("no tracking information for the current branch")
+        || has("no configured push destination")
+    {
         GitErrorKind::NoUpstream
+    // 冲突必须先于权限判断：开发机全局配置可能额外输出 Permission denied 警告，
+    // 不能因此掩盖真正的 merge / checkout / non-fast-forward 失败。
+    } else if has("conflict")
+        || has("would be overwritten")
+        || has("overwritten by checkout")
+        || has("non-fast-forward")
+        || has("(fetch first)")
+        || has("updates were rejected")
+    {
+        GitErrorKind::Conflict
     } else if has("authentication failed")
         || has("could not read username")
         || has("permission denied")
         || has("publickey")
+        || has("permission to")
+        || has("returned error: 401")
+        || has("returned error: 403")
     {
         GitErrorKind::AuthFailed
-    } else if has("conflict") || has("would be overwritten") || has("overwritten by checkout") {
-        GitErrorKind::Conflict
     } else {
         GitErrorKind::Io
     }

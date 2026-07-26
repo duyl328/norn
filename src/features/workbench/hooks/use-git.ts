@@ -54,15 +54,15 @@ export const refreshGit = async (options?: { fetch?: boolean; notify?: boolean }
       fetchInFlight = true;
       beginRefresh(); // 持有到 fetch + 其后续刷新结束,刷新图标在整个同步期间保持转动
       void invoke("git_fetch", { path })
-        .then(() => refreshGit())
+        .then(() => (repoPath() === path ? refreshGit() : undefined))
         .then(() => {
           // 仅手动刷新时提示「已同步」,打开仓库时的自动 fetch 保持安静。
-          if (options?.notify) {
+          if (options?.notify && repoPath() === path) {
             useWorkbenchStore.getState().setGitNotice({ tone: "ok", text: t("git.toastSynced") });
           }
         })
         .catch((error) => {
-          if (options?.notify) {
+          if (options?.notify && repoPath() === path) {
             useWorkbenchStore.getState().setGitNotice({ tone: "err", error: getGitError(error) });
           }
         })
@@ -78,16 +78,21 @@ export const refreshGit = async (options?: { fetch?: boolean; notify?: boolean }
       invoke<GitCommit[]>("git_recent_commits", { path, limit: RECENT_COMMIT_LIMIT }),
       invoke<string>("git_pending_op", { path }).catch(() => ""),
     ]);
-    store.setGitStatus(status);
-    store.setGitBranches(branches);
-    store.setGitIgnoredFiles(ignoredFiles);
-    store.setGitRecentCommits(commits);
-    store.setGitPendingOp(pendingOp || null);
-    store.bumpGitRefreshVersion();
-    store.setGitError(null);
+    // 工作区可能在上述异步命令完成前已切换；旧仓库结果不得写回当前 UI。
+    if (repoPath() === path) {
+      store.setGitStatus(status);
+      store.setGitBranches(branches);
+      store.setGitIgnoredFiles(ignoredFiles);
+      store.setGitRecentCommits(commits);
+      store.setGitPendingOp(pendingOp || null);
+      store.bumpGitRefreshVersion();
+      store.setGitError(null);
+    }
   } catch (error) {
-    store.setGitIgnoredFiles([]);
-    store.setGitError(getGitError(error));
+    if (repoPath() === path) {
+      store.setGitIgnoredFiles([]);
+      store.setGitError(getGitError(error));
+    }
   } finally {
     endRefresh();
   }

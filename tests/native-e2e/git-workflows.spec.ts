@@ -134,6 +134,8 @@ describe("Windows native Git workflows", () => {
       if (/显示|show/i.test(panelToggle?.getAttribute("aria-label") ?? "")) panelToggle?.click();
     });
     await waitForVisibleSelector(".git-panel-shell");
+    const pageText = await browser.execute(() => document.body?.innerText ?? "");
+    expect(pageText).not.toContain("norn.exe 无法以支持的文本编码打开");
     await click(".git-rail-tab", 0);
     await waitForVisibleSelector(".git-commit-summary");
   });
