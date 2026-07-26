@@ -6,10 +6,36 @@ export type TauriMockScenario = {
   fileLastModified?: Record<string, number>;
   fileInspections?: Record<string, Partial<MockTextFileInspection>>;
   folderDialogPath?: string | null;
+  folderDialogPaths?: Array<string | null>;
   fileDialogPath?: string | null;
   saveDialogPath?: string | null;
   gitInspection?: Record<string, unknown>;
+  invokeGates?: string[];
   invokeErrors?: Record<string, unknown>;
+  settings?: Record<string, unknown>;
+};
+
+export type TauriMockFileOptions = {
+  encoding?: string;
+  encodingLabel?: string;
+  hasBom?: boolean;
+  isBinary?: boolean;
+  isText?: boolean;
+  isUtf8?: boolean;
+  lastModified?: number;
+  size?: number;
+};
+
+type TauriMockRuntimeControl = {
+  clearInvokeError: (key: string) => void;
+  deletePath: (path: string) => void;
+  getFile: (path: string) => { content?: string; lastModified?: number };
+  hasPendingInvoke: (key: string) => boolean;
+  releaseAllInvokes: (key: string) => number;
+  releaseInvoke: (key: string) => boolean;
+  renamePath: (path: string, nextPath: string) => void;
+  setFile: (path: string, content: string, options?: TauriMockFileOptions) => void;
+  setInvokeError: (key: string, error: unknown) => void;
 };
 
 type MockTextFileInspection = {
@@ -184,6 +210,20 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
       Partial<MockTextFileInspection>
     >;
     const invokeErrors = clone(mockScenario.invokeErrors ?? {}) as Record<string, unknown>;
+    const folderDialogPaths = clone(mockScenario.folderDialogPaths ?? []);
+    const invokeGates = new Set(clone(mockScenario.invokeGates ?? []));
+    const pendingInvokes = new Map<string, number>();
+    const invokeWaiters = new Map<string, Array<() => void>>();
+    const draftStorageKey = "__nornMockDrafts";
+    const readDrafts = () => {
+      try {
+        return JSON.parse(window.localStorage.getItem(draftStorageKey) ?? "{}") as Record<string, string>;
+      } catch {
+        return {} as Record<string, string>;
+      }
+    };
+    const writeDrafts = (drafts: Record<string, string>) =>
+      window.localStorage.setItem(draftStorageKey, JSON.stringify(drafts));
 
     const baseName = (path: string) => path.split("/").filter(Boolean).pop() ?? path;
     const parentOf = (path: string) => {
@@ -195,6 +235,11 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
     const contentLengthFor = (path: string) => fileContents[path]?.length ?? 0;
     const configuredError = (cmd: string, args: Record<string, unknown>) =>
       invokeErrors[`${cmd}:${String(args.path ?? args.sourcePath ?? "")}`] ?? invokeErrors[cmd];
+    const configuredGate = (cmd: string, args: Record<string, unknown>) => {
+      const specific = `${cmd}:${String(args.path ?? args.sourcePath ?? "")}`;
+      if (invokeGates.has(specific)) return specific;
+      return invokeGates.has(cmd) ? cmd : null;
+    };
 
     const findEntry = (path: string): Record<string, unknown> | null => {
       const entries = directories[parentOf(path)];
@@ -207,6 +252,62 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
       const index = entries.findIndex((entry) => entry.path === path);
       if (index < 0) return null;
       return entries.splice(index, 1)[0] ?? null;
+    };
+
+    const setMockFile = (path: string, content: string, options: TauriMockFileOptions = {}) => {
+      const parentPath = parentOf(path);
+      const name = baseName(path);
+      const lastModified = options.lastModified ?? fileLastModified[path] ?? 1_700_000_000_000;
+      const size = options.size ?? content.length;
+      fileContents[path] = content;
+      fileLastModified[path] = lastModified;
+      fileInspections[path] = {
+        ...(fileInspections[path] ?? {}),
+        ...options,
+        lastModified,
+        size,
+      };
+      delete invokeErrors[`inspect_text_file:${path}`];
+      delete invokeErrors[`read_text_file:${path}`];
+      const entries = (directories[parentPath] ??= []);
+      const existing = entries.find((entry) => entry.path === path);
+      const entry = {
+        name,
+        path,
+        relativePath: name,
+        kind: "file",
+        size,
+        lastModified,
+      };
+      if (existing) Object.assign(existing, entry);
+      else entries.push(entry);
+    };
+
+    const deleteMockPath = (path: string) => {
+      removeEntry(path);
+      delete fileContents[path];
+      delete fileLastModified[path];
+      delete fileInspections[path];
+      delete directories[path];
+      const missing = new Error(`Unable to access ${path}: not found`);
+      invokeErrors[`inspect_text_file:${path}`] = missing;
+      invokeErrors[`list_directory:${path}`] = missing;
+      invokeErrors[`read_text_file:${path}`] = missing;
+      invokeErrors[`read_text_file_range:${path}`] = missing;
+    };
+
+    const renameMockPath = (path: string, nextPath: string) => {
+      const content = fileContents[path];
+      const lastModified = fileLastModified[path];
+      const inspection = fileInspections[path];
+      deleteMockPath(path);
+      if (content !== undefined) {
+        setMockFile(nextPath, content, {
+          ...inspection,
+          lastModified,
+          size: typeof inspection?.size === "number" ? inspection.size : content.length,
+        });
+      }
     };
 
     const relativeTo = (workspaceRoot: string, path: string) => {
@@ -258,18 +359,24 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
           return "0.1.0";
         case "read_config_file":
           return args.name === "settings.json"
-            ? JSON.stringify({
-                schemaVersion: 1,
-                language: "en",
-                theme: "system",
-                editor: { fontSize: 13, tabSize: 2, lineWrapping: false, formatOnSave: false },
-                ui: { showStatusBar: true, resizeHandleHints: false, restoreLastWorkspace: true },
-              })
+            ? JSON.stringify(
+                mockScenario.settings ?? {
+                  schemaVersion: 1,
+                  language: "en",
+                  theme: "system",
+                  editor: { fontSize: 13, tabSize: 2, lineWrapping: false, formatOnSave: false },
+                  ui: { showStatusBar: true, resizeHandleHints: false, restoreLastWorkspace: true },
+                },
+              )
             : null;
         case "write_config_file":
           return null;
         case "open_folder_dialog":
-          return mockScenario.folderDialogPath === undefined ? "/mock/project" : mockScenario.folderDialogPath;
+          return folderDialogPaths.length > 0
+            ? folderDialogPaths.shift()
+            : mockScenario.folderDialogPath === undefined
+              ? "/mock/project"
+              : mockScenario.folderDialogPath;
         case "open_file_dialog":
           return mockScenario.fileDialogPath === undefined ? "/mock/project/README.md" : mockScenario.fileDialogPath;
         case "list_directory":
@@ -298,8 +405,21 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
         case "git_recent_commits":
         case "git_log":
         case "git_worktrees":
-        case "list_drafts":
           return [];
+        case "list_drafts":
+          return Object.values(readDrafts());
+        case "write_draft": {
+          const drafts = readDrafts();
+          drafts[String(args.id)] = String(args.contents);
+          writeDrafts(drafts);
+          return null;
+        }
+        case "delete_draft": {
+          const drafts = readDrafts();
+          delete drafts[String(args.id)];
+          writeDrafts(drafts);
+          return null;
+        }
         case "git_pending_op":
           return "";
         // 编辑器改动条的基线:HEAD 版本 = 当前 mock 内容(所以刚打开时没有改动条,一编辑就出现)。
@@ -318,6 +438,10 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
             content: fileContents[path] ?? "",
             size: inspection.size,
             lastModified: inspection.lastModified,
+            encoding: inspection.encoding,
+            encodingLabel: inspection.encodingLabel,
+            encodingCandidates: inspection.encodingCandidates,
+            hasBom: inspection.hasBom,
           };
         }
         case "read_text_file_range": {
@@ -352,14 +476,36 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
         case "save_text_file": {
           const path = String(args.path);
           const content = String(args.content ?? "");
+          if (fileContents[path] === undefined) {
+            throw { kind: "deleted", message: `${path} no longer exists. Choose a new location to save this file.` };
+          }
+          const expectedLastModified =
+            typeof args.expectedLastModified === "number" ? Number(args.expectedLastModified) : null;
+          if (!args.force && expectedLastModified !== null && lastModifiedFor(path) !== expectedLastModified) {
+            throw { kind: "modified", message: `${path} was changed outside Norn. Review the conflict before saving.` };
+          }
           fileContents[path] = content;
-          return { name: baseName(path), path, size: content.length, lastModified: lastModifiedFor(path) };
+          fileLastModified[path] = lastModifiedFor(path) + 1;
+          return { name: baseName(path), path, size: content.length, lastModified: fileLastModified[path] };
         }
         case "save_text_file_as": {
           const path = String(args.path);
           const content = String(args.content ?? "");
           fileContents[path] = content;
-          fileLastModified[path] = lastModifiedFor(path);
+          fileLastModified[path] = lastModifiedFor(path) + 1;
+          const parentPath = parentOf(path);
+          const entry = {
+            name: baseName(path),
+            path,
+            relativePath: baseName(path),
+            kind: "file",
+            size: content.length,
+            lastModified: fileLastModified[path],
+          };
+          const entries = (directories[parentPath] ??= []);
+          const existing = entries.find((candidate) => candidate.path === path);
+          if (existing) Object.assign(existing, entry);
+          else entries.push(entry);
           return { name: baseName(path), path, size: content.length, lastModified: fileLastModified[path] };
         }
         case "scratch_folder":
@@ -501,11 +647,30 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
         return id;
       },
       invoke(cmd: string, args: Record<string, unknown> = {}) {
-        try {
-          return Promise.resolve(route(cmd, args));
-        } catch (error) {
-          return Promise.reject(error);
+        const gate = configuredGate(cmd, args);
+        const execute = (resolve: (value: unknown) => void, reject: (reason?: unknown) => void) => {
+          try {
+            resolve(route(cmd, args));
+          } catch (error) {
+            reject(error);
+          }
+        };
+
+        if (!gate) {
+          return new Promise(execute);
         }
+
+        pendingInvokes.set(gate, (pendingInvokes.get(gate) ?? 0) + 1);
+        return new Promise((resolve, reject) => {
+          const waiters = invokeWaiters.get(gate) ?? [];
+          waiters.push(() => {
+            const remaining = Math.max(0, (pendingInvokes.get(gate) ?? 1) - 1);
+            if (remaining === 0) pendingInvokes.delete(gate);
+            else pendingInvokes.set(gate, remaining);
+            execute(resolve, reject);
+          });
+          invokeWaiters.set(gate, waiters);
+        });
       },
       convertFileSrc(path: string) {
         return path;
@@ -518,6 +683,31 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
       unregisterListener: () => {},
     };
     (window as unknown as { __tauriInvokeCalls: typeof invokeCalls }).__tauriInvokeCalls = invokeCalls;
+    (window as unknown as { __tauriMockRuntime: TauriMockRuntimeControl }).__tauriMockRuntime = {
+      clearInvokeError: (key) => delete invokeErrors[key],
+      deletePath: deleteMockPath,
+      getFile: (path) => ({ content: fileContents[path], lastModified: fileLastModified[path] }),
+      hasPendingInvoke: (key) => (pendingInvokes.get(key) ?? 0) > 0,
+      releaseAllInvokes: (key) => {
+        const waiters = invokeWaiters.get(key) ?? [];
+        invokeWaiters.delete(key);
+        for (const waiter of waiters) waiter();
+        return waiters.length;
+      },
+      releaseInvoke: (key) => {
+        const waiters = invokeWaiters.get(key);
+        const waiter = waiters?.shift();
+        if (!waiter) return false;
+        if (waiters?.length === 0) invokeWaiters.delete(key);
+        waiter();
+        return true;
+      },
+      renamePath: renameMockPath,
+      setFile: setMockFile,
+      setInvokeError: (key, error) => {
+        invokeErrors[key] = error;
+      },
+    };
     (window as unknown as { __tauriMockHasListener: (event: string) => boolean }).__tauriMockHasListener = (event) =>
       [...listeners.values()].some((listener) => listener.event === event);
     (window as unknown as { __emitTauriEvent: (event: string, payload: unknown) => void }).__emitTauriEvent = (
@@ -538,4 +728,112 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
       }
     };
   }, scenario);
+}
+
+export async function waitForMockInvoke(page: Page, key: string): Promise<void> {
+  await page.waitForFunction(
+    (invokeKey) =>
+      (window as unknown as { __tauriMockRuntime: TauriMockRuntimeControl }).__tauriMockRuntime.hasPendingInvoke(
+        invokeKey,
+      ),
+    key,
+  );
+}
+
+export async function releaseMockInvoke(page: Page, key: string): Promise<void> {
+  const released = await page.evaluate(
+    (invokeKey) =>
+      (window as unknown as { __tauriMockRuntime: TauriMockRuntimeControl }).__tauriMockRuntime.releaseInvoke(
+        invokeKey,
+      ),
+    key,
+  );
+  if (!released) throw new Error(`No pending mock invoke for ${key}`);
+}
+
+export async function releaseAllMockInvokes(page: Page, key: string): Promise<number> {
+  return await page.evaluate(
+    (invokeKey) =>
+      (window as unknown as { __tauriMockRuntime: TauriMockRuntimeControl }).__tauriMockRuntime.releaseAllInvokes(
+        invokeKey,
+      ),
+    key,
+  );
+}
+
+export async function setMockFile(
+  page: Page,
+  path: string,
+  content: string,
+  options: TauriMockFileOptions = {},
+): Promise<void> {
+  await page.evaluate(
+    ({ fileContent, fileOptions, filePath }) =>
+      (window as unknown as { __tauriMockRuntime: TauriMockRuntimeControl }).__tauriMockRuntime.setFile(
+        filePath,
+        fileContent,
+        fileOptions,
+      ),
+    { fileContent: content, fileOptions: options, filePath: path },
+  );
+}
+
+export async function deleteMockPath(page: Page, path: string): Promise<void> {
+  await page.evaluate(
+    (filePath) =>
+      (window as unknown as { __tauriMockRuntime: TauriMockRuntimeControl }).__tauriMockRuntime.deletePath(filePath),
+    path,
+  );
+}
+
+export async function renameMockPath(page: Page, path: string, nextPath: string): Promise<void> {
+  await page.evaluate(
+    ({ from, to }) =>
+      (window as unknown as { __tauriMockRuntime: TauriMockRuntimeControl }).__tauriMockRuntime.renamePath(from, to),
+    { from: path, to: nextPath },
+  );
+}
+
+export async function setMockInvokeError(page: Page, key: string, message: string): Promise<void> {
+  await page.evaluate(
+    ({ errorKey, errorMessage }) =>
+      (window as unknown as { __tauriMockRuntime: TauriMockRuntimeControl }).__tauriMockRuntime.setInvokeError(
+        errorKey,
+        new Error(errorMessage),
+      ),
+    { errorKey: key, errorMessage: message },
+  );
+}
+
+export async function clearMockInvokeError(page: Page, key: string): Promise<void> {
+  await page.evaluate(
+    (errorKey) =>
+      (window as unknown as { __tauriMockRuntime: TauriMockRuntimeControl }).__tauriMockRuntime.clearInvokeError(
+        errorKey,
+      ),
+    key,
+  );
+}
+
+export async function emitMockFsChange(page: Page, changedDirectories: string[]): Promise<void> {
+  await page.waitForFunction(() =>
+    (window as unknown as { __tauriMockHasListener?: (event: string) => boolean }).__tauriMockHasListener?.(
+      "workspace-fs-change",
+    ),
+  );
+  await page.evaluate((directories) => {
+    (
+      window as unknown as {
+        __emitTauriEvent: (event: string, payload: unknown) => void;
+      }
+    ).__emitTauriEvent("workspace-fs-change", directories);
+  }, changedDirectories);
+}
+
+export async function getMockFile(page: Page, path: string): Promise<{ content?: string; lastModified?: number }> {
+  return await page.evaluate(
+    (filePath) =>
+      (window as unknown as { __tauriMockRuntime: TauriMockRuntimeControl }).__tauriMockRuntime.getFile(filePath),
+    path,
+  );
 }

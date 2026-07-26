@@ -15,7 +15,7 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
-    baseURL: "http://localhost:1420",
+    baseURL: "http://127.0.0.1:1420",
     trace: "on-first-retry",
   },
   projects: [
@@ -26,8 +26,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm dev",
-    url: "http://localhost:1420",
+    // 直接调用已安装的 Vite，避免 pnpm 在非交互式 E2E 进程中触发依赖目录重建检查。
+    command: "node node_modules/vite/bin/vite.js --host 127.0.0.1",
+    url: "http://127.0.0.1:1420",
     reuseExistingServer: true,
     timeout: 60_000,
   },

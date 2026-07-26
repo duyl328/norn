@@ -21,6 +21,7 @@
 - [x] 接入轻量 Git CLI 工作流（status / diff / 文件版本对比 / 勾选文件提交 / commit / push / pull / branch / log）
 - [ ] 为轻量 Git 工作流补真实临时仓库集成测试（status / diff / 勾选文件提交 / push / pull / 冲突）
 - [ ] 后续补 Windows 平台验证（当前手头仅 Mac，Windows 路径 / 权限 / UI 差异待单独处理）
+- [ ] 按 `doc/下一轮自动化测试TODO.md` 补齐文本编辑文件竞态、左侧文件树、真实文件系统、Git 数据安全和原生 E2E 门禁
 
 ## Git UI / 交互改进（进行中）
 
