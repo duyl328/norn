@@ -12,6 +12,7 @@ import {
 
 import { useI18n } from "../i18n";
 import { useWorkbenchStore } from "../store/workbench-store";
+import { formatFileSize } from "../workbench-utils";
 
 type DiffLine = {
   index: number;
@@ -59,14 +60,21 @@ const buildAlignedDiff = (leftContent: string, rightContent: string): DiffLine[]
   let rightIndex = 0;
 
   while (leftIndex < leftLines.length || rightIndex < rightLines.length) {
-    if (leftIndex < leftLines.length && rightIndex < rightLines.length && leftLines[leftIndex] === rightLines[rightIndex]) {
+    if (
+      leftIndex < leftLines.length &&
+      rightIndex < rightLines.length &&
+      leftLines[leftIndex] === rightLines[rightIndex]
+    ) {
       rows.push({ index: rows.length, left: leftLines[leftIndex], right: rightLines[rightIndex], type: "same" });
       leftIndex += 1;
       rightIndex += 1;
       continue;
     }
 
-    if (rightIndex < rightLines.length && (leftIndex >= leftLines.length || lengths[leftIndex][rightIndex + 1] >= lengths[leftIndex + 1][rightIndex])) {
+    if (
+      rightIndex < rightLines.length &&
+      (leftIndex >= leftLines.length || lengths[leftIndex][rightIndex + 1] >= lengths[leftIndex + 1][rightIndex])
+    ) {
       rows.push({ index: rows.length, left: "", right: rightLines[rightIndex], type: "added" });
       rightIndex += 1;
       continue;
@@ -95,9 +103,7 @@ export function AppNoticeDialog() {
 
   const install = () => {
     setInstalling(true);
-    void import("../check-updates")
-      .then((m) => m.installPendingUpdate())
-      .catch(() => setInstalling(false));
+    void import("../check-updates").then((m) => m.installPendingUpdate()).catch(() => setInstalling(false));
   };
 
   return (
@@ -119,7 +125,7 @@ export function AppNoticeDialog() {
               ) : null}
             </DialogHeader>
             <DialogFooter>
-              <Button variant="ghost" onClick={close}>
+              <Button variant="primary" onClick={close}>
                 确定
               </Button>
             </DialogFooter>
@@ -136,7 +142,7 @@ export function AppNoticeDialog() {
               <Button variant="ghost" onClick={close} disabled={installing}>
                 稍后
               </Button>
-              <Button variant="ghost" onClick={install} disabled={installing}>
+              <Button variant="primary" onClick={install} disabled={installing}>
                 {installing ? "正在下载…" : "更新并重启"}
               </Button>
             </DialogFooter>
@@ -164,29 +170,54 @@ export function UnsavedChangesDialog({
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => (!nextOpen ? onCancel() : undefined)}>
-      <DialogContent className="unsaved-close-dialog">
-        <DialogHeader className="unsaved-close-dialog-header">
-          <DialogTitle className="unsaved-close-dialog-title">{t("dialogs.unsaved.title")}</DialogTitle>
-          <DialogDescription className="unsaved-close-dialog-description">
-            {t("dialogs.unsaved.description")}
-          </DialogDescription>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("dialogs.unsaved.title")}</DialogTitle>
+          <DialogDescription>{t("dialogs.unsaved.description")}</DialogDescription>
         </DialogHeader>
-        <DialogFooter className="unsaved-close-dialog-actions">
-          <Button className="unsaved-close-dialog-action" variant="ghost" onClick={onSave}>
-            {t("dialogs.unsaved.saveAndClose")}
+        <DialogFooter className="flex-wrap">
+          <Button variant="ghost" onClick={onCancel}>
+            {t("common.cancel")}
           </Button>
-          <Button className="unsaved-close-dialog-action" variant="ghost" onClick={onSaveAs}>
-            {t("dialogs.unsaved.saveAs")}
-          </Button>
-          <Button
-            className="unsaved-close-dialog-action unsaved-close-dialog-action-danger"
-            variant="ghost"
-            onClick={onDiscard}
-          >
+          <Button variant="destructive" onClick={onDiscard}>
             {t("dialogs.unsaved.discard")}
           </Button>
-          <Button className="unsaved-close-dialog-action" variant="ghost" onClick={onCancel}>
+          <Button onClick={onSaveAs}>{t("dialogs.unsaved.saveAs")}</Button>
+          <Button variant="primary" onClick={onSave}>
+            {t("dialogs.unsaved.saveAndClose")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function LargeFileConfirmDialog({
+  confirmation,
+  onCancel,
+  onConfirm,
+}: {
+  confirmation: { name: string; size: number } | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <Dialog open={Boolean(confirmation)} onOpenChange={(nextOpen) => (!nextOpen ? onCancel() : undefined)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t("editor.largeFileConfirmTitle", { name: confirmation?.name ?? "" })}</DialogTitle>
+          <DialogDescription>
+            {t("editor.largeFileConfirm", { size: formatFileSize(confirmation?.size ?? 0) })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onCancel}>
             {t("common.cancel")}
+          </Button>
+          <Button variant="primary" onClick={onConfirm}>
+            {t("editor.largeFileOpen")}
           </Button>
         </DialogFooter>
       </DialogContent>

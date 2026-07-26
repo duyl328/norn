@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { getActiveEditorView } from "../actions/active-editor";
 import { hasConflictMarkers } from "../conflict-parse";
@@ -36,7 +36,6 @@ import type {
 import {
   arePathsEqual,
   createUntitledDocument,
-  formatFileSize,
   getFileExtension,
   getFileOpenId,
   getNativeSaveError,
@@ -50,6 +49,12 @@ import {
 
 const isMissingFileError = (message: string) =>
   /not found|no such file|cannot find|does not exist|\(os error (?:2|3)\)/i.test(message);
+
+type LargeFileConfirmation = { name: string; size: number };
+type QueuedLargeFileConfirmation = {
+  confirmation: LargeFileConfirmation;
+  resolve: (confirmed: boolean) => void;
+};
 
 export function useDocumentSession() {
   const document = useWorkbenchStore((state) => state.document);
@@ -73,9 +78,47 @@ export function useDocumentSession() {
   const savingPathsRef = useRef(new Set<string>());
   const workspaceChangeTimerRef = useRef<number | null>(null);
   const pendingChangedDirectoriesRef = useRef(new Set<string>());
+  const currentDiskCheckGenerationRef = useRef(0);
+  const [largeFileConfirmation, setLargeFileConfirmation] = useState<LargeFileConfirmation | null>(null);
+  const activeLargeFileConfirmationRef = useRef<QueuedLargeFileConfirmation | null>(null);
+  const largeFileConfirmationQueueRef = useRef<QueuedLargeFileConfirmation[]>([]);
   const isDirty = isDocumentDirty(document);
   const t = (key: Parameters<typeof translate>[1], params?: Parameters<typeof translate>[2]) =>
     translate(useWorkbenchStore.getState().language, key, params);
+
+  const requestLargeFileConfirmation = (confirmation: LargeFileConfirmation) =>
+    new Promise<boolean>((resolve) => {
+      const pending = { confirmation, resolve } satisfies QueuedLargeFileConfirmation;
+
+      if (activeLargeFileConfirmationRef.current) {
+        largeFileConfirmationQueueRef.current.push(pending);
+        return;
+      }
+
+      activeLargeFileConfirmationRef.current = pending;
+      setLargeFileConfirmation(confirmation);
+    });
+
+  const resolveLargeFileConfirmation = (confirmed: boolean) => {
+    const active = activeLargeFileConfirmationRef.current;
+    if (!active) return;
+
+    activeLargeFileConfirmationRef.current = null;
+    active.resolve(confirmed);
+
+    const next = largeFileConfirmationQueueRef.current.shift() ?? null;
+    activeLargeFileConfirmationRef.current = next;
+    setLargeFileConfirmation(next?.confirmation ?? null);
+  };
+
+  useEffect(
+    () => () => {
+      activeLargeFileConfirmationRef.current?.resolve(false);
+      activeLargeFileConfirmationRef.current = null;
+      largeFileConfirmationQueueRef.current.splice(0).forEach((pending) => pending.resolve(false));
+    },
+    [],
+  );
 
   const updateOpenDocumentById = (
     documentId: string,
@@ -505,7 +548,7 @@ export function useDocumentSession() {
     });
   };
 
-  const resolveRenamedDocument = async (): Promise<boolean> => {
+  const resolveRenamedDocument = async (isCurrentCheck: () => boolean = () => true): Promise<boolean> => {
     const parentPath = getParentPath(document.path);
 
     if (!parentPath || typeof document.size !== "number") {
@@ -513,19 +556,22 @@ export function useDocumentSession() {
     }
 
     const entries = await invoke<NativeDirectoryEntry[]>("list_directory", { path: parentPath });
-    const candidates = entries.filter((entry) => {
+    if (!isCurrentCheck()) return false;
+    const sameSizeCandidates = entries.filter((entry) => {
       if (entry.kind !== "file" || arePathsEqual(entry.path, document.path)) {
         return false;
       }
 
-      const sameSize = entry.size === document.size;
+      return entry.size === document.size;
+    });
+    const closeMtimeCandidates = sameSizeCandidates.filter((entry) => {
       const knownDocumentMtime = typeof document.lastModified === "number";
       const knownEntryMtime = typeof entry.lastModified === "number";
-      const closeMtime =
-        knownDocumentMtime && knownEntryMtime ? Math.abs(entry.lastModified! - document.lastModified!) <= 2000 : true;
-
-      return sameSize && closeMtime;
+      return knownDocumentMtime && knownEntryMtime
+        ? Math.abs(entry.lastModified! - document.lastModified!) <= 2000
+        : true;
     });
+    const candidates = closeMtimeCandidates.length > 0 ? closeMtimeCandidates : sameSizeCandidates;
 
     if (candidates.length !== 1) {
       return false;
@@ -636,7 +682,21 @@ export function useDocumentSession() {
           try {
             const file = await invoke<NativeTextFile>("read_text_file", { path: openDocument.path });
             diskContent = file.content;
-          } catch {
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (isMissingFileError(message)) {
+              updateOpenDocumentById(openDocument.id, (currentDocument) => ({
+                ...currentDocument,
+                diskConflict: {
+                  content: currentDocument.content,
+                  diskMissing: true,
+                  lastModified: currentDocument.lastModified,
+                  message: message || t("editor.deletedOnDisk"),
+                  path: currentDocument.path,
+                },
+              }));
+              continue;
+            }
             diskContent = undefined;
           }
         }
@@ -687,8 +747,21 @@ export function useDocumentSession() {
       return;
     }
 
+    const checkGeneration = ++currentDiskCheckGenerationRef.current;
+    const checkedDocumentId = document.id;
+    const checkedPath = document.path;
+    const isCurrentCheck = () => {
+      const currentDocument = useWorkbenchStore.getState().document;
+      return (
+        currentDiskCheckGenerationRef.current === checkGeneration &&
+        currentDocument.id === checkedDocumentId &&
+        arePathsEqual(currentDocument.path, checkedPath)
+      );
+    };
+
     try {
       const inspection = await invoke<NativeTextFileInspection>("inspect_text_file", { path: document.path });
+      if (!isCurrentCheck()) return;
       const diskLastModified = inspection.lastModified ?? undefined;
 
       if (
@@ -718,6 +791,7 @@ export function useDocumentSession() {
         }
 
         const file = await invoke<NativeTextFile>("read_text_file", { path: document.path });
+        if (!isCurrentCheck()) return;
         const documentBeforeReload = useWorkbenchStore.getState().document;
 
         if (isDocumentDirty(documentBeforeReload) || !arePathsEqual(documentBeforeReload.path, document.path)) {
@@ -743,11 +817,20 @@ export function useDocumentSession() {
       if (inspection.isText && !inspection.isBinary) {
         try {
           const file = await invoke<NativeTextFile>("read_text_file", { path: document.path });
+          if (!isCurrentCheck()) return;
           diskContent = file.content;
-        } catch {
+        } catch (error) {
+          if (!isCurrentCheck()) return;
+          const message = error instanceof Error ? error.message : String(error);
+          if (isMissingFileError(message)) {
+            showDeletedDocumentConflict(message);
+            return;
+          }
           diskContent = undefined;
         }
       }
+
+      if (!isCurrentCheck()) return;
 
       if (diskContent === latestDocument.savedContent) {
         diskChangePromptRef.current = null;
@@ -763,11 +846,12 @@ export function useDocumentSession() {
         path: document.path,
       });
     } catch (error) {
+      if (!isCurrentCheck()) return;
       const message = error instanceof Error ? error.message : String(error);
 
       if (isMissingFileError(message)) {
         try {
-          const renamed = await resolveRenamedDocument();
+          const renamed = await resolveRenamedDocument(isCurrentCheck);
 
           if (renamed) {
             return;
@@ -775,6 +859,8 @@ export function useDocumentSession() {
         } catch {
           // Fall through to deleted-file conflict when the parent directory cannot be inspected.
         }
+
+        if (!isCurrentCheck()) return;
 
         showDeletedDocumentConflict(message);
       }
@@ -864,7 +950,7 @@ export function useDocumentSession() {
       }
 
       if ((typeof size === "number" ? size : inspection.size) > LARGE_FILE_CONFIRM_BYTES) {
-        const shouldOpen = window.confirm(t("editor.largeFileConfirm", { size: formatFileSize(inspection.size) }));
+        const shouldOpen = await requestLargeFileConfirmation({ name: inspection.name, size: inspection.size });
 
         if (!shouldOpen) {
           return;
@@ -988,12 +1074,14 @@ export function useDocumentSession() {
 
   const requestFileOpen = (pendingOpen: PendingFileOpen) => {
     const key = pendingOpen.kind === "path" ? pendingOpen.path : "__file-dialog__";
-    if (pendingFileOpensRef.current.has(key)) return;
+    const existing = pendingFileOpensRef.current.get(key);
+    if (existing) return existing;
     const requestId = ++latestFileOpenRequestRef.current;
     const pending = continueFileOpen(pendingOpen, requestId).finally(() => {
       if (pendingFileOpensRef.current.get(key) === pending) pendingFileOpensRef.current.delete(key);
     });
     pendingFileOpensRef.current.set(key, pending);
+    return pending;
   };
 
   const openFilePicker = () => {
@@ -1283,6 +1371,7 @@ export function useDocumentSession() {
 
     return () => {
       disposed = true;
+      currentDiskCheckGenerationRef.current += 1;
       window.clearInterval(intervalId);
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("blur", handleBlur);
@@ -1342,6 +1431,8 @@ export function useDocumentSession() {
     saveDocumentAs,
     saveDocument,
     reloadConflictedDocument,
+    largeFileConfirmation,
+    resolveLargeFileConfirmation,
     openFilePicker,
     requestFileOpen,
     updateDocumentContent,

@@ -1,7 +1,8 @@
-import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { cpSync, existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { clearTimeout, setTimeout } from "node:timers";
 import { fileURLToPath } from "node:url";
 
 const workspace = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -11,6 +12,7 @@ const remote = join(fixtureRoot, "remote.git");
 const peer = join(fixtureRoot, "peer");
 const files = join(fixtureRoot, "files");
 const hooks = join(fixtureRoot, "hooks");
+const artifacts = join(workspace, "artifacts", "native-e2e");
 
 const git = (cwd, ...args) =>
   execFileSync("git", args, {
@@ -42,7 +44,94 @@ const run = (command, args, extraEnv = {}) => {
   return result.status === 0;
 };
 
+const delay = (milliseconds) => new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+
+const listNornProcessIds = () => {
+  const output = execFileSync(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-Command",
+      "Get-CimInstance Win32_Process -Filter \"Name='norn.exe'\" | Select-Object -ExpandProperty ProcessId",
+    ],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+  );
+  return new Set(
+    output
+      .split(/\r?\n/)
+      .map((value) => Number.parseInt(value.trim(), 10))
+      .filter(Number.isFinite),
+  );
+};
+
+const waitForMarker = async (path, child, timeout = 60_000) => {
+  const startedAt = Date.now();
+  while (!existsSync(path)) {
+    if (child.exitCode !== null) throw new Error(`native crash setup exited early with code ${child.exitCode}`);
+    if (Date.now() - startedAt > timeout) throw new Error(`timed out waiting for ${path}`);
+    await delay(50);
+  }
+};
+
+const waitForExit = (child, timeout = 30_000) =>
+  new Promise((resolveExit, rejectExit) => {
+    if (child.exitCode !== null) {
+      resolveExit(child.exitCode);
+      return;
+    }
+    const timer = setTimeout(() => rejectExit(new Error("native crash setup did not exit")), timeout);
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      resolveExit(code);
+    });
+  });
+
+const runForcedTerminationRecovery = async (wdioCli, baseEnv) => {
+  const readyMarker = join(hooks, "forced-termination.ready");
+  const killedMarker = join(hooks, "forced-termination.killed");
+  rmSync(readyMarker, { force: true });
+  rmSync(killedMarker, { force: true });
+  rmSync(join(hooks, "drafts-config"), { force: true, recursive: true });
+  const existingProcessIds = listNornProcessIds();
+  const crashEnv = {
+    ...process.env,
+    ...baseEnv,
+    NORN_NATIVE_E2E_CRASH_MODE: "1",
+    NORN_NATIVE_E2E_CRASH_READY: readyMarker,
+    NORN_NATIVE_E2E_CRASH_KILLED: killedMarker,
+  };
+  const seed = spawn(
+    process.execPath,
+    [wdioCli, "run", "wdio.native.conf.ts", "--spec", "tests/native-e2e/crash-recovery-seed.spec.ts"],
+    { cwd: workspace, env: crashEnv, stdio: "inherit" },
+  );
+
+  try {
+    await waitForMarker(readyMarker, seed);
+    const processIds = [...listNornProcessIds()].filter((processId) => !existingProcessIds.has(processId));
+    if (processIds.length !== 1) {
+      throw new Error(`expected one native test process, found ${processIds.join(", ") || "none"}`);
+    }
+    execFileSync("taskkill.exe", ["/PID", String(processIds[0]), "/F"], { stdio: "ignore" });
+    writeFileSync(killedMarker, "killed\n", "utf8");
+    const seedStatus = await waitForExit(seed);
+    if (seedStatus !== 0) {
+      console.warn(`forced-termination setup exited with expected connection-loss code ${seedStatus}`);
+    }
+  } catch (error) {
+    seed.kill();
+    throw error;
+  }
+
+  return run(
+    process.execPath,
+    [wdioCli, "run", "wdio.native.conf.ts", "--spec", "tests/native-e2e/crash-recovery-restore.spec.ts"],
+    crashEnv,
+  );
+};
+
 try {
+  mkdirSync(artifacts, { recursive: true });
   mkdirSync(repository);
   mkdirSync(remote);
   mkdirSync(files);
@@ -89,13 +178,20 @@ try {
   const requestedSpec = process.argv[2];
   const wdioArgs = [wdioCli, "run", "wdio.native.conf.ts"];
   if (requestedSpec) wdioArgs.push("--spec", requestedSpec);
-  run(process.execPath, wdioArgs, {
+  const nativeEnv = {
     NORN_NATIVE_E2E_REPO: repository,
     NORN_NATIVE_E2E_REMOTE: remote,
     NORN_NATIVE_E2E_PEER: peer,
     NORN_NATIVE_E2E_FILES: files,
     NORN_NATIVE_E2E_HOOK_DIR: hooks,
-  });
+    NORN_NATIVE_E2E_ARTIFACTS: artifacts,
+  };
+  const passed = run(process.execPath, wdioArgs, nativeEnv);
+  const shouldRunCrashRecovery = !requestedSpec || /lifecycle\.spec\.ts$/i.test(requestedSpec);
+  const crashRecoveryPassed = passed && (!shouldRunCrashRecovery || (await runForcedTerminationRecovery(wdioCli, nativeEnv)));
+  if (!crashRecoveryPassed) {
+    cpSync(fixtureRoot, join(artifacts, `fixture-${Date.now()}`), { recursive: true });
+  }
 } finally {
   rmSync(fixtureRoot, { force: true, recursive: true });
 }

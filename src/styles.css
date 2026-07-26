@@ -288,7 +288,8 @@
   }
 
   .windows-titlebar-folder-menu {
-    @apply absolute left-0 top-full z-50 mt-1 grid w-[320px] gap-0 rounded-[6px] border border-border bg-popover p-1 text-popover-foreground shadow-sm;
+    @apply absolute left-0 top-full z-50 mt-1 grid w-[320px] gap-0 rounded-[6px] border border-border/70 p-1 text-popover-foreground shadow-lg backdrop-blur-lg;
+    background: hsl(var(--popover) / 0.96);
   }
 
   .windows-titlebar-folder-menu-item {
@@ -347,7 +348,8 @@
   }
 
   .windows-titlebar-submenu {
-    @apply absolute left-0 top-full z-50 mt-1 grid min-w-[200px] gap-0 rounded-[6px] border border-border bg-popover p-1 text-popover-foreground shadow-sm;
+    @apply absolute left-0 top-full z-50 mt-1 grid min-w-[200px] gap-0 rounded-[6px] border border-border/70 p-1 text-popover-foreground shadow-lg backdrop-blur-lg;
+    background: hsl(var(--popover) / 0.96);
     transition: transform 105ms cubic-bezier(0.22, 1, 0.36, 1);
     will-change: transform;
   }
@@ -472,7 +474,7 @@
   }
 
   .windows-quick-search {
-    @apply fixed inset-0 flex items-start justify-center bg-background/20 pt-[12vh];
+    @apply fixed inset-0 flex items-start justify-center bg-background/55 pt-[12vh] backdrop-blur-[1px];
     /* Top overlay: highest layer when focused; above editor tab strip (z-30000) and menus. */
     z-index: 2147483647;
   }
@@ -481,13 +483,15 @@
   .windows-quick-search-docked {
     @apply bg-transparent;
     pointer-events: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 
   .windows-quick-search-panel {
     @apply flex max-h-[80vh] w-[min(720px,calc(100vw-80px))] flex-col rounded-2xl border border-border/60 p-2.5 text-popover-foreground shadow-2xl;
-    background: hsl(var(--popover) / 0.55);
-    -webkit-backdrop-filter: saturate(1.4) blur(28px);
-    backdrop-filter: saturate(1.4) blur(28px);
+    background: hsl(var(--popover) / 0.92);
+    -webkit-backdrop-filter: saturate(1.5) blur(24px);
+    backdrop-filter: saturate(1.5) blur(24px);
     transition: width 260ms cubic-bezier(0.16, 1, 0.3, 1);
     animation: qs-pop 180ms cubic-bezier(0.16, 1, 0.3, 1);
   }
@@ -1167,7 +1171,8 @@
   }
 
   .project-panel-recent-menu {
-    @apply border-border bg-popover p-1 shadow-sm;
+    @apply border-border/70 p-1 shadow-lg backdrop-blur-lg;
+    background: hsl(var(--popover) / 0.96);
     /* 按内容自适应宽度,不再写死 294px(太宽);上限收窄,过长路径在条目内截断(name/path �?truncate)�?*/
     width: max-content;
     min-width: 196px;
@@ -2009,18 +2014,15 @@
   }
 
   .file-tree-context-menu {
-    @apply fixed grid min-w-[188px] gap-[1px] rounded-[14px] border p-1.5 text-popover-foreground;
-    border-color: hsl(var(--border) / 0.42);
-    background: hsl(var(--background) / 0.94);
-    backdrop-filter: blur(22px) saturate(1.25);
-    box-shadow:
-      0 18px 42px rgb(15 23 42 / 0.16),
-      0 2px 8px rgb(15 23 42 / 0.08);
-    z-index: 2147483647;
+    @apply fixed grid min-w-[188px] gap-[1px] rounded-[6px] border border-border/70 p-1 text-popover-foreground shadow-lg backdrop-blur-lg;
+    background: hsl(var(--popover) / 0.96);
+    z-index: 2147483000;
+    max-height: calc(100vh - 8px);
+    overflow-y: auto;
   }
 
   .file-tree-context-item {
-    @apply flex h-7 items-center gap-2.5 rounded-[9px] px-2.5 text-left text-ui-lg font-medium text-foreground/90 transition-colors;
+    @apply flex h-7 items-center gap-2 rounded-[3px] px-2 text-left text-ui text-foreground transition-colors;
   }
 
   .file-tree-context-item:hover,
@@ -2044,7 +2046,11 @@
   }
 
   .file-tree-context-item-danger {
-    @apply text-foreground/90;
+    @apply text-destructive;
+  }
+
+  .file-tree-context-item-danger .file-tree-context-icon {
+    @apply text-destructive;
   }
 
   .file-tree-context-separator {
@@ -2052,64 +2058,7 @@
   }
 
   .dark .file-tree-context-menu {
-    border-color: hsl(var(--border) / 0.5);
-    background: hsl(var(--popover) / 0.94);
-    box-shadow:
-      0 18px 42px rgb(0 0 0 / 0.34),
-      0 2px 8px rgb(0 0 0 / 0.22);
-  }
-
-  .unsaved-close-dialog {
-    @apply w-[min(90vw,340px)] gap-2 rounded-[18px] border p-3;
-    border-color: hsl(var(--border) / 0.42);
-    background: hsl(var(--background) / 0.94);
-    backdrop-filter: blur(22px) saturate(1.25);
-    box-shadow:
-      0 18px 42px rgb(15 23 42 / 0.16),
-      0 2px 8px rgb(15 23 42 / 0.08);
-  }
-
-  .unsaved-close-dialog-header {
-    @apply gap-1 px-2 pb-1 pr-7 pt-1;
-  }
-
-  .unsaved-close-dialog-title {
-    @apply text-ui-xl font-semibold text-foreground/90;
-  }
-
-  .unsaved-close-dialog-description {
-    @apply text-ui leading-5 text-muted-foreground;
-  }
-
-  .unsaved-close-dialog-actions {
-    @apply grid gap-[1px];
-  }
-
-  .unsaved-close-dialog-action {
-    @apply h-8 justify-start rounded-[10px] px-3 text-ui-lg font-medium text-foreground/90;
-  }
-
-  .unsaved-close-dialog-action:hover,
-  .unsaved-close-dialog-action:focus-visible {
-    background: hsl(var(--muted) / 0.86);
-    color: hsl(var(--foreground));
-  }
-
-  .unsaved-close-dialog-action-danger {
-    @apply text-destructive;
-  }
-
-  .unsaved-close-dialog-action-danger:hover,
-  .unsaved-close-dialog-action-danger:focus-visible {
-    color: hsl(var(--destructive));
-  }
-
-  .dark .unsaved-close-dialog {
-    border-color: hsl(var(--border) / 0.5);
-    background: hsl(var(--popover) / 0.94);
-    box-shadow:
-      0 18px 42px rgb(0 0 0 / 0.34),
-      0 2px 8px rgb(0 0 0 / 0.22);
+    background: hsl(var(--popover) / 0.96);
   }
 
   .save-conflict-dialog {
@@ -2867,11 +2816,12 @@
 
   /* 右键菜单 */
   .git-ctx-menu {
-    @apply fixed z-[2147483000] min-w-[160px] overflow-hidden rounded-[6px] border border-border bg-popover p-1 shadow-tool;
+    @apply fixed z-[2147483000] min-w-[160px] overflow-hidden rounded-[6px] border border-border/70 p-1 text-popover-foreground shadow-lg backdrop-blur-lg;
+    background: hsl(var(--popover) / 0.96);
   }
 
   .git-ctx-item {
-    @apply flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-left text-ui text-foreground transition-colors;
+    @apply flex min-h-7 w-full items-center gap-2 rounded-[3px] px-2 py-1.5 text-left text-ui text-foreground transition-colors;
   }
 
   .git-ctx-item:hover,
@@ -3187,10 +3137,10 @@
 
   .status-glass-menu.status-glass-menu,
   .status-encoding-menu.status-encoding-menu {
-    @apply rounded-[8px] border border-border/70 p-1 text-popover-foreground shadow-xl;
-    background: hsl(var(--popover) / 0.94);
-    -webkit-backdrop-filter: saturate(1.2) blur(18px);
-    backdrop-filter: saturate(1.2) blur(18px);
+    @apply rounded-[6px] border border-border/70 p-1 text-popover-foreground shadow-lg;
+    background: hsl(var(--popover) / 0.96);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
     animation: qs-pop 160ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
@@ -3251,7 +3201,7 @@
 
   .status-glass-menu.status-glass-menu [role="menuitemradio"],
   .status-encoding-menu.status-encoding-menu [role="menuitemradio"] {
-    @apply rounded-[5px] py-1 text-ui-sm;
+    @apply rounded-[3px] py-1 text-ui-sm;
   }
 
   .status-glass-menu.status-glass-menu [role="menuitemradio"]:focus,

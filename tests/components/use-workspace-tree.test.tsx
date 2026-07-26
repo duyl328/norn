@@ -86,10 +86,22 @@ describe("文件树剪贴板 / 菜单 / 对话框(同步 store)", () => {
     const node = file("a.ts", "/p/a.ts");
 
     act(() => result.current.copyTreeNode(node));
-    expect(useWorkbenchStore.getState().fileTreeClipboard).toEqual({ action: "copy", nodes: [node] });
+    expect(useWorkbenchStore.getState().fileTreeClipboard).toEqual({
+      action: "copy",
+      nodes: [node],
+      sourceRoot: undefined,
+      sourceScope: "main",
+      busy: false,
+    });
 
     act(() => result.current.cutTreeNode(node));
-    expect(useWorkbenchStore.getState().fileTreeClipboard).toEqual({ action: "cut", nodes: [node] });
+    expect(useWorkbenchStore.getState().fileTreeClipboard).toEqual({
+      action: "cut",
+      nodes: [node],
+      sourceRoot: undefined,
+      sourceScope: "main",
+      busy: false,
+    });
     expect(useWorkbenchStore.getState().fileTreeContextMenu).toBeNull();
   });
 
@@ -217,8 +229,10 @@ describe("外部文件拖入", () => {
       });
     });
 
-    expect(requestFileOpen).toHaveBeenCalledWith({ kind: "path", path: "/external/a.ts" });
-    expect(requestFileOpen).toHaveBeenCalledWith({ kind: "path", path: "/external/b.ts" });
+    await waitFor(() => {
+      expect(requestFileOpen).toHaveBeenCalledWith({ kind: "path", path: "/external/a.ts" });
+      expect(requestFileOpen).toHaveBeenCalledWith({ kind: "path", path: "/external/b.ts" });
+    });
     expect(invokeMock).not.toHaveBeenCalledWith(
       "copy_external_paths",
       expect.objectContaining({ sourcePaths: ["/external/a.ts", "/external/b.ts"] }),

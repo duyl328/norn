@@ -453,7 +453,9 @@ const zh = {
   "editor.deletedOnDisk": "此文件已在磁盘上删除。请将编辑器版本另存到其他位置，或关闭此标签页。",
   "editor.changedUnsupported": ({ name }) => `${name} 已在磁盘上更改，且无法再作为支持的文本打开。`,
   "editor.unsupportedEncoding": ({ name }) => `${name} 无法以支持的文本编码打开。`,
+  "editor.largeFileConfirmTitle": ({ name }) => `打开大文件“${name}”？`,
   "editor.largeFileConfirm": ({ size }) => `此文件大小为 ${size}。要以文本方式打开吗？`,
+  "editor.largeFileOpen": "仍然打开",
   "editor.largeFileOmittedBefore": "[大文件浏览模式已省略更早内容]",
   "editor.largeFileOmittedAfter": "[大文件浏览模式已省略后续内容]",
   "editor.largeFileModeBanner": ({ size }) =>
@@ -516,7 +518,8 @@ const en: Record<keyof typeof zh, TranslationValue> = {
   "settings.general.statusBar.title": "Show bottom status bar",
   "settings.general.statusBar.description": "Show current file, encoding, and Git status.",
   "settings.general.updates.title": "Check for updates",
-  "settings.general.updates.description": "Query GitHub for a newer version; you'll be prompted to download and update if one exists.",
+  "settings.general.updates.description":
+    "Query GitHub for a newer version; you'll be prompted to download and update if one exists.",
   "settings.general.updates.button": "Check for updates",
   "settings.general.updates.checking": "Checking…",
   "settings.permissions.description": "Manage how Norn accesses files, commands, and system capabilities.",
@@ -947,7 +950,9 @@ const en: Record<keyof typeof zh, TranslationValue> = {
   "editor.deletedOnDisk": "This file was deleted on disk. Save the editor version somewhere else, or close this tab.",
   "editor.changedUnsupported": ({ name }) => `${name} changed on disk and can no longer be opened as supported text.`,
   "editor.unsupportedEncoding": ({ name }) => `${name} cannot be opened as a supported text encoding.`,
+  "editor.largeFileConfirmTitle": ({ name }) => `Open large file “${name}”?`,
   "editor.largeFileConfirm": ({ size }) => `This file is ${size}. Open it as text?`,
+  "editor.largeFileOpen": "Open Anyway",
   "editor.largeFileOmittedBefore": "[Earlier content omitted in large file browsing mode]",
   "editor.largeFileOmittedAfter": "[More content omitted in large file browsing mode]",
   "editor.largeFileModeBanner": ({ size }) =>

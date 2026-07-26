@@ -1458,11 +1458,12 @@ fn copy_path(
 ) -> Result<DirectoryEntry, FileOperationError> {
     let source = writable_path_in_workspace(&workspace_root, &source_path)?;
     let target_parent = writable_directory_in_workspace(&workspace_root, &target_directory)?;
+    ensure_not_descendant_copy(&source, &target_parent)?;
     let name = path_file_name(&source)?;
     let target = target_parent.join(&name);
     ensure_absent(&target)?;
 
-    copy_path_recursive(&source, &target)?;
+    copy_path_with_cleanup(&source, &target)?;
 
     Ok(directory_entry_from_path(&target, &name))
 }
@@ -1487,8 +1488,9 @@ fn copy_external_paths(
 
         let name = path_file_name(&source)?;
         let target = target_parent.join(&name);
+        ensure_not_descendant_copy(&source, &target_parent)?;
         ensure_absent(&target)?;
-        copy_path_recursive(&source, &target)?;
+        copy_path_with_cleanup(&source, &target)?;
         copied_entries.push(directory_entry_from_path(&target, &name));
     }
 
@@ -1676,6 +1678,44 @@ fn ensure_not_descendant_move(
     }
 
     Ok(())
+}
+
+fn ensure_not_descendant_copy(
+    source: &Path,
+    target_parent: &Path,
+) -> Result<(), FileOperationError> {
+    let source_metadata = fs::metadata(source).map_err(|error| {
+        operation_error_from_io("Unable to read source metadata", source, error)
+    })?;
+    if !source_metadata.is_dir() {
+        return Ok(());
+    }
+
+    let source = canonicalize_path(source, "Unable to read source path")?;
+    let target_parent = canonicalize_path(target_parent, "Unable to read target directory")?;
+    if target_parent == source || target_parent.starts_with(&source) {
+        return Err(operation_error(
+            FileOperationErrorKind::WouldNest,
+            "A directory cannot be copied into itself or one of its descendants.".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn copy_path_with_cleanup(source: &Path, target: &Path) -> Result<(), FileOperationError> {
+    match copy_path_recursive(source, target) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            // `target` was checked absent immediately before this call, so anything here is an
+            // incomplete result created by this operation and is safe to remove.
+            if target.is_dir() {
+                let _ = fs::remove_dir_all(target);
+            } else {
+                let _ = fs::remove_file(target);
+            }
+            Err(error)
+        }
+    }
 }
 
 fn copy_path_recursive(source: &Path, target: &Path) -> Result<(), FileOperationError> {
@@ -3492,6 +3532,26 @@ mod tests {
         .expect_err("moving a directory into a descendant should be rejected");
 
         assert_eq!(error.kind, FileOperationErrorKind::WouldNest);
+    }
+
+    #[test]
+    fn copy_path_rejects_descendant_destination_without_creating_partial_output() {
+        let workspace = TestWorkspace::new();
+        let source = workspace.root.join("source");
+        let child = source.join("child");
+        fs::create_dir_all(&child).expect("nested directories should be created");
+        fs::write(source.join("kept.txt"), "kept").expect("source fixture should be written");
+
+        let error = copy_path(
+            workspace.root_string(),
+            workspace.path_string(&source),
+            workspace.path_string(&child),
+        )
+        .expect_err("copying a directory into a descendant should be rejected");
+
+        assert_eq!(error.kind, FileOperationErrorKind::WouldNest);
+        assert!(source.join("kept.txt").exists());
+        assert!(!child.join("source").exists());
     }
 
     #[test]

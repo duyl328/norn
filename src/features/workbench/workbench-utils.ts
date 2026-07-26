@@ -806,7 +806,8 @@ export const getTreeDropTargetFromPoint = (position?: { x: number; y: number }):
     return null;
   }
 
-  return { path, scope };
+  const hoveredPath = dropTarget?.dataset.treeDropHoverPath;
+  return hoveredPath ? { path, scope, hoveredPath } : { path, scope };
 };
 
 export const isEditorDropTargetFromPoint = (position?: { x: number; y: number }): boolean => {

@@ -26,6 +26,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -62,6 +63,7 @@ import {
   flattenVisibleTreeRows,
   formatFileSize,
   getFileTreeDisplayIcon,
+  getParentPath,
   isPathInsideOrEqual,
 } from "../workbench-utils";
 
@@ -209,8 +211,12 @@ export function FileTreePanel({
   }
 
   const hasRootDirectories = treeView.nodes.some((node) => node.kind === "directory");
-  const targetDirectory = contextMenu?.node?.kind === "directory" ? contextMenu.node.path : treeView.rootPath;
   const scopedContextMenu = contextMenu?.scope === scope ? contextMenu : null;
+  const targetDirectory = scopedContextMenu?.node
+    ? scopedContextMenu.node.kind === "directory"
+      ? scopedContextMenu.node.path
+      : (getParentPath(scopedContextMenu.node.path) ?? treeView.rootPath)
+    : treeView.rootPath;
 
   return (
     <>
@@ -221,10 +227,12 @@ export function FileTreePanel({
       ) : null}
       <FileTreeRootRow
         dropTarget={dropTarget}
+        draggedNode={draggedNode}
         scope={scope}
         treeView={treeView}
         onContextMenu={onContextMenu}
         onDropTargetChange={onDropTargetChange}
+        onDropNode={onDropNode}
         onToggle={onToggleRootDirectory}
         onExpandAll={onExpandAll}
         onCollapseAll={onCollapseAll}
@@ -243,6 +251,12 @@ export function FileTreePanel({
         className="file-tree-scroll min-h-0 flex-1"
         ref={scrollParentRef}
         onContextMenu={(event) => onContextMenu(null, event, scope)}
+        onDragOver={(event) => {
+          const bounds = event.currentTarget.getBoundingClientRect();
+          const edge = Math.min(48, Math.max(24, bounds.height * 0.12));
+          if (event.clientY < bounds.top + edge) event.currentTarget.scrollTop -= 24;
+          else if (event.clientY > bounds.bottom - edge) event.currentTarget.scrollTop += 24;
+        }}
       >
         <div
           className={cn("file-tree-list outline-none", !hasRootDirectories && "file-tree-list-flat")}
@@ -316,12 +330,7 @@ export function FileTreePanel({
           onCopyNode={onCopyNode}
           onCutNode={onCutNode}
           onPasteNode={() => onPasteNode(targetDirectory, scope)}
-          onRefresh={() =>
-            onRefreshFolder(
-              scopedContextMenu.node?.kind === "directory" ? scopedContextMenu.node.path : treeView.rootPath,
-              scope,
-            )
-          }
+          onRefresh={() => onRefreshFolder(targetDirectory, scope)}
           onRequestCreateDirectory={() => onRequestCreateDirectory(targetDirectory, scope)}
           onRequestCreateFile={() => onRequestCreateFile(targetDirectory, scope)}
           onRequestRenameNode={(node) => onRequestRenameNode(node, scope)}
@@ -340,10 +349,12 @@ export function FileTreePanel({
 
 export function FileTreeRootRow({
   dropTarget,
+  draggedNode,
   scope,
   treeView,
   onContextMenu,
   onDropTargetChange,
+  onDropNode,
   onToggle,
   onExpandAll,
   onCollapseAll,
@@ -351,10 +362,12 @@ export function FileTreeRootRow({
   canRevealActiveFile,
 }: {
   dropTarget: TreeDropTarget | null;
+  draggedNode?: FileTreeNode | null;
   scope: "main" | "scratch";
   treeView: TreePanelView;
   onContextMenu: (node: FileTreeNode | null, event: MouseEvent, scope?: "main" | "scratch") => void;
   onDropTargetChange: (target: TreeDropTarget | null) => void;
+  onDropNode?: (source: FileTreeNode, targetDirectoryPath: string, scope?: "main" | "scratch") => void;
   onToggle: () => void;
   onExpandAll?: () => void;
   onCollapseAll?: () => void;
@@ -375,7 +388,7 @@ export function FileTreeRootRow({
   };
 
   return (
-    <div className="file-tree-root">
+    <div className="file-tree-root" data-tree-drop-path={treeView.rootPath} data-tree-drop-scope={scope}>
       <button
         aria-expanded={treeView.rootExpanded}
         className={cn("tree-row tree-row-root w-full text-left", isDropTarget && "tree-row-drop-target")}
@@ -393,6 +406,11 @@ export function FileTreeRootRow({
         onDragOver={(event) => {
           event.preventDefault();
           onDropTargetChange({ path: treeView.rootPath, scope });
+        }}
+        onDrop={(event) => {
+          if (!draggedNode || !onDropNode) return;
+          event.preventDefault();
+          onDropNode(draggedNode, treeView.rootPath, scope);
         }}
       >
         <span className="tree-row-toggle">
@@ -514,7 +532,12 @@ export function FileTreeRow({
   const isSelected = selectedPaths.has(node.path);
   const isLead = node.path === leadPath;
   const isLoading = loadingPath === node.path;
-  const isDropTarget = isDirectory && dropTarget?.scope === scope && dropTarget.path === node.path;
+  const targetDirectoryPath = isDirectory ? node.path : getParentPath(node.path);
+  const isDropTarget =
+    dropTarget?.scope === scope &&
+    Boolean(targetDirectoryPath) &&
+    dropTarget.path === targetDirectoryPath &&
+    (dropTarget.hoveredPath ? dropTarget.hoveredPath === node.path : isDirectory);
   const canonicalPath = node.canonicalPath ?? node.path;
   const wouldCycle = isDirectory && node.isSymlink && ancestorCanonicalPaths.includes(canonicalPath);
   const { className: iconClassName, Icon } = getFileTreeDisplayIcon(node);
@@ -557,26 +580,26 @@ export function FileTreeRow({
 
   const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
     if (
-      !isDirectory ||
+      !targetDirectoryPath ||
       !draggedNode ||
       draggedNode.path === node.path ||
-      isPathInsideOrEqual(node.path, draggedNode.path)
+      isPathInsideOrEqual(targetDirectoryPath, draggedNode.path)
     ) {
       return;
     }
 
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
-    onDropTargetChange({ path: node.path, scope });
+    onDropTargetChange({ path: targetDirectoryPath, scope, hoveredPath: node.path });
   };
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    if (!isDirectory || !draggedNode) {
+    if (!targetDirectoryPath || !draggedNode) {
       return;
     }
 
     event.preventDefault();
-    onDropNode(draggedNode, node.path, scope);
+    onDropNode(draggedNode, targetDirectoryPath, scope);
   };
 
   return (
@@ -595,8 +618,9 @@ export function FileTreeRow({
           gitDecoration && `tree-row-git-${gitDecoration}`,
           isDropTarget && "tree-row-drop-target",
         )}
-        data-tree-drop-path={isDirectory ? node.path : undefined}
-        data-tree-drop-scope={isDirectory ? scope : undefined}
+        data-tree-drop-path={targetDirectoryPath ?? undefined}
+        data-tree-drop-scope={targetDirectoryPath ? scope : undefined}
+        data-tree-drop-hover-path={targetDirectoryPath ? node.path : undefined}
         draggable
         role="treeitem"
         // 行不可聚焦(无 tabIndex):点击不会把焦点从 .file-tree-list 容器抢走,
@@ -684,14 +708,35 @@ export function FileTreeContextMenu({
   const { t } = useI18n();
   const menuRef = useRef<HTMLDivElement>(null);
   const isRootNode = Boolean(node && node.kind === "directory" && node.path === rootPath);
-  const menuStyle = {
-    left: Math.min(x, window.innerWidth - 216),
-    top: Math.min(y, window.innerHeight - 260),
-  } satisfies CSSProperties;
+  const [menuPosition, setMenuPosition] = useState({
+    x: Math.max(4, Math.min(x, window.innerWidth - 216)),
+    // The full menu is about 400px tall. This conservative first paint prevents a one-frame
+    // overflow before layout measurement/ResizeObserver supplies its exact dimensions.
+    y: Math.max(4, Math.min(y, window.innerHeight - 420)),
+  });
+  const menuStyle = { left: menuPosition.x, top: menuPosition.y } satisfies CSSProperties;
 
-  useEffect(() => {
-    menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
-  }, []);
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    if (!menu) return;
+    const updatePosition = () => {
+      const margin = 4;
+      const bounds = menu.getBoundingClientRect();
+      setMenuPosition({
+        x: Math.max(margin, Math.min(x, window.innerWidth - bounds.width - margin)),
+        y: Math.max(margin, Math.min(y, window.innerHeight - bounds.height - margin)),
+      });
+    };
+    updatePosition();
+    const observer = new ResizeObserver(updatePosition);
+    observer.observe(menu);
+    window.addEventListener("resize", updatePosition);
+    menu.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true });
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [x, y]);
 
   const menu = (
     <div
@@ -767,7 +812,8 @@ export function FileTreeContextMenu({
       </button>
       <button
         className="file-tree-context-item"
-        disabled={!clipboard}
+        aria-busy={clipboard?.busy || undefined}
+        disabled={!clipboard || clipboard.busy}
         role="menuitem"
         type="button"
         onClick={onPasteNode}
@@ -842,13 +888,13 @@ export function FileTreeNameDialogView({
   return (
     <Dialog open={Boolean(dialog)} onOpenChange={(nextOpen) => (!nextOpen ? onCancel() : undefined)}>
       <DialogContent>
-        <form onSubmit={handleSubmit}>
+        <form className="grid gap-3" onSubmit={handleSubmit}>
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription>{t("fileTree.nameDialogDescription")}</DialogDescription>
           </DialogHeader>
-          <Input autoFocus className="mt-4" value={name} onChange={(event) => onNameChange(event.target.value)} />
-          <DialogFooter className="mt-4">
+          <Input autoFocus value={name} onChange={(event) => onNameChange(event.target.value)} />
+          <DialogFooter>
             <Button type="button" variant="ghost" onClick={onCancel}>
               {t("common.cancel")}
             </Button>

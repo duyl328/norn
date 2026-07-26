@@ -125,3 +125,45 @@ jobs:
           path: playwright-report/
           if-no-files-found: ignore
           retention-days: 7
+
+  # Windows 原生发布门禁：真实窗口、IPC、watcher、文件系统、进程、回收站和 WebView2。
+  windows-native:
+    name: Windows native E2E (@native @p0)
+    runs-on: windows-2022
+    needs: [frontend, rust, e2e]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run native P0 gate
+        run: pnpm test:e2e:native
+
+      # 文件树是最容易受 watcher/时序影响的核心链路；立即复跑一次，阻止偶发绿进入发布分支。
+      - name: Repeat native file-tree gate
+        run: pnpm test:e2e:native tests/native-e2e/file-tree.spec.ts
+
+      - name: Upload native diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-e2e-diagnostics
+          path: artifacts/native-e2e/
+          if-no-files-found: ignore
+          retention-days: 7

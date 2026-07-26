@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const fixtureRoot = process.env.NORN_NATIVE_E2E_FILES!;
@@ -136,7 +136,7 @@ const refreshWithSession = async (session: unknown) => {
   );
 };
 
-describe("Windows native document lifecycle workflows", () => {
+describe("@native @p0 Windows native document lifecycle workflows", () => {
   before(async () => {
     rmSync(join(hookRoot, "drafts-config"), { force: true, recursive: true });
     requestNativeFile(fixtureRoot);
@@ -311,5 +311,104 @@ describe("Windows native document lifecycle workflows", () => {
       tabNames.filter((name) => name.includes("restore-view-")),
       ["restore-view-first.txt", "restore-view-second.txt"],
     );
+  });
+
+  it("NATIVE-APP-001 closes to the Windows tray and a second launch restores the native window", async () => {
+    await requestWindowClose();
+    await browser.waitUntil(async () => !(await isWindowVisible()), {
+      timeout: 20_000,
+      interval: 100,
+      timeoutMsg: "clean native window did not hide to tray",
+    });
+    await showWindow();
+    assert.equal(await isWindowVisible(), true);
+  });
+
+  it("NATIVE-APP-002 forwards a second-instance file once without changing dirty content", async () => {
+    const dirtyPath = join(fixtureRoot, "second-instance-dirty.txt");
+    const forwardedPath = join(fixtureRoot, "second-instance-forwarded.txt");
+    writeFileSync(dirtyPath, "dirty base\n", "utf8");
+    writeFileSync(forwardedPath, "forwarded once\n", "utf8");
+    await openNativeFile(dirtyPath);
+    await appendEditorText("DIRTY_SURVIVES_SECOND_INSTANCE");
+    requestNativeFile(forwardedPath);
+    await waitForActiveTab("second-instance-forwarded.txt");
+    const state = await browser.execute((dirtyName, forwardedName) => {
+      const tabs = [...document.querySelectorAll<HTMLElement>(".editor-file-tab")].map((tab) => tab.innerText);
+      return {
+        dirtyCount: tabs.filter((tab) => tab.includes(dirtyName)).length,
+        forwardedCount: tabs.filter((tab) => tab.includes(forwardedName)).length,
+      };
+    }, "second-instance-dirty.txt", "second-instance-forwarded.txt");
+    assert.deepEqual(state, { dirtyCount: 1, forwardedCount: 1 });
+    await browser.execute(() => {
+      [...document.querySelectorAll<HTMLElement>(".editor-file-tab")]
+        .find((tab) => tab.innerText.includes("second-instance-dirty.txt"))
+        ?.click();
+    });
+    await waitForEditorText("DIRTY_SURVIVES_SECOND_INSTANCE");
+  });
+
+  it("NATIVE-APP-003 preserves folder and multi-file command-line open order", async () => {
+    const folder = join(fixtureRoot, "multi-open-folder");
+    const first = join(folder, "multi-first.txt");
+    const second = join(folder, "multi-second.txt");
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(first, "multi first\n", "utf8");
+    writeFileSync(second, "multi second\n", "utf8");
+    execFileSync(application, [folder, first, second], { timeout: 10_000, stdio: "ignore" });
+    await waitForActiveTab("multi-second.txt");
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          (expected) =>
+            document
+              .querySelector('.project-panel-main-region button.tree-row-root[data-tree-drop-scope="main"]')
+              ?.getAttribute("title") === expected,
+          folder,
+        ),
+      { timeout: 20_000, interval: 100 },
+    );
+    const order = await browser.execute(() =>
+      [...document.querySelectorAll<HTMLElement>(".editor-file-tab")]
+        .map((tab) => tab.innerText)
+        .filter((name) => name.includes("multi-")),
+    );
+    assert.deepEqual(order, ["multi-first.txt", "multi-second.txt"]);
+  });
+
+  it("NATIVE-APP-005 rebuilds the WebView session and reattaches the real watcher", async () => {
+    const path = join(fixtureRoot, "webview-rebuild-watch.txt");
+    writeFileSync(path, "before rebuild\n", "utf8");
+    await openNativeFile(path);
+    await browser.refresh();
+    await waitForEditorText("before rebuild");
+    writeFileSync(path, "after rebuild watcher\n", "utf8");
+    await waitForEditorText("after rebuild watcher");
+  });
+
+  it("NATIVE-APP-006 reports safe native window geometry across monitor scale factors", async () => {
+    const geometry = await browser.executeAsync((done) => {
+      const invoke = (
+        window as typeof window & { __TAURI_INTERNALS__: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }
+      ).__TAURI_INTERNALS__.invoke;
+      Promise.all([
+        invoke("plugin:window|available_monitors"),
+        invoke("plugin:window|outer_position", { label: "main" }),
+        invoke("plugin:window|outer_size", { label: "main" }),
+        invoke("plugin:window|scale_factor", { label: "main" }),
+      ]).then(([monitors, position, size, scaleFactor]) => done({ monitors, position, size, scaleFactor }), done);
+    });
+    const result = geometry as {
+      monitors: Array<{ position: { x: number; y: number }; size: { width: number; height: number }; scaleFactor: number }>;
+      position: { x: number; y: number };
+      size: { width: number; height: number };
+      scaleFactor: number;
+    };
+    assert.equal(result.monitors.length > 0, true);
+    assert.equal(Number.isFinite(result.position.x) && Number.isFinite(result.position.y), true);
+    assert.equal(result.size.width >= 1024 && result.size.height >= 700, true);
+    assert.equal(result.scaleFactor > 0, true);
+    assert.equal(result.monitors.every((monitor) => monitor.scaleFactor > 0), true);
   });
 });

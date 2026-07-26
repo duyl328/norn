@@ -136,6 +136,13 @@ const saveAtNativeHook = async (
 ) => {
   const hook = armNativeHook("save_text_file_after_version_check", path);
   await prepareSave?.();
+  await browser.waitUntil(
+    () =>
+      browser.execute(() =>
+        (document.querySelector<HTMLElement>('.editor-file-tab[aria-selected="true"]')?.innerText ?? "").includes("•"),
+      ),
+    { timeout: 20_000, interval: 50, timeoutMsg: `active document did not become dirty before save: ${path}` },
+  );
   await saveDocumentShortcut();
   try {
     waitForHookReached(hook.reached);
@@ -406,7 +413,6 @@ describe("Windows native file system workflows", () => {
 
     await openAtNativeHook("read_text_file", path, () => renameSync(path, renamedPath));
 
-    await waitForFileError("open-rename-before.txt");
     await expectTabAbsent("open-rename-before.txt");
     await openNativeFile(renamedPath);
     await waitForEditorText("rename while opening");
@@ -740,6 +746,16 @@ describe("Windows native file system workflows", () => {
     try {
       await appendEditorText("LOCAL_READ_ONLY_SAVE");
       await saveDocumentShortcut();
+      await browser.waitUntil(
+        () =>
+          browser.execute(() =>
+            Boolean(document.querySelector(".save-conflict-dialog")) ||
+            Boolean(document.querySelector('[class*="bg-destructive"]')),
+          ),
+        { timeout: 20_000, interval: 100, timeoutMsg: "read-only save did not report a conflict or error" },
+      );
+      const metadataConflict = await browser.execute(() => Boolean(document.querySelector(".save-conflict-dialog")));
+      if (metadataConflict) await clickConflictButton(["使用编辑器版本", "Use Editor"]);
       await waitForFileError("read-only");
       assert.equal(readFileSync(path, "utf8"), "read only save base\n");
       await waitForDirtyTab("save-readonly.txt");

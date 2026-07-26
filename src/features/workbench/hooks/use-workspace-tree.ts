@@ -59,7 +59,7 @@ import {
 import { refreshGit } from "./use-git";
 
 interface UseWorkspaceTreeParams {
-  requestFileOpen: (pendingOpen: PendingFileOpen) => void;
+  requestFileOpen: (pendingOpen: PendingFileOpen) => void | Promise<void>;
 }
 
 // 卸载事件监听:Tauri 侧若已不认得这个 eventId(dev 下 HMR 重载后就会这样),unlisten 会抛
@@ -108,6 +108,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   const folderOpenRequestRef = useRef(0);
   const folderRefreshRequestRef = useRef(new Map<string, number>());
   const loadingDirectoriesRef = useRef(new Set<string>());
+  const pasteInProgressRef = useRef(false);
   const isDirty = isDocumentDirty(document);
 
   const readFolderEntries = async (path: string) => {
@@ -544,12 +545,17 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   // 1) 放入树内剪贴板 → 树内粘贴 = 复制/移动文件;
   // 2) 原生写入系统剪贴板的「文件引用 + 文件名文本」→ 外部应用粘贴 = 真实文件,文本框粘贴 = 文件名。
   // 原生不支持(Linux)或非 Tauri 时,退回只写文件名文本。
-  const putNodesOnClipboard = (nodes: FileTreeNode[], action: "copy" | "cut") => {
+  const treeRootForScope = (scope: "main" | "scratch") =>
+    scope === "scratch"
+      ? useWorkbenchStore.getState().scratchFolder?.path
+      : useWorkbenchStore.getState().folderView?.rootPath;
+
+  const putNodesOnClipboard = (nodes: FileTreeNode[], action: "copy" | "cut", sourceScope: "main" | "scratch") => {
     if (nodes.length === 0) {
       return;
     }
 
-    setFileTreeClipboard({ action, nodes });
+    setFileTreeClipboard({ action, nodes, sourceRoot: treeRootForScope(sourceScope), sourceScope, busy: false });
 
     const names = joinNodeNames(nodes);
 
@@ -569,7 +575,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
 
   // Ctrl/Cmd+C / X(键盘)。Ctrl/Cmd+Shift+C 走 copySelectionPaths(系统剪贴板 = 完整路径)。
   const copySelectionToClipboard = (scope: "main" | "scratch", action: "copy" | "cut") => {
-    putNodesOnClipboard(selectedNodesForScope(scope), action);
+    putNodesOnClipboard(selectedNodesForScope(scope), action, scope);
   };
 
   const copySelectionPaths = (scope: "main" | "scratch", mode: "absolute" | "relative") => {
@@ -910,7 +916,8 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   const clipboardScope = () => useWorkbenchStore.getState().fileTreeContextMenu?.scope ?? "main";
 
   const copyTreeNode = (node: FileTreeNode) => {
-    putNodesOnClipboard(contextActionNodes(node, clipboardScope()), "copy");
+    const scope = clipboardScope();
+    putNodesOnClipboard(contextActionNodes(node, scope), "copy", scope);
     setFileTreeContextMenu(null);
   };
 
@@ -918,7 +925,7 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
     const scope = clipboardScope();
     const rootPath = scope === "scratch" ? scratchFolder?.path : folderView?.rootPath;
     if (node.path !== rootPath) {
-      putNodesOnClipboard(contextActionNodes(node, scope), "cut");
+      putNodesOnClipboard(contextActionNodes(node, scope), "cut", scope);
     }
     setFileTreeContextMenu(null);
   };
@@ -933,27 +940,50 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   const pasteTreeNode = async (targetDirectoryPath: string, scope: "main" | "scratch" = "main") => {
     const workspaceRoot = scope === "scratch" ? scratchFolder?.path : folderView?.rootPath;
 
-    if (!workspaceRoot || !fileTreeClipboard || fileTreeClipboard.nodes.length === 0) {
+    if (
+      !workspaceRoot ||
+      !fileTreeClipboard ||
+      fileTreeClipboard.nodes.length === 0 ||
+      pasteInProgressRef.current
+    ) {
       return;
     }
 
-    const { action, nodes } = fileTreeClipboard;
+    const { action, nodes, sourceRoot, sourceScope } = fileTreeClipboard;
     setFileTreeContextMenu(null);
     setFileError(null);
 
-    try {
-      for (const node of nodes) {
-        if (action === "cut") {
+    // Same-scope clipboard data belongs to a specific workspace generation. Once that root changes,
+    // absolute paths must not silently become an external cross-workspace paste.
+    if (sourceScope === scope && sourceRoot && sourceRoot !== workspaceRoot) {
+      setFileTreeClipboard(null);
+      setFileError("The file-tree clipboard belongs to a workspace that is no longer open.");
+      return;
+    }
+
+    pasteInProgressRef.current = true;
+    setFileTreeClipboard((current) => (current ? { ...current, busy: true } : current));
+    const failed: Array<{ node: FileTreeNode; error: unknown }> = [];
+    const succeeded: FileTreeNode[] = [];
+    const crossTree = Boolean(sourceScope && sourceScope !== scope);
+
+    for (const node of nodes) {
+      try {
+        if (action === "cut" && !crossTree) {
           const movedEntry = await invoke<NativeDirectoryEntry>("move_path", {
             workspaceRoot,
             sourcePath: node.path,
             targetDirectory: targetDirectoryPath,
           });
           await refreshNodeParent(node, scope);
-
-          // 移动节点本身或其祖先目录；document 与 openDocuments 标签列表都要同步。
           setDocument((currentDocument) => remapDocumentAfterMove(currentDocument, node.path, movedEntry));
           setOpenDocuments((docs) => docs.map((doc) => remapDocumentAfterMove(doc, node.path, movedEntry)));
+        } else if (crossTree) {
+          await invoke<NativeDirectoryEntry[]>("copy_external_paths", {
+            workspaceRoot,
+            sourcePaths: [node.path],
+            targetDirectory: targetDirectoryPath,
+          });
         } else {
           await invoke<NativeDirectoryEntry>("copy_path", {
             workspaceRoot,
@@ -961,16 +991,46 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
             targetDirectory: targetDirectoryPath,
           });
         }
+        succeeded.push(node);
+      } catch (error) {
+        failed.push({ node, error });
       }
-
-      await refreshTreePath(scope, targetDirectoryPath);
-
-      if (action === "cut") {
-        setFileTreeClipboard(null);
-      }
-    } catch (error) {
-      setFileTreeError(error, "Unable to paste into this folder.");
     }
+
+    await refreshTreePath(scope, targetDirectoryPath);
+
+    if (action === "cut" && !crossTree) {
+      const failedPaths = new Set(failed.map(({ node }) => node.path));
+      if (failed.length === 0) {
+        setFileTreeClipboard(null);
+      } else {
+        setFileTreeClipboard({
+          action,
+          nodes: nodes.filter((node) => failedPaths.has(node.path)),
+          sourceRoot,
+          sourceScope,
+          busy: false,
+        });
+      }
+      if (succeeded.length > 0) {
+        setTreeSelection((current) => {
+          if (!current || current.scope !== scope) return current;
+          const paths = current.paths.filter((path) => failedPaths.has(path));
+          if (paths.length === 0) return null;
+          return { ...current, anchorPath: paths[0], leadPath: paths[paths.length - 1], paths };
+        });
+      }
+    } else {
+      setFileTreeClipboard((current) => (current ? { ...current, busy: false } : current));
+    }
+
+    if (failed.length > 0) {
+      const details = failed
+        .map(({ node, error }) => `${node.name}: ${getNativeFileOperationError(error).message}`)
+        .join("\n");
+      setFileError(`Some items could not be pasted (${failed.length}/${nodes.length}).\n${details}`);
+    }
+    pasteInProgressRef.current = false;
   };
 
   const requestTrashTreeNode = (node: FileTreeNode, scope: "main" | "scratch" = "main") => {
@@ -979,29 +1039,64 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
   };
 
   const revealTreeNodeInFileManager = (node: FileTreeNode) => {
+    const scope = clipboardScope();
+    const root = treeRootForScope(scope);
+    const liveNode = node.path === root ? node : getTreeNodeByPath(scope, node.path);
     setFileTreeContextMenu(null);
+
+    if (!liveNode) {
+      setFileError(`${node.path} no longer exists.`);
+      const parent = getParentPath(node.path) ?? root;
+      if (parent) void refreshTreePath(scope, parent);
+      return;
+    }
 
     if (!isTauriRuntime()) {
       setFileError("Revealing in the file manager is only available in the Tauri desktop app.");
       return;
     }
 
-    void invoke("reveal_in_file_manager", { path: node.path }).catch((error) => {
-      setFileError(error instanceof Error ? error.message : String(error));
-    });
+    void (async () => {
+      try {
+        await invoke<string>("path_kind", { path: liveNode.path });
+        await invoke("reveal_in_file_manager", { path: liveNode.path });
+      } catch (error) {
+        setFileError(error instanceof Error ? error.message : (getNativeFileOperationError(error).message ?? String(error)));
+        const parent = liveNode.kind === "directory" ? liveNode.path : (getParentPath(liveNode.path) ?? root);
+        if (parent) void refreshTreePath(scope, parent);
+      }
+    })();
   };
 
   const openTerminalAtNode = (node: FileTreeNode) => {
+    const scope = clipboardScope();
+    const root = treeRootForScope(scope);
+    const liveNode = node.path === root ? node : getTreeNodeByPath(scope, node.path);
     setFileTreeContextMenu(null);
+
+    if (!liveNode) {
+      setFileError(`${node.path} no longer exists.`);
+      const parent = getParentPath(node.path) ?? root;
+      if (parent) void refreshTreePath(scope, parent);
+      return;
+    }
 
     if (!isTauriRuntime()) {
       setFileError("Opening a terminal is only available in the Tauri desktop app.");
       return;
     }
 
-    void invoke("open_terminal_at", { path: node.path }).catch((error) => {
-      setFileError(error instanceof Error ? error.message : String(error));
-    });
+    const terminalPath = liveNode.kind === "directory" ? liveNode.path : (getParentPath(liveNode.path) ?? liveNode.path);
+    void (async () => {
+      try {
+        await invoke<string>("path_kind", { path: liveNode.path });
+        await invoke("open_terminal_at", { path: terminalPath });
+      } catch (error) {
+        setFileError(error instanceof Error ? error.message : (getNativeFileOperationError(error).message ?? String(error)));
+        const parent = liveNode.kind === "directory" ? liveNode.path : (getParentPath(liveNode.path) ?? root);
+        if (parent) void refreshTreePath(scope, parent);
+      }
+    })();
   };
 
   const confirmTrashTreeNode = async () => {
@@ -1063,39 +1158,59 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
       : [source];
 
     setFileError(null);
+    const failed: Array<{ node: FileTreeNode; error: unknown }> = [];
+    const destinationPaths: string[] = [];
 
     try {
       for (const node of sources) {
-        // 跳过无效目标:拖到自身、或拖进自己的子目录。
-        if (node.path === targetDirectoryPath || isPathInsideOrEqual(targetDirectoryPath, node.path)) {
+        // 拖到原父目录是 no-op；拖到自身或自己的后代同样不发 IPC。
+        if (
+          (sourceScope === scope && getParentPath(node.path) === targetDirectoryPath) ||
+          node.path === targetDirectoryPath ||
+          isPathInsideOrEqual(targetDirectoryPath, node.path)
+        ) {
           continue;
         }
 
-        if (sourceScope === scope) {
-          // 同一棵树内 → 移动。
-          const movedEntry = await invoke<NativeDirectoryEntry>("move_path", {
-            workspaceRoot: targetRoot,
-            sourcePath: node.path,
-            targetDirectory: targetDirectoryPath,
-          });
-          await refreshNodeParent(node, sourceScope);
-
-          // 移动节点本身或其祖先目录；document 与 openDocuments 标签列表都要同步。
-          setDocument((currentDocument) => remapDocumentAfterMove(currentDocument, node.path, movedEntry));
-          setOpenDocuments((docs) => docs.map((doc) => remapDocumentAfterMove(doc, node.path, movedEntry)));
-        } else {
-          // 跨树(主 ↔ 临时,根目录不同)→ 复制到目标树。move_path 要求同根,故用只校验目标的 copy_external_paths;源保持不变。
-          await invoke<NativeDirectoryEntry[]>("copy_external_paths", {
-            workspaceRoot: targetRoot,
-            sourcePaths: [node.path],
-            targetDirectory: targetDirectoryPath,
-          });
+        try {
+          if (sourceScope === scope) {
+            const movedEntry = await invoke<NativeDirectoryEntry>("move_path", {
+              workspaceRoot: targetRoot,
+              sourcePath: node.path,
+              targetDirectory: targetDirectoryPath,
+            });
+            await refreshNodeParent(node, sourceScope);
+            setDocument((currentDocument) => remapDocumentAfterMove(currentDocument, node.path, movedEntry));
+            setOpenDocuments((docs) => docs.map((doc) => remapDocumentAfterMove(doc, node.path, movedEntry)));
+            destinationPaths.push(movedEntry.path);
+          } else {
+            const copied = await invoke<NativeDirectoryEntry[]>("copy_external_paths", {
+              workspaceRoot: targetRoot,
+              sourcePaths: [node.path],
+              targetDirectory: targetDirectoryPath,
+            });
+            destinationPaths.push(...copied.map((entry) => entry.path));
+          }
+        } catch (error) {
+          failed.push({ node, error });
         }
       }
 
       await refreshTreePath(scope, targetDirectoryPath);
-    } catch (error) {
-      setFileTreeError(error, "Unable to move this item.");
+      if (destinationPaths.length > 0) {
+        setTreeSelection({
+          scope,
+          anchorPath: destinationPaths[0],
+          leadPath: destinationPaths[destinationPaths.length - 1],
+          paths: destinationPaths,
+        });
+      }
+      if (failed.length > 0) {
+        const details = failed
+          .map(({ node, error }) => `${node.name}: ${getNativeFileOperationError(error).message}`)
+          .join("\n");
+        setFileError(`Some dragged items failed (${failed.length}/${sources.length}).\n${details}`);
+      }
     } finally {
       setDraggedTreeNode(null);
       setDropTarget(null);
@@ -1116,15 +1231,29 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
 
     setFileError(null);
 
+    const failed: Array<{ path: string; error: unknown }> = [];
+
     try {
-      await invoke<NativeDirectoryEntry[]>("copy_external_paths", {
-        workspaceRoot,
-        sourcePaths,
-        targetDirectory: targetDirectoryPath,
-      });
+      // One IPC call per top-level source gives precise partial-failure reporting and lets the
+      // backend clean up an incomplete destination without rolling back unrelated successes.
+      for (const sourcePath of sourcePaths) {
+        try {
+          await invoke<NativeDirectoryEntry[]>("copy_external_paths", {
+            workspaceRoot,
+            sourcePaths: [sourcePath],
+            targetDirectory: targetDirectoryPath,
+          });
+        } catch (error) {
+          failed.push({ path: sourcePath, error });
+        }
+      }
       await refreshTreePath(scope, targetDirectoryPath);
-    } catch (error) {
-      setFileTreeError(error, "Unable to copy dropped files.");
+      if (failed.length > 0) {
+        const details = failed
+          .map(({ path, error }) => `${getPathName(path)}: ${getNativeFileOperationError(error).message}`)
+          .join("\n");
+        setFileError(`Some dropped items failed (${failed.length}/${sourcePaths.length}).\n${details}`);
+      }
     } finally {
       setDropTarget(null);
       dropTargetRef.current = null;
@@ -1310,7 +1439,12 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
 
         if (payload.type === "drop") {
           if (!target && isEditorDropTargetFromPoint(payload.position) && payload.paths?.length) {
-            payload.paths.forEach((path) => requestFileOpen({ kind: "path", path }));
+            const paths = [...new Set(payload.paths)];
+            void (async () => {
+              for (const path of paths) {
+                await requestFileOpen({ kind: "path", path });
+              }
+            })();
             setDropTarget(null);
             dropTargetRef.current = null;
             return;
@@ -1389,6 +1523,27 @@ export function useWorkspaceTree({ requestFileOpen }: UseWorkspaceTreeParams) {
       window.removeEventListener("keydown", closeWithEscape);
     };
   }, [fileTreeContextMenu]);
+
+  useEffect(() => {
+    setFileTreeContextMenu(null);
+  }, [folderView?.rootPath, scratchFolder?.path]);
+
+  useEffect(() => {
+    const cancelDrag = () => {
+      setDraggedTreeNode(null);
+      setDropTarget(null);
+      dropTargetRef.current = null;
+    };
+    const cancelDragWithEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cancelDrag();
+    };
+    window.addEventListener("keydown", cancelDragWithEscape);
+    window.addEventListener("blur", cancelDrag);
+    return () => {
+      window.removeEventListener("keydown", cancelDragWithEscape);
+      window.removeEventListener("blur", cancelDrag);
+    };
+  }, []);
 
   return {
     dropTargetRef,

@@ -461,7 +461,9 @@ function BranchRelationship({ branch }: { branch: GitBranch }) {
 
       {ownCommits.length > 0 ? (
         <div className="git-branch-relationship-commits">
-          <div className="git-branch-relationship-label">{base ? t("git.relativeTo", { name: base }) : t("git.recentCommits")}</div>
+          <div className="git-branch-relationship-label">
+            {base ? t("git.relativeTo", { name: base }) : t("git.recentCommits")}
+          </div>
           {ownCommits.slice(0, 6).map((commit) => (
             <div className="git-branch-relationship-commit" key={commit.hash} title={commit.subject}>
               <span className="truncate">{commit.subject}</span>
@@ -602,10 +604,7 @@ function WorktreeSection({
 
       {open
         ? worktrees.map((worktree) => (
-            <div
-              key={worktree.path}
-              className={cn("git-branch-leaf", worktree.isCurrent && "git-branch-leaf-current")}
-            >
+            <div key={worktree.path} className={cn("git-branch-leaf", worktree.isCurrent && "git-branch-leaf-current")}>
               <div className="git-branch-leaf-main git-worktree-leaf" title={worktree.path}>
                 <span className="git-branch-leaf-check">
                   <FolderGit2 className="h-3.5 w-3.5 text-muted-foreground" />
@@ -677,7 +676,9 @@ function WorktreeSection({
       <Dialog open={removeTarget !== null} onOpenChange={(value) => !value && setRemoveTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t("git.removeWorktreeTitle", { name: removeTarget ? labelOf(removeTarget) : "" })}</DialogTitle>
+            <DialogTitle>
+              {t("git.removeWorktreeTitle", { name: removeTarget ? labelOf(removeTarget) : "" })}
+            </DialogTitle>
             <DialogDescription>{t("git.removeWorktreeConfirm")}</DialogDescription>
           </DialogHeader>
           <div className="git-worktree-field-label">{removeTarget?.path}</div>
@@ -689,7 +690,9 @@ function WorktreeSection({
             <Button variant="ghost" onClick={() => setRemoveTarget(null)}>
               {t("common.cancel")}
             </Button>
-            <Button onClick={confirmRemove}>{t("git.removeWorktree")}</Button>
+            <Button variant="destructive" onClick={confirmRemove}>
+              {t("git.removeWorktree")}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -8,11 +8,11 @@ test("大文件：5MB 到 25MB 打开前确认，取消后不打开", async ({ p
   await page.goto("/");
   await openMockFolder(page);
 
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("6.0 MB");
-    await dialog.dismiss();
-  });
   await page.locator(".tree-row", { hasText: "large.txt" }).dblclick();
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("6.0 MB");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
 
   await expect(page.getByRole("tab", { name: /large\.txt/ })).toHaveCount(0);
 });
@@ -22,10 +22,8 @@ test("大文件：确认后普通大文件仍可编辑保存", async ({ page }) 
   await page.goto("/");
   await openMockFolder(page);
 
-  page.once("dialog", async (dialog) => {
-    await dialog.accept();
-  });
   await page.locator(".tree-row", { hasText: "large.txt" }).dblclick();
+  await page.getByRole("dialog").getByRole("button", { name: "Open Anyway" }).click();
 
   await expect(page.getByRole("tab", { name: /large\.txt/ })).toBeVisible();
   await expect(page.locator(".cm-content")).toContainText("large editable file");

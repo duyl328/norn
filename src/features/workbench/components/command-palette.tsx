@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 import { formatKey } from "../actions/registry";
@@ -45,8 +46,6 @@ export function CommandPalette() {
       .filter((action) => subseqMatch(`${action.title} ${action.category}`.toLowerCase(), q));
   }, [actions, query, open]);
 
-  if (!open) return null;
-
   const close = () => setOpen(false);
   const runAt = (index: number) => {
     const action = results[index];
@@ -72,18 +71,11 @@ export function CommandPalette() {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 pt-[12vh]"
-      role="dialog"
-      aria-label={t("commandPalette.label")}
-      onClick={close}
-    >
-      <div
-        className="flex w-[min(560px,90vw)] flex-col overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-lg"
-        onClick={(event) => event.stopPropagation()}
-      >
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="top-[12vh] flex w-[min(90vw,560px)] translate-y-0 flex-col gap-0 overflow-hidden p-0">
+        <DialogTitle className="sr-only">{t("commandPalette.label")}</DialogTitle>
         <input
-          className="border-b border-border bg-transparent px-3 py-2.5 text-ui outline-none placeholder:text-muted-foreground"
+          className="border-b border-border/70 bg-transparent px-3 py-2.5 pr-10 text-ui outline-none placeholder:text-muted-foreground"
           autoFocus
           placeholder={t("commandPalette.placeholder")}
           value={query}
@@ -102,7 +94,7 @@ export function CommandPalette() {
                 key={action.id}
                 type="button"
                 className={cn(
-                  "flex w-full items-center gap-2 px-3 py-1.5 text-left text-ui",
+                  "flex w-full items-center gap-2 rounded-[3px] px-3 py-1.5 text-left text-ui",
                   index === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/50",
                 )}
                 onMouseMove={() => setActiveIndex(index)}
@@ -119,7 +111,7 @@ export function CommandPalette() {
             ))
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

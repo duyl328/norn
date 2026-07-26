@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { mkdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 if (!process.env.NORN_NATIVE_E2E_REPO) {
   throw new Error("NORN_NATIVE_E2E_REPO is required; use pnpm test:e2e:native");
@@ -11,10 +12,16 @@ if (!process.env.NORN_NATIVE_E2E_HOOK_DIR) {
 }
 
 const application = resolve("src-tauri/target/debug/norn.exe");
+const artifactRoot = process.env.NORN_NATIVE_E2E_ARTIFACTS ?? resolve("artifacts/native-e2e");
+mkdirSync(join(artifactRoot, "screenshots"), { recursive: true });
 
 export const config = {
   runner: "local",
   specs: ["./tests/native-e2e/**/*.spec.ts"],
+  exclude:
+    process.env.NORN_NATIVE_E2E_CRASH_MODE === "1"
+      ? []
+      : ["./tests/native-e2e/crash-recovery-seed.spec.ts", "./tests/native-e2e/crash-recovery-restore.spec.ts"],
   maxInstances: 1,
   capabilities: [
     {
@@ -41,9 +48,15 @@ export const config = {
   framework: "mocha",
   reporters: ["spec"],
   logLevel: "warn",
+  outputDir: join(artifactRoot, "logs"),
   waitforTimeout: 30_000,
   connectionRetryTimeout: 120_000,
   mochaOpts: {
     timeout: 120_000,
+  },
+  afterTest: async function (_test: unknown, _context: unknown, result: { passed: boolean }) {
+    if (!result.passed) {
+      await browser.saveScreenshot(join(artifactRoot, "screenshots", `failure-${Date.now()}.png`));
+    }
   },
 };

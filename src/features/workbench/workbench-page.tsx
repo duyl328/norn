@@ -11,7 +11,12 @@ import { getActiveEditorView } from "./actions/active-editor";
 import { openGoToLineRequestEvent } from "./actions/editor-actions";
 import { type ActionDeps, ActionsProvider, useActions } from "./actions/use-actions";
 import { useKeybindings } from "./actions/use-keybindings";
-import { AppNoticeDialog, SaveConflictDialog, UnsavedChangesDialog } from "./components/dialogs";
+import {
+  AppNoticeDialog,
+  LargeFileConfirmDialog,
+  SaveConflictDialog,
+  UnsavedChangesDialog,
+} from "./components/dialogs";
 import { EditorSurface } from "./components/editor-surface";
 import { FileTreeNameDialogView, FileTreeTrashDialog } from "./components/file-tree";
 import { StatusBar } from "./components/status-bar";
@@ -113,6 +118,8 @@ export function WorkbenchPage() {
     saveDocument,
     saveDocumentAs,
     reloadConflictedDocument,
+    largeFileConfirmation,
+    resolveLargeFileConfirmation,
     openFilePicker,
     requestFileOpen,
     updateDocumentContent,
@@ -348,11 +355,10 @@ export function WorkbenchPage() {
           return;
         }
 
-        resolved
-          .filter((item) => item.kind !== "directory")
-          .forEach((item) => {
-            requestFileOpenRef.current({ kind: "path", path: item.path, clearFolderView: !directory });
-          });
+        // 命令行/第二实例的批量路径必须保持 argv 顺序；单次用户打开仍可并发，只有这一批串行等待。
+        for (const item of resolved.filter((candidate) => candidate.kind !== "directory")) {
+          await requestFileOpenRef.current({ kind: "path", path: item.path, clearFolderView: !directory });
+        }
       })();
     };
 
@@ -432,6 +438,11 @@ export function WorkbenchPage() {
       <TooltipProvider delayDuration={250}>
         <WorkbenchActionsRuntime />
         <AppNoticeDialog />
+        <LargeFileConfirmDialog
+          confirmation={largeFileConfirmation}
+          onCancel={() => resolveLargeFileConfirmation(false)}
+          onConfirm={() => resolveLargeFileConfirmation(true)}
+        />
         <div
           className={cn(
             "h-full bg-transparent text-ui text-foreground",

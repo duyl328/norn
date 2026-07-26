@@ -277,6 +277,11 @@ export type FileTreeNode = {
 export type FileTreeClipboard = {
   action: "copy" | "cut";
   nodes: FileTreeNode[];
+  /** The tree and root captured when Copy/Cut ran. Used to reject stale paths after a workspace switch. */
+  sourceScope?: "main" | "scratch";
+  sourceRoot?: string;
+  /** Prevents a second paste while a slow directory operation is still running. */
+  busy?: boolean;
 };
 
 // 文件树多选状态(单一作用域)。anchorPath 是 Shift 区间锚点,leadPath 是方向键光标(也用于定位滚动),
@@ -320,6 +325,8 @@ export type FileTreeTrashTarget = {
 export type TreeDropTarget = {
   path: string;
   scope: "main" | "scratch";
+  /** Row currently under the pointer; path remains the resolved destination directory. */
+  hoveredPath?: string;
 };
 
 export type TreePanelView = {

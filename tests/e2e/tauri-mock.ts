@@ -236,10 +236,12 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
     };
     const lastModifiedFor = (path: string) => fileLastModified[path] ?? 1_700_000_000_000;
     const contentLengthFor = (path: string) => fileContents[path]?.length ?? 0;
+    const operationPath = (args: Record<string, unknown>) =>
+      args.path ?? args.sourcePath ?? (Array.isArray(args.sourcePaths) ? args.sourcePaths[0] : "");
     const configuredError = (cmd: string, args: Record<string, unknown>) =>
-      invokeErrors[`${cmd}:${String(args.path ?? args.sourcePath ?? "")}`] ?? invokeErrors[cmd];
+      invokeErrors[`${cmd}:${String(operationPath(args))}`] ?? invokeErrors[cmd];
     const configuredGate = (cmd: string, args: Record<string, unknown>) => {
-      const specific = `${cmd}:${String(args.path ?? args.sourcePath ?? "")}`;
+      const specific = `${cmd}:${String(operationPath(args))}`;
       if (invokeGates.has(specific)) return specific;
       return invokeGates.has(cmd) ? cmd : null;
     };
@@ -318,6 +320,52 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
       return path.startsWith(`${root}/`) ? path.slice(root.length + 1) : baseName(path);
     };
 
+    const conflictError = (path: string) => ({ kind: "conflict", message: `${path} already exists` });
+    const missingError = (path: string) => ({ kind: "not-found", message: `${path} does not exist` });
+
+    const copyMockPath = (sourcePath: string, targetDirectory: string, workspaceRoot: string) => {
+      const source = findEntry(sourcePath);
+      if (!source) throw missingError(sourcePath);
+      const name = baseName(sourcePath);
+      const newPath = `${targetDirectory}/${name}`;
+      if (findEntry(newPath)) throw conflictError(newPath);
+      if (source.kind === "directory" && (targetDirectory === sourcePath || targetDirectory.startsWith(`${sourcePath}/`))) {
+        throw { kind: "would-nest", message: "A directory cannot be copied into itself or a descendant." };
+      }
+
+      const entry = {
+        ...source,
+        name,
+        path: newPath,
+        relativePath: relativeTo(workspaceRoot, newPath),
+        lastModified: lastModifiedFor(sourcePath),
+      };
+      (directories[targetDirectory] ??= []).push(entry);
+      if (source.kind === "directory") {
+        directories[newPath] = [];
+        for (const child of [...(directories[sourcePath] ?? [])]) {
+          copyMockPath(String(child.path), newPath, workspaceRoot);
+        }
+      } else if (fileContents[sourcePath] !== undefined) {
+        fileContents[newPath] = fileContents[sourcePath];
+        fileLastModified[newPath] = lastModifiedFor(sourcePath);
+      }
+      return entry;
+    };
+
+    const purgeMockPath = (path: string) => {
+      removeEntry(path);
+      for (const key of Object.keys(fileContents)) {
+        if (key === path || key.startsWith(`${path}/`)) delete fileContents[key];
+      }
+      for (const key of Object.keys(fileLastModified)) {
+        if (key === path || key.startsWith(`${path}/`)) delete fileLastModified[key];
+      }
+      for (const key of Object.keys(directories)) {
+        if (key === path || key.startsWith(`${path}/`)) delete directories[key];
+      }
+    };
+
     const inspectFile = (path: string): MockTextFileInspection => {
       const content = fileContents[path] ?? "";
       const override = fileInspections[path] ?? {};
@@ -358,6 +406,13 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
         case "plugin:event|unlisten":
           listeners.delete(Number(args.eventId));
           return null;
+        case "path_kind": {
+          const path = String(args.path);
+          if (directories[path]) return "directory";
+          const entry = findEntry(path);
+          if (!entry) throw missingError(path);
+          return entry.kind === "directory" ? "directory" : "file";
+        }
         case "app_version":
           return "0.1.0";
         case "read_config_file":
@@ -590,42 +645,29 @@ export async function installTauriMock(page: Page, scenario: TauriMockScenario =
           const targetDirectory = String(args.targetDirectory);
           const name = baseName(sourcePath);
           const newPath = `${targetDirectory}/${name}`;
-          const removed = removeEntry(sourcePath);
-          const kind = removed?.kind === "directory" ? "directory" : "file";
-          if (fileContents[sourcePath] !== undefined) {
-            fileContents[newPath] = fileContents[sourcePath];
-            delete fileContents[sourcePath];
+          if (targetDirectory === parentOf(sourcePath)) {
+            return findEntry(sourcePath);
           }
-          const entry = {
-            name,
-            path: newPath,
-            relativePath: relativeTo(workspaceRoot, newPath),
-            kind,
-            size: removed?.size ?? (kind === "file" ? contentLengthFor(newPath) : null),
-            lastModified: lastModifiedFor(newPath),
-          };
-          (directories[targetDirectory] ??= []).push({ ...entry });
+          if (!findEntry(sourcePath)) throw missingError(sourcePath);
+          if (findEntry(newPath)) throw conflictError(newPath);
+          if (targetDirectory === sourcePath || targetDirectory.startsWith(`${sourcePath}/`)) {
+            throw { kind: "would-nest", message: "A directory cannot be moved into itself or a descendant." };
+          }
+          const entry = copyMockPath(sourcePath, targetDirectory, workspaceRoot);
+          purgeMockPath(sourcePath);
           return entry;
         }
         case "copy_path": {
           const workspaceRoot = String(args.workspaceRoot ?? "/mock/project");
           const sourcePath = String(args.sourcePath);
           const targetDirectory = String(args.targetDirectory);
-          const name = baseName(sourcePath);
-          const newPath = `${targetDirectory}/${name}`;
-          const source = findEntry(sourcePath);
-          const kind = source?.kind === "directory" ? "directory" : "file";
-          if (fileContents[sourcePath] !== undefined) fileContents[newPath] = fileContents[sourcePath];
-          const entry = {
-            name,
-            path: newPath,
-            relativePath: relativeTo(workspaceRoot, newPath),
-            kind,
-            size: source?.size ?? (kind === "file" ? contentLengthFor(newPath) : null),
-            lastModified: lastModifiedFor(newPath),
-          };
-          (directories[targetDirectory] ??= []).push({ ...entry });
-          return entry;
+          return copyMockPath(sourcePath, targetDirectory, workspaceRoot);
+        }
+        case "copy_external_paths": {
+          const workspaceRoot = String(args.workspaceRoot ?? "/mock/project");
+          const targetDirectory = String(args.targetDirectory);
+          const sourcePaths = Array.isArray(args.sourcePaths) ? args.sourcePaths.map(String) : [];
+          return sourcePaths.map((sourcePath) => copyMockPath(sourcePath, targetDirectory, workspaceRoot));
         }
         default:
           return null;
@@ -827,14 +869,14 @@ export async function renameMockPath(page: Page, path: string, nextPath: string)
   );
 }
 
-export async function setMockInvokeError(page: Page, key: string, message: string): Promise<void> {
+export async function setMockInvokeError(page: Page, key: string, error: unknown): Promise<void> {
   await page.evaluate(
-    ({ errorKey, errorMessage }) =>
+    ({ errorKey, configuredError }) =>
       (window as unknown as { __tauriMockRuntime: TauriMockRuntimeControl }).__tauriMockRuntime.setInvokeError(
         errorKey,
-        new Error(errorMessage),
+        configuredError,
       ),
-    { errorKey: key, errorMessage: message },
+    { errorKey: key, configuredError: error },
   );
 }
 
